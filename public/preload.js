@@ -3,6 +3,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Preload runs in sandboxed context — no Node.js core modules.
 // All file/OS operations are delegated to the main process via IPC.
 
+// Synchronous check — runs before React mounts, so localStorage is clean
+// before useState(() => localStorage.getItem('imagginary_onboarded')) fires.
+const isFresh = ipcRenderer.sendSync('is-fresh-install-sync');
+if (isFresh) {
+  localStorage.removeItem('imagginary_onboarded');
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Project persistence
   saveProject: (projectData, filePath) => ipcRenderer.invoke('save-project', projectData, filePath),

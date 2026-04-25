@@ -34,15 +34,62 @@
       color: #555;
       letter-spacing: 2px;
       text-transform: uppercase;
-      margin-bottom: 40px;
+      margin-bottom: 32px;
+    }
+
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 24px;
+      width: 220px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #333;
+      transition: color 0.3s;
+    }
+
+    .step.active {
+      color: #d4a843;
+    }
+
+    .step.done {
+      color: #4a4a4a;
+    }
+
+    .step-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #222;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .step.active .step-dot {
+      background: #d4a843;
+      box-shadow: 0 0 4px #d4a84360;
+    }
+
+    .step.done .step-dot {
+      background: #3a3a3a;
     }
 
     .status {
-      font-size: 12px;
-      color: #666;
-      height: 18px;
-      margin-bottom: 10px;
+      font-size: 11px;
+      color: #555;
+      height: 16px;
+      margin-bottom: 8px;
       transition: opacity 0.2s;
+      width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .track {
@@ -73,6 +120,15 @@
 <body>
   <div class="wordmark">IMAGGINARY</div>
   <div class="tagline">AI Storyboard Generator</div>
+
+  <div class="steps">
+    <div class="step" id="step-1"><div class="step-dot"></div>Starting Ollama</div>
+    <div class="step" id="step-2"><div class="step-dot"></div>Downloading AI model</div>
+    <div class="step" id="step-3"><div class="step-dot"></div>Setting up ComfyUI</div>
+    <div class="step" id="step-4"><div class="step-dot"></div>Downloading DreamShaper 8</div>
+    <div class="step" id="step-5"><div class="step-dot"></div>Opening Imagginary</div>
+  </div>
+
   <div class="status" id="status">Starting…</div>
   <div class="track">
     <div class="bar" id="bar"></div>
@@ -80,20 +136,38 @@
   <div class="version">v1.0</div>
 
   <script>
-    // nodeIntegration: true — can require electron directly
     const { ipcRenderer } = require('electron');
 
     const statusEl = document.getElementById('status');
     const barEl    = document.getElementById('bar');
 
+    // progress → step index (1-based)
+    function progressToStep(p) {
+      if (p < 20)  return 1;
+      if (p < 55)  return 2;
+      if (p < 72)  return 3;
+      if (p < 95)  return 4;
+      return 5;
+    }
+
+    function updateSteps(progress) {
+      const active = progressToStep(progress);
+      for (let i = 1; i <= 5; i++) {
+        const el = document.getElementById('step-' + i);
+        el.className = 'step' + (i === active ? ' active' : i < active ? ' done' : '');
+      }
+    }
+
     ipcRenderer.on('loading-update', (_event, { status, progress }) => {
       statusEl.textContent = status;
       barEl.style.width = Math.min(100, Math.max(0, progress)) + '%';
+      updateSteps(progress);
     });
 
-    // Kick off the bar at 2% immediately so it doesn't look frozen
+    // Kick off bar and first step immediately
     setTimeout(() => {
       barEl.style.width = '2%';
+      updateSteps(2);
     }, 100);
   </script>
 </body>

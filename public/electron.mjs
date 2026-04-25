@@ -138,6 +138,57 @@ async function startOllama(loadingWin) {
   }
 }
 
+// ── Ollama model ensure ──────────────────────────────────────────────────────
+
+async function ensureOllamaModel(loadingWin, model = 'qwen2.5:7b') {
+  sendLoadingUpdate(loadingWin, 'Checking AI model…', 22);
+
+  const tags = await new Promise((resolve) => {
+    http.get('http://localhost:11434/api/tags', { timeout: 5000 }, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
+
+  const models = tags?.models || [];
+  const modelBase = model.split(':')[0];
+  if (models.some((m) => m.name === model || m.name.startsWith(modelBase + ':'))) {
+    console.log(`[Ollama] Model ${model} already present.`);
+    return true;
+  }
+
+  console.log(`[Ollama] Model ${model} not found — pulling…`);
+  sendLoadingUpdate(loadingWin, `Downloading AI model (first launch, ~4GB)…`, 25);
+
+  const binary = getOllamaBinary();
+  try {
+    await new Promise((resolve, reject) => {
+      const pull = spawn(binary, ['pull', model], {
+        stdio: 'pipe',
+        env: { ...process.env, HOME: os.homedir() },
+      });
+      const onLine = (d) => {
+        const line = d.toString().trim();
+        console.log('[Ollama pull]', line);
+        const match = line.match(/(\d+)%/);
+        if (match) {
+          const pct = parseInt(match[1], 10);
+          sendLoadingUpdate(loadingWin, `Downloading AI model… ${pct}%`, 25 + Math.round(pct * 0.28));
+        }
+      };
+      pull.stdout.on('data', onLine);
+      pull.stderr.on('data', onLine);
+      pull.on('error', reject);
+      pull.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ollama pull exited with code ${code}`)));
+    });
+    return true;
+  } catch (err) {
+    console.error('[Ollama] Model pull failed:', err.message);
+    return false;
+  }
+}
+
 // ── ComfyUI auto-start ───────────────────────────────────────────────────────
 
 /** Returns the first ComfyUI directory found, or null. */
@@ -163,6 +214,68 @@ async function findComfyUIPath() {
     }
   }
   return null;
+}
+
+/** Returns true if a command is available on PATH. */
+function checkCommand(cmd, args = ['--version']) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { timeout: 5000 }, (err) => resolve(!err));
+  });
+}
+
+/** Clone ComfyUI and pip-install its deps. Returns the install path, or null on failure. */
+async function installComfyUI(loadingWin) {
+  const comfyPath = path.join(os.homedir(), 'ComfyUI');
+
+  sendLoadingUpdate(loadingWin, 'Checking prerequisites for ComfyUI…', 56);
+
+  const gitOk = await checkCommand('git');
+  if (!gitOk) {
+    sendLoadingUpdate(loadingWin, '⚠ git not found — install Xcode Command Line Tools', 57);
+    console.warn('[ComfyUI] git unavailable — cannot auto-install');
+    return null;
+  }
+
+  let pythonBin = null;
+  for (const py of ['python3', 'python']) {
+    if (await checkCommand(py)) { pythonBin = py; break; }
+  }
+  if (!pythonBin) {
+    sendLoadingUpdate(loadingWin, '⚠ Python 3 not found — install Python to continue', 57);
+    console.warn('[ComfyUI] Python unavailable — cannot auto-install');
+    return null;
+  }
+
+  sendLoadingUpdate(loadingWin, 'Installing ComfyUI (first launch, ~2 min)…', 57);
+  console.log('[ComfyUI] Cloning to', comfyPath);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const git = spawn('git', ['clone', 'https://github.com/comfyanonymous/ComfyUI', comfyPath], { stdio: 'pipe' });
+      git.stderr.on('data', (d) => console.log('[ComfyUI install]', d.toString().trim()));
+      git.on('error', reject);
+      git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git clone failed (code ${code})`)));
+    });
+
+    sendLoadingUpdate(loadingWin, 'Installing ComfyUI dependencies…', 62);
+
+    await new Promise((resolve, reject) => {
+      const pip = spawn(pythonBin, ['-m', 'pip', 'install', '-r', 'requirements.txt', '--quiet'], {
+        cwd: comfyPath,
+        stdio: 'pipe',
+      });
+      pip.stderr.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trim()));
+      pip.on('error', reject);
+      pip.on('close', (code) => code === 0 ? resolve() : reject(new Error(`pip install failed (code ${code})`)));
+    });
+
+    console.log('[ComfyUI] Auto-install complete at', comfyPath);
+    return comfyPath;
+  } catch (err) {
+    console.error('[ComfyUI] Auto-install failed:', err.message);
+    sendLoadingUpdate(loadingWin, `ComfyUI install failed: ${err.message.slice(0, 55)}`, 57);
+    return null;
+  }
 }
 
 /** Try each Python binary and return the first one that runs. */
@@ -191,7 +304,7 @@ async function findWorkingPython(comfyPath) {
 }
 
 async function startComfyUI(loadingWin) {
-  sendLoadingUpdate(loadingWin, 'Checking ComfyUI…', 20);
+  sendLoadingUpdate(loadingWin, 'Checking ComfyUI…', 55);
 
   // Already running externally — use it.
   if (await isPortOpen(8188, '/system_stats')) {
@@ -200,9 +313,14 @@ async function startComfyUI(loadingWin) {
     return { ok: true, comfyPath: null };
   }
 
-  sendLoadingUpdate(loadingWin, 'Looking for ComfyUI…', 25);
+  sendLoadingUpdate(loadingWin, 'Looking for ComfyUI…', 56);
 
-  const comfyPath = await findComfyUIPath();
+  let comfyPath = await findComfyUIPath();
+
+  if (!comfyPath && app.isPackaged) {
+    comfyPath = await installComfyUI(loadingWin);
+  }
+
   if (!comfyPath) {
     console.warn('[ComfyUI] No installation found.');
     serviceLaunchStatus.comfyui = 'failed';
@@ -216,7 +334,7 @@ async function startComfyUI(loadingWin) {
     return { ok: false, comfyPath };
   }
 
-  sendLoadingUpdate(loadingWin, 'Starting ComfyUI…', 30);
+  sendLoadingUpdate(loadingWin, 'Starting ComfyUI…', 66);
   console.log('[ComfyUI] Launching from', comfyPath);
 
   try {
@@ -237,12 +355,12 @@ async function startComfyUI(loadingWin) {
       console.log('[ComfyUI]', msg);
       // Relay meaningful status lines to loading window
       if (msg.includes('Loading') || msg.includes('Starting') || msg.includes('ready')) {
-        sendLoadingUpdate(loadingWin, `ComfyUI: ${msg.slice(0, 60)}`, 45);
+        sendLoadingUpdate(loadingWin, `ComfyUI: ${msg.slice(0, 60)}`, 68);
       }
     });
     comfyuiProcess.on('error', (err) => console.error('[ComfyUI] spawn error:', err.message));
 
-    sendLoadingUpdate(loadingWin, 'Waiting for ComfyUI to start (may take 1-2 minutes)…', 35);
+    sendLoadingUpdate(loadingWin, 'Waiting for ComfyUI to start (may take 1–2 minutes)…', 67);
 
     // 2-minute timeout — model loading takes time
     const ok = await waitForPort(8188, '/system_stats', 120_000);
@@ -275,7 +393,7 @@ function getModelPath(comfyPath) {
 
 async function checkAndDownloadModel(loadingWin, comfyPath) {
   const modelPath = getModelPath(comfyPath);
-  sendLoadingUpdate(loadingWin, 'Checking for DreamShaper 8 model…', 70);
+  sendLoadingUpdate(loadingWin, 'Checking for DreamShaper 8 model…', 71);
 
   if (fs.existsSync(modelPath)) {
     console.log('[Model] DreamShaper 8 already present at', modelPath);
@@ -284,7 +402,7 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
   }
 
   console.log('[Model] DreamShaper 8 not found — downloading to', modelPath);
-  sendLoadingUpdate(loadingWin, 'Downloading DreamShaper 8 (~2GB, first launch only)…', 75);
+  sendLoadingUpdate(loadingWin, 'Downloading DreamShaper 8 (~2GB, first launch only)…', 72);
 
   const modelsDir = path.dirname(modelPath);
   fs.mkdirSync(modelsDir, { recursive: true });
@@ -294,7 +412,7 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
       const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
       const mb = Math.round(downloaded / 1024 / 1024);
       const totalMb = total > 0 ? Math.round(total / 1024 / 1024) : '?';
-      sendLoadingUpdate(loadingWin, `Downloading model… ${mb}MB / ${totalMb}MB (${pct}%)`, 75 + Math.round(pct * 0.2));
+      sendLoadingUpdate(loadingWin, `Downloading model… ${mb}MB / ${totalMb}MB (${pct}%)`, 72 + Math.round(pct * 0.23));
     });
     serviceLaunchStatus.modelPresent = true;
     return true;
@@ -369,25 +487,30 @@ async function startBundledServices(loadingWin) {
 
   // 1. Ollama
   const ollamaOk = await startOllama(loadingWin);
-  sendLoadingUpdate(loadingWin, ollamaOk ? 'Ollama ready.' : 'Ollama unavailable — continuing.', 55);
+  sendLoadingUpdate(loadingWin, ollamaOk ? 'Ollama ready.' : 'Ollama unavailable — continuing.', 20);
 
-  // 2. ComfyUI
+  // 2. AI model (qwen2.5:7b)
+  if (ollamaOk) {
+    await ensureOllamaModel(loadingWin, 'qwen2.5:7b');
+  }
+  sendLoadingUpdate(loadingWin, 'AI model ready.', 54);
+
+  // 3. ComfyUI (auto-installs if not found in packaged build)
   const { ok: comfyOk, comfyPath } = await startComfyUI(loadingWin);
-  sendLoadingUpdate(loadingWin, comfyOk ? 'ComfyUI ready.' : 'ComfyUI not found — continuing.', 65);
+  sendLoadingUpdate(loadingWin, comfyOk ? 'ComfyUI ready.' : 'ComfyUI not available — continuing.', 70);
 
-  // 3. Model download on first launch (only if ComfyUI is available)
+  // 4. DreamShaper model download on first launch
   if (comfyOk && isFirstLaunch()) {
     await checkAndDownloadModel(loadingWin, comfyPath);
     markLaunched();
   } else {
-    // Check model presence anyway for status reporting
     const modelPath = getModelPath(comfyPath);
     serviceLaunchStatus.modelPresent = fs.existsSync(modelPath);
-    if (!comfyOk) markLaunched(); // don't retry on every launch if comfy not installed
+    if (!comfyOk) markLaunched();
   }
 
   sendLoadingUpdate(loadingWin, 'Opening Imagginary…', 100);
-  await sleep(400); // let the bar reach 100% visually
+  await sleep(400);
 }
 
 // ── Windows ──────────────────────────────────────────────────────────────────
@@ -644,6 +767,12 @@ app.on('before-quit', () => {
 });
 
 // ── IPC Handlers ──────────────────────────────────────────────────────────────
+
+// Synchronous fresh-install check — called from preload before React mounts
+ipcMain.on('is-fresh-install-sync', (event) => {
+  const flagPath = path.join(app.getPath('userData'), '.imagginary-initialized');
+  event.returnValue = !fs.existsSync(flagPath);
+});
 
 // Service launch status — called by App.tsx on mount
 ipcMain.handle('get-service-launch-status', () => ({ ...serviceLaunchStatus }));

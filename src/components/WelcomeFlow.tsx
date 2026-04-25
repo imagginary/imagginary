@@ -154,53 +154,55 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                 <h2 className="text-lg font-semibold text-gray-100">Getting ready</h2>
                 <p className="text-sm text-gray-500 mt-0.5">
                   {servicesAutoStarted
-                    ? 'Services are starting up — ComfyUI may take 1–2 minutes to load. Click Check again shortly.'
+                    ? 'Setting up your local AI… this only happens once.'
                     : 'Imagginary needs two services running on your machine.'}
                 </p>
               </div>
-              <div className="flex flex-col gap-3 bg-gray-950 rounded-lg px-4 py-4 border border-gray-800">
-                <ServiceRow
-                  label="Ollama"
-                  status={serviceStatus.ollama}
-                  fix="Open Terminal and run: ollama serve"
-                />
-                <div>
-                  <ServiceRow
-                    label="ComfyUI"
-                    status={serviceStatus.comfyui}
-                    fix="In your ComfyUI folder run: ./start.sh  (or python main.py)"
-                  />
-                  {servicesAutoStarted && serviceStatus.comfyui !== 'connected' && (
-                    <p className="ml-[26px] text-xs text-imagginary-500/80 animate-pulse mt-0.5">
-                      Starting — may take 1–2 min…
-                    </p>
-                  )}
+
+              {servicesAutoStarted ? (
+                <div className="flex flex-col items-center justify-center flex-1 gap-4 py-4">
+                  <div className="w-8 h-8 rounded-full border-2 border-imagginary-500 border-t-transparent animate-spin" />
+                  <div className="flex flex-col gap-2 w-full">
+                    <ServiceRow label="Ollama" status={serviceStatus.ollama} />
+                    <ServiceRow label="ComfyUI" status={serviceStatus.comfyui} />
+                    <div className="border-t border-gray-800 pt-2 mt-1">
+                      <ServiceRow label="InstantMesh" status={serviceStatus.instantmesh} />
+                      <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — multi-angle character consistency</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 text-center">
+                    ComfyUI may take 1–2 min on first launch. Checking automatically…
+                  </p>
                 </div>
-                <div className="border-t border-gray-800 pt-3 mt-1">
-                  <ServiceRow
-                    label="InstantMesh"
-                    status={serviceStatus.instantmesh}
-                  />
-                  <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — for multi-angle character consistency</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 mt-auto">
-                <button
-                  onClick={onRefreshServices}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Check again
-                </button>
-                <button
-                  onClick={() => setStep(2)}
-                  disabled={!bothReady}
-                  className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded text-sm font-semibold bg-imagginary-500 hover:bg-imagginary-400 text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  Continue
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-3 bg-gray-950 rounded-lg px-4 py-4 border border-gray-800">
+                    <ServiceRow label="Ollama" status={serviceStatus.ollama} />
+                    <ServiceRow label="ComfyUI" status={serviceStatus.comfyui} />
+                    <div className="border-t border-gray-800 pt-3 mt-1">
+                      <ServiceRow label="InstantMesh" status={serviceStatus.instantmesh} />
+                      <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — for multi-angle character consistency</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 mt-auto">
+                    <button
+                      onClick={onRefreshServices}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Check again
+                    </button>
+                    <button
+                      onClick={() => setStep(2)}
+                      disabled={!bothReady}
+                      className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded text-sm font-semibold bg-imagginary-500 hover:bg-imagginary-400 text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Continue
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

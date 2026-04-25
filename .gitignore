@@ -3,7 +3,7 @@ dist/
 release/
 
 # Ollama binaries — download separately, see resources/ollama/SETUP.md
-resources/ollama/mac/ollama
+resources/ollama/mac/
 resources/ollama/win/ollama.exe
 
 # Build assets (provide your own or skip for now)
@@ -20,3 +20,8 @@ assets/entitlements.mac.plist
 # Misc
 .DS_Store
 *.log
+*.dmg
+*.blockmap
+*.map
+.env
+.env.local
