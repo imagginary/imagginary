@@ -1,0 +1,125 @@
+{
+  "name": "imagginary",
+  "version": "1.0.0",
+  "description": "Imagginary — local-first AI storyboard generator for filmmakers",
+  "main": "public/electron.mjs",
+  "scripts": {
+    "dev:renderer": "webpack serve --config webpack.config.js",
+    "dev:electron": "wait-on http://localhost:3000 && ELECTRON_RUN_AS_NODE= ELECTRON_START_URL=http://localhost:3000 electron .",
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "build": "cross-env NODE_ENV=production webpack --config webpack.config.js",
+    "start": "electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "keywords": [
+    "storyboard",
+    "filmmaking",
+    "ai",
+    "electron",
+    "ollama",
+    "comfyui"
+  ],
+  "author": "Imagginary",
+  "license": "MIT",
+  "type": "commonjs",
+  "build": {
+    "appId": "com.imagginary.app",
+    "productName": "Imagginary",
+    "icon": "build/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "resources/**/*",
+      "public/loading.html"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "resources/ollama/mac",
+          "to": "bin"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "resources/ollama/win",
+          "to": "bin"
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Imagginary",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeader": "assets/installer-header.bmp",
+      "installerSidebar": "assets/installer-sidebar.bmp"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Graphics"
+    }
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.27",
+    "babel-loader": "^10.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "css-loader": "^7.1.4",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
+    "html-webpack-plugin": "^5.6.6",
+    "postcss": "^8.5.9",
+    "postcss-loader": "^8.2.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^4.2.2",
+    "ts-loader": "^9.5.7",
+    "typescript": "^6.0.2",
+    "wait-on": "^9.0.4",
+    "webpack": "^5.106.0",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "^5.2.3"
+  },
+  "dependencies": {
+    "lucide-react": "^1.8.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  }
+}

@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* Imagginary brand colour — replaces amber throughout the UI */
+@theme {
+  --color-imagginary-400: #d4a843;
+  --color-imagginary-500: #bc9238;
+  --color-imagginary-600: #a07c2c;
+  --color-imagginary: #d4a843;
+}
+
+/* Custom properties */
+:root {
+  --imagginary-accent: #d4a843;
+  --imagginary-bg: #030712;
+  --imagginary-surface: #111827;
+  --imagginary-border: #1f2937;
+}
+
+/* Base resets */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--imagginary-bg);
+  color: #e5e7eb;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar styling — dark cinema look */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Range input */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #1f2937;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #d4a843;
+  cursor: pointer;
+}
+
+/* Select arrow */
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.2em;
+  padding-right: 2rem;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Drag state */
+[draggable='true'] {
+  cursor: grab;
+}
+[draggable='true']:active {
+  cursor: grabbing;
+}
