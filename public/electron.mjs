@@ -903,6 +903,15 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   shell.openPath(folderPath);
 });
 
+ipcMain.handle('get-system-memory', () => ({
+  totalMem: os.totalmem(),
+  freeMem: os.freemem(),
+}));
+
+ipcMain.handle('open-external', (_event, url) => {
+  shell.openExternal(url);
+});
+
 ipcMain.handle('export-animatic', async (_event, panels, outputPath, fps = 24) => {
   console.log('[Animatic] Handler called. Panels:', panels?.length, 'Output:', outputPath);
   const concatFile = path.join(app.getPath('temp'), `imagginary-concat-${Date.now()}.txt`);
