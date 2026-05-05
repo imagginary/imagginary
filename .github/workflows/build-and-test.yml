@@ -83,7 +83,7 @@ jobs:
 
       - name: Launch Electron app in background
         run: |
-          npx electron . > /tmp/electron.log 2>&1 &
+          npx electron . --no-sandbox > /tmp/electron.log 2>&1 &
           echo "ELECTRON_PID=$!" >> $GITHUB_ENV
 
       - name: Wait and verify app is still running
