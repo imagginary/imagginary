@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create placeholder Ollama binary dirs
+        run: mkdir -p resources/ollama/win resources/ollama/mac
+
       - name: Build and package
         run: npm run dist -- --publish never
 
@@ -45,6 +48,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Create placeholder Ollama binary dirs
+        run: mkdir -p resources/ollama/win resources/ollama/mac
 
       - name: Build and package
         run: npm run dist -- --publish never
