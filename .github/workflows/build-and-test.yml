@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Build and package
-        run: npm run dist
+        run: npm run dist -- --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -47,7 +47,7 @@ jobs:
         run: npm ci
 
       - name: Build and package
-        run: npm run dist
+        run: npm run dist -- --publish never
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
