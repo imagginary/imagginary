@@ -22,7 +22,10 @@ jobs:
         run: npm ci
 
       - name: Create placeholder Ollama binary dirs
-        run: mkdir -p resources/ollama/win resources/ollama/mac
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path resources/ollama/win
+          New-Item -ItemType Directory -Force -Path resources/ollama/mac
 
       - name: Build and package
         run: npm run dist -- --publish never
