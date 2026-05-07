@@ -64,6 +64,10 @@
         {
           "from": "resources/bin/ffmpeg-mac",
           "to": "bin/ffmpeg-mac"
+        },
+        {
+          "from": "resources/sounds",
+          "to": "sounds"
         }
       ]
     },
@@ -85,6 +89,10 @@
         {
           "from": "resources/bin/ffmpeg-win.exe",
           "to": "bin/ffmpeg-win.exe"
+        },
+        {
+          "from": "resources/sounds",
+          "to": "sounds"
         }
       ]
     },
@@ -118,6 +126,10 @@
         {
           "from": "resources/bin/ffmpeg-linux",
           "to": "bin/ffmpeg-linux"
+        },
+        {
+          "from": "resources/sounds",
+          "to": "sounds"
         }
       ]
     }

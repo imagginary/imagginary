@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, ScrollText, FileText, FileCode, Lock, X } from 'lucide-react';
+import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, ScrollText, FileText, FileCode, Lock, X, Clapperboard } from 'lucide-react';
 import { ServiceStatus } from '../types';
 
 interface TitleBarProps {
@@ -9,6 +9,7 @@ interface TitleBarProps {
   onSaveProject: () => void;
   onLoadProject: () => void;
   onGenerateAnimatic: () => void;
+  onExportMotionComic: () => void;
   onOpenScriptReader: () => void;
   onSetup: () => void;
   onExportPDF: () => void;
@@ -17,6 +18,9 @@ interface TitleBarProps {
   isExporting: boolean;
   exportProgress: number | null;
   isStudio?: boolean;
+  isExportingMotionComic: boolean;
+  motionComicProgress: number;
+  hasMotionClips: boolean;
 }
 
 function ConnectionDot({ status }: { status: 'checking' | 'connected' | 'disconnected' | 'error' }) {
@@ -71,6 +75,7 @@ export default function TitleBar({
   onSaveProject,
   onLoadProject,
   onGenerateAnimatic,
+  onExportMotionComic,
   onOpenScriptReader,
   onSetup,
   onExportPDF,
@@ -79,6 +84,9 @@ export default function TitleBar({
   isExporting,
   exportProgress,
   isStudio = false,
+  isExportingMotionComic,
+  motionComicProgress,
+  hasMotionClips,
 }: TitleBarProps) {
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -230,6 +238,25 @@ export default function TitleBar({
               <>
                 <Video className="w-3.5 h-3.5 shrink-0" />
                 Animatic
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={onExportMotionComic}
+            disabled={isExportingMotionComic || !hasMotionClips}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-purple-700 hover:bg-purple-600 text-white font-semibold transition-colors disabled:opacity-40"
+            title={!hasMotionClips ? 'Animate panels first' : 'Export Motion Comic (Phase 6D)'}
+          >
+            {isExportingMotionComic ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                {motionComicProgress > 0 ? `${motionComicProgress}%` : 'Exporting…'}
+              </>
+            ) : (
+              <>
+                <Clapperboard className="w-3.5 h-3.5 shrink-0" />
+                Motion Comic
               </>
             )}
           </button>

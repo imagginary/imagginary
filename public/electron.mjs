@@ -1071,3 +1071,240 @@ ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
     }
   }
 });
+
+// ── Phase 6D — Motion Comic export ──────────────────────────────────────────
+
+/**
+ * Maps panel mood keywords to a bundled ambient sound file.
+ * Returns an absolute path to the MP3, or null if the file does not exist.
+ */
+function selectAmbientSound(mood) {
+  const m = (mood || '').toLowerCase();
+  let name = 'silence.mp3';
+  if (m.includes('noir') || m.includes('dark') || m.includes('moody') || m.includes('grim')) name = 'rain.mp3';
+  else if (m.includes('exterior') || m.includes('action') || m.includes('tension') || m.includes('wind')) name = 'wind.mp3';
+  else if (m.includes('urban') || m.includes('city') || m.includes('street') || m.includes('busy')) name = 'city.mp3';
+  else if (m.includes('nature') || m.includes('forest') || m.includes('pastoral') || m.includes('peaceful')) name = 'forest.mp3';
+
+  const soundsDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'sounds')
+    : path.join(__dirname, '..', 'resources', 'sounds');
+
+  const soundPath = path.join(soundsDir, name);
+  return fs.existsSync(soundPath) ? soundPath : null;
+}
+
+/**
+ * Builds the xfade filter_complex string for N video streams.
+ * Each stream must be pre-normalised to the same resolution and fps.
+ *
+ * For a single clip, returns { filterStr: null, finalLabel: '0:v' }.
+ * For N ≥ 2 clips, returns a chained xfade expression and the label of
+ * the final output stream.
+ */
+function buildXfadeFilter(durations, xfadeDur = 0.167) {
+  const N = durations.length;
+  if (N === 1) return { filterStr: null, finalLabel: '0:v' };
+
+  const parts = [];
+  let cumDuration = 0;
+  let prevLabel = '0:v';
+
+  for (let i = 0; i < N - 1; i++) {
+    cumDuration += durations[i];
+    const offset = Math.max(0, cumDuration - (i + 1) * xfadeDur);
+    const outLabel = i === N - 2 ? 'vout' : `v${i}${i + 1}`;
+    parts.push(`[${prevLabel}][${i + 1}:v]xfade=transition=fade:duration=${xfadeDur}:offset=${offset.toFixed(3)}[${outLabel}]`);
+    prevLabel = outLabel;
+  }
+
+  return { filterStr: parts.join(';'), finalLabel: 'vout' };
+}
+
+ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
+  console.log('[MotionComic] Handler called. Panels:', panels?.length, 'Output:', outputPath);
+
+  const sendProgress = (pct) => {
+    try { event.sender.send('motion-comic-progress', pct); } catch { /* window closed */ }
+  };
+
+  sendProgress(0);
+
+  // ── 1. ffmpeg availability ───────────────────────────────────────────────
+  const ffmpegAvailable = await new Promise((resolve) => {
+    const probe = spawn('ffmpeg', ['-version'], { stdio: 'ignore' });
+    probe.on('error', () => resolve(false));
+    probe.on('close', (code) => resolve(code === 0));
+  });
+  if (!ffmpegAvailable) {
+    return { success: false, error: 'ffmpeg not found — install via: brew install ffmpeg' };
+  }
+
+  // ── 2. Detect encoder ────────────────────────────────────────────────────
+  const encoder = await new Promise((resolve) => {
+    const probe = spawn('ffmpeg', ['-hide_banner', '-encoders']);
+    let out = '';
+    probe.stdout.on('data', (d) => { out += d; });
+    probe.stderr.on('data', (d) => { out += d; });
+    probe.on('close', () => {
+      if (out.includes('libx264')) resolve('libx264');
+      else if (out.includes('h264_videotoolbox')) resolve('h264_videotoolbox');
+      else resolve('libx264');
+    });
+  });
+  const pixFmtArgs = encoder === 'h264_videotoolbox' ? [] : ['-pix_fmt', 'yuv420p'];
+
+  const tempDir = app.getPath('temp');
+  const sessionId = Date.now();
+  const tempClips = [];
+
+  try {
+    // ── 3. Resolve inputs and create normalised intermediate clips ──────────
+    const validPanels = [];
+    const tempImageFiles = [];
+
+    for (const panel of panels) {
+      if (panel.motionClipPath && fs.existsSync(panel.motionClipPath)) {
+        validPanels.push({ ...panel, resolvedType: 'video', resolvedPath: panel.motionClipPath });
+      } else if (panel.imagePath && fs.existsSync(panel.imagePath)) {
+        validPanels.push({ ...panel, resolvedType: 'still', resolvedPath: panel.imagePath });
+      } else if (panel.imageData) {
+        const tmpImg = path.join(tempDir, `mc-img-${sessionId}-${validPanels.length}.png`);
+        const b64 = panel.imageData.replace(/^data:image\/[^;]+;base64,/, '');
+        fs.writeFileSync(tmpImg, Buffer.from(b64, 'base64'));
+        tempImageFiles.push(tmpImg);
+        validPanels.push({ ...panel, resolvedType: 'still', resolvedPath: tmpImg });
+      }
+    }
+
+    if (validPanels.length === 0) {
+      return { success: false, error: 'No panel images or motion clips found on disk' };
+    }
+
+    sendProgress(5);
+
+    const vf = 'scale=768:432:force_original_aspect_ratio=decrease,pad=768:432:(ow-iw)/2:(oh-ih)/2,fps=24';
+
+    // Convert each panel to a normalised MP4 intermediate
+    for (let i = 0; i < validPanels.length; i++) {
+      const p = validPanels[i];
+      const clipPath = path.join(tempDir, `mc-clip-${sessionId}-${i}.mp4`);
+      tempClips.push(clipPath);
+
+      const args =
+        p.resolvedType === 'still'
+          ? [
+              '-y', '-loop', '1', '-i', p.resolvedPath,
+              '-t', String(p.duration),
+              '-vf', vf,
+              '-c:v', encoder, ...pixFmtArgs,
+              '-an', clipPath,
+            ]
+          : [
+              '-y', '-i', p.resolvedPath,
+              '-t', String(p.duration),
+              '-vf', vf,
+              '-c:v', encoder, ...pixFmtArgs,
+              '-an', clipPath,
+            ];
+
+      await new Promise((resolve, reject) => {
+        const ff = spawn('ffmpeg', args);
+        ff.stderr.on('data', (d) => process.stderr.write(d));
+        ff.on('error', reject);
+        ff.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ffmpeg clip ${i} exited with code ${code}`));
+        });
+      });
+
+      // Progress 5–60% across all panel conversions
+      sendProgress(5 + Math.round(55 * (i + 1) / validPanels.length));
+
+      for (const tmp of tempImageFiles) {
+        try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      }
+    }
+
+    // ── 4. Assemble with xfade transitions ───────────────────────────────
+    const durations = validPanels.map((p) => p.duration);
+    const totalDuration = durations.reduce((a, b) => a + b, 0);
+    const { filterStr, finalLabel } = buildXfadeFilter(durations);
+
+    const assembledPath = path.join(tempDir, `mc-assembled-${sessionId}.mp4`);
+
+    const assembleArgs = ['-y'];
+    for (const clip of tempClips) assembleArgs.push('-i', clip);
+
+    if (filterStr) {
+      assembleArgs.push('-filter_complex', filterStr, '-map', `[${finalLabel}]`);
+    } else {
+      assembleArgs.push('-map', `${finalLabel}`);
+    }
+
+    assembleArgs.push('-c:v', encoder, ...pixFmtArgs, '-an', '-movflags', '+faststart', assembledPath);
+
+    await new Promise((resolve, reject) => {
+      const ff = spawn('ffmpeg', assembleArgs);
+      ff.stderr.on('data', (data) => {
+        process.stderr.write(data);
+        const m = data.toString().match(/time=(\d+):(\d+):(\d+\.\d+)/);
+        if (m) {
+          const t = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
+          sendProgress(60 + Math.round(30 * Math.min(t / totalDuration, 1)));
+        }
+      });
+      ff.on('error', reject);
+      ff.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg xfade assembly exited with code ${code}`));
+      });
+    });
+
+    sendProgress(90);
+
+    // ── 5. Mix ambient sound ─────────────────────────────────────────────
+    // Pick mood from the first panel that has one, otherwise neutral
+    const dominantMood = validPanels.find((p) => p.mood)?.mood || '';
+    const soundPath = selectAmbientSound(dominantMood);
+
+    if (soundPath) {
+      const audioArgs = [
+        '-y',
+        '-i', assembledPath,
+        '-stream_loop', '-1', '-i', soundPath,
+        '-filter_complex', '[1:a]volume=-18dB[amix]',
+        '-map', '0:v', '-map', '[amix]',
+        '-shortest',
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath,
+      ];
+
+      await new Promise((resolve, reject) => {
+        const ff = spawn('ffmpeg', audioArgs);
+        ff.stderr.on('data', (d) => process.stderr.write(d));
+        ff.on('error', reject);
+        ff.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ffmpeg audio mix exited with code ${code}`));
+        });
+      });
+    } else {
+      // No sound file — just copy assembled video as final output
+      fs.copyFileSync(assembledPath, outputPath);
+    }
+
+    try { fs.unlinkSync(assembledPath); } catch { /* ignore */ }
+
+    sendProgress(100);
+    return { success: true, outputPath };
+  } catch (err) {
+    console.error('[MotionComic] Error:', err);
+    return { success: false, error: err.message };
+  } finally {
+    for (const tmp of tempClips) {
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    }
+  }
+});

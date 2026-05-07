@@ -37,6 +37,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('animatic-progress', handler);
   },
 
+  // Motion Comic export (Phase 6D)
+  exportMotionComic: (payload) => ipcRenderer.invoke('export-motion-comic', payload),
+  onMotionComicProgress: (cb) => {
+    const handler = (_event, pct) => cb(pct);
+    ipcRenderer.on('motion-comic-progress', handler);
+    return () => ipcRenderer.removeListener('motion-comic-progress', handler);
+  },
+
   // ComfyUI integration
   deleteComfyInputFile: (filename) => ipcRenderer.invoke('delete-comfy-input-file', filename),
 

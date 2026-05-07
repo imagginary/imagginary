@@ -14,6 +14,7 @@ import { characterLibraryService } from './services/CharacterLibraryService';
 import { instantMeshService } from './services/InstantMeshService';
 import { animaticExporter } from './services/AnimaticExporter';
 import { productionExporter } from './services/ProductionExporter';
+import { motionComicExporter } from './services/MotionComicExporter';
 import {
   Project,
   Panel,
@@ -131,6 +132,8 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [isExportingMotionComic, setIsExportingMotionComic] = useState(false);
+  const [motionComicProgress, setMotionComicProgress] = useState(0);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -192,6 +195,7 @@ export default function App() {
   }, [project]);
 
   const activePanel = project.panels.find((p) => p.id === activePanelId) ?? null;
+  const hasMotionClips = project.panels.some((p) => p.motionClipPath || p.motionClipData);
   const isGenerating = progress !== null && progress.status !== 'complete' && progress.status !== 'error';
   const effectiveAspectRatio = getAspectRatio(
     activePanel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID
@@ -599,6 +603,18 @@ export default function App() {
     }
   }
 
+  async function handleExportMotionComic() {
+    setIsExportingMotionComic(true);
+    setMotionComicProgress(0);
+    try {
+      const result = await motionComicExporter.export(project.panels, setMotionComicProgress);
+      if (!result.success && result.error) alert(result.error);
+    } finally {
+      setIsExportingMotionComic(false);
+      setMotionComicProgress(0);
+    }
+  }
+
   // ── Phase 7 — Script Reader ───────────────────────────────────────────────────
   /**
    * Sequential panel generation from a parsed screenplay.
@@ -823,6 +839,7 @@ export default function App() {
         onSaveProject={handleSave}
         onLoadProject={handleLoad}
         onGenerateAnimatic={handleGenerateAnimatic}
+        onExportMotionComic={handleExportMotionComic}
         onOpenScriptReader={() => setShowScriptReader(true)}
         onSetup={() => setShowWelcome(true)}
         onExportPDF={handleExportPDF}
@@ -831,6 +848,9 @@ export default function App() {
         isExporting={isExporting}
         exportProgress={exportProgress}
         isStudio={false}
+        isExportingMotionComic={isExportingMotionComic}
+        motionComicProgress={motionComicProgress}
+        hasMotionClips={hasMotionClips}
       />
 
       {showScriptReader && (
