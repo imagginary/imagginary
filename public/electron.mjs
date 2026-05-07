@@ -912,6 +912,50 @@ ipcMain.handle('open-external', (_event, url) => {
   shell.openExternal(url);
 });
 
+ipcMain.handle('export-pdf', async (_event, base64Data) => {
+  const saveResult = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Storyboard PDF',
+    defaultPath: 'storyboard.pdf',
+    filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+  });
+
+  if (saveResult.canceled || !saveResult.filePath) {
+    return { success: false, canceled: true };
+  }
+
+  try {
+    const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    fs.writeFileSync(saveResult.filePath, Buffer.from(base64, 'base64'));
+    shell.openPath(path.dirname(saveResult.filePath));
+    return { success: true, filePath: saveResult.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('export-fcpxml', async (_event, xmlString) => {
+  const saveResult = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Premiere Pro XML',
+    defaultPath: 'storyboard.fcpxml',
+    filters: [
+      { name: 'Final Cut Pro XML', extensions: ['fcpxml'] },
+      { name: 'XML', extensions: ['xml'] },
+    ],
+  });
+
+  if (saveResult.canceled || !saveResult.filePath) {
+    return { success: false, canceled: true };
+  }
+
+  try {
+    fs.writeFileSync(saveResult.filePath, xmlString, 'utf8');
+    shell.openPath(path.dirname(saveResult.filePath));
+    return { success: true, filePath: saveResult.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
   console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
 

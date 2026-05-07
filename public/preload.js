@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Video operations
   saveVideo: (base64Data, fileName) => ipcRenderer.invoke('save-video', base64Data, fileName),
 
+  // Production Pack exports (Studio tier)
+  exportPDF: (base64Data) => ipcRenderer.invoke('export-pdf', base64Data),
+  exportFCPXML: (xmlString) => ipcRenderer.invoke('export-fcpxml', xmlString),
+
   // Animatic export
   exportAnimatic: (panelList, outputPath) => ipcRenderer.invoke('export-animatic', panelList, outputPath),
   onAnimaticProgress: (callback) => {

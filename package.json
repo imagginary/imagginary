@@ -43,7 +43,12 @@
       "category": "public.app-category.graphics-design",
       "artifactName": "${productName}-${arch}.${ext}",
       "target": [
-        { "target": "dmg", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon.icns",
       "identity": null,
@@ -52,25 +57,50 @@
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extraResources": [
-        { "from": "resources/ollama/mac", "to": "bin" },
-        { "from": "resources/bin/ffmpeg-mac", "to": "bin/ffmpeg-mac" }
+        {
+          "from": "resources/ollama/mac",
+          "to": "bin"
+        },
+        {
+          "from": "resources/bin/ffmpeg-mac",
+          "to": "bin/ffmpeg-mac"
+        }
       ]
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.ico",
       "extraResources": [
-        { "from": "resources/ollama/win", "to": "bin" },
-        { "from": "resources/bin/ffmpeg-win.exe", "to": "bin/ffmpeg-win.exe" }
+        {
+          "from": "resources/ollama/win",
+          "to": "bin"
+        },
+        {
+          "from": "resources/bin/ffmpeg-win.exe",
+          "to": "bin/ffmpeg-win.exe"
+        }
       ]
     },
     "dmg": {
       "title": "Imagginary",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "nsis": {
@@ -85,7 +115,10 @@
       "category": "Graphics",
       "artifactName": "${productName}-${arch}.${ext}",
       "extraResources": [
-        { "from": "resources/bin/ffmpeg-linux", "to": "bin/ffmpeg-linux" }
+        {
+          "from": "resources/bin/ffmpeg-linux",
+          "to": "bin/ffmpeg-linux"
+        }
       ]
     }
   },
@@ -119,6 +152,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

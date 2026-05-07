@@ -13,6 +13,7 @@ import { comfyUIService } from './services/ComfyUIService';
 import { characterLibraryService } from './services/CharacterLibraryService';
 import { instantMeshService } from './services/InstantMeshService';
 import { animaticExporter } from './services/AnimaticExporter';
+import { productionExporter } from './services/ProductionExporter';
 import {
   Project,
   Panel,
@@ -97,6 +98,8 @@ interface ElectronAPI {
   saveVideo: (base64: string, fileName: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   getAppDataPath: () => Promise<string>;
   openFolder: (path: string) => void;
+  exportPDF: (base64Data: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
+  exportFCPXML: (xmlString: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
 }
 
 declare global {
@@ -787,6 +790,14 @@ export default function App() {
     await window.electronAPI.saveImage(b64, result.filePath);
   }
 
+  async function handleExportPDF() {
+    await productionExporter.exportPDF(project.panels, project.title);
+  }
+
+  async function handleExportXML() {
+    await productionExporter.exportFCPXML(project.panels, project.title);
+  }
+
   useEffect(() => {
     if (activePanel) setShotInput(activePanel.shotDescription ?? '');
     else setShotInput('');
@@ -814,9 +825,12 @@ export default function App() {
         onGenerateAnimatic={handleGenerateAnimatic}
         onOpenScriptReader={() => setShowScriptReader(true)}
         onSetup={() => setShowWelcome(true)}
+        onExportPDF={handleExportPDF}
+        onExportXML={handleExportXML}
         isSaving={isSaving}
         isExporting={isExporting}
         exportProgress={exportProgress}
+        isStudio={false}
       />
 
       {showScriptReader && (
