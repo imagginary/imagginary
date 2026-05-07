@@ -8,11 +8,9 @@ resources/ollama/win/ollama.exe
 
 # Build assets (provide your own or skip for now)
 assets/icon.icns
-assets/icon.ico
 assets/dmg-background.png
 assets/installer-header.bmp
 assets/installer-sidebar.bmp
-assets/entitlements.mac.plist
 
 # Claude Code session files
 .claude/
@@ -25,3 +23,9 @@ assets/entitlements.mac.plist
 *.map
 .env
 .env.local
+
+# ffmpeg binaries are downloaded by CI (see .github/workflows/build.yml)
+# For local dev, install ffmpeg via: brew install ffmpeg
+resources/bin/ffmpeg-mac
+resources/bin/ffmpeg-win.exe
+resources/bin/ffmpeg-linux

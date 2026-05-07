@@ -13,6 +13,7 @@ interface TitleBarProps {
   onSetup: () => void;
   isSaving: boolean;
   isExporting: boolean;
+  exportProgress: number | null;
 }
 
 function ConnectionDot({ status }: { status: 'checking' | 'connected' | 'disconnected' | 'error' }) {
@@ -36,6 +37,7 @@ export default function TitleBar({
   onSetup,
   isSaving,
   isExporting,
+  exportProgress,
 }: TitleBarProps) {
   return (
     <div
@@ -137,15 +139,22 @@ export default function TitleBar({
         <button
           onClick={onGenerateAnimatic}
           disabled={isExporting}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-imagginary-600 hover:bg-imagginary-500 text-black font-semibold transition-colors disabled:opacity-40"
-          title="Generate Animatic (Phase 2)"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-imagginary-600 hover:bg-imagginary-500 text-black font-semibold transition-colors disabled:opacity-40 min-w-[90px]"
+          title="Export Animatic as MP4"
         >
           {isExporting ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              {exportProgress !== null && exportProgress > 0
+                ? `${exportProgress}%`
+                : 'Encoding…'}
+            </>
           ) : (
-            <Video className="w-3.5 h-3.5" />
+            <>
+              <Video className="w-3.5 h-3.5 shrink-0" />
+              Animatic
+            </>
           )}
-          Animatic
         </button>
       </div>
     </div>

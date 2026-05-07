@@ -903,76 +903,111 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   shell.openPath(folderPath);
 });
 
-ipcMain.handle('export-animatic', async (_event, panels, outputPath, fps = 24) => {
-  console.log('[Animatic] Handler called. Panels:', panels?.length, 'Output:', outputPath);
-  const concatFile = path.join(app.getPath('temp'), `imagginary-concat-${Date.now()}.txt`);
+ipcMain.handle('get-system-memory', () => ({
+  totalMem: os.totalmem(),
+  freeMem: os.freemem(),
+}));
 
-  const ffmpegAvailable = await new Promise((resolve) => {
-    const probe = spawn('ffmpeg', ['-version'], { stdio: 'ignore' });
-    probe.on('error', () => resolve(false));
-    probe.on('close', (code) => resolve(code === 0));
-  });
+ipcMain.handle('open-external', (_event, url) => {
+  shell.openExternal(url);
+});
 
-  if (!ffmpegAvailable) {
+ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
+  console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
+
+  // Resolve ffmpeg: bundled binary first, then system PATH
+  const platformBinary = process.platform === 'win32' ? 'ffmpeg-win.exe'
+    : process.platform === 'darwin' ? 'ffmpeg-mac'
+    : 'ffmpeg-linux';
+  const bundledFfmpeg = path.join(process.resourcesPath, 'bin', platformBinary);
+  const ffmpegBin = await (async () => {
+    if (fs.existsSync(bundledFfmpeg)) return bundledFfmpeg;
+    return new Promise((resolve) => {
+      const which = process.platform === 'win32' ? 'where' : 'which';
+      const probe = spawn(which, ['ffmpeg']);
+      let out = '';
+      probe.stdout.on('data', (d) => { out += d; });
+      probe.on('close', (code) => resolve(code === 0 ? out.trim().split('\n')[0].trim() : null));
+      probe.on('error', () => resolve(null));
+    });
+  })();
+
+  if (!ffmpegBin) {
     return {
       success: false,
-      error: 'ffmpeg not found — install it via: brew install ffmpeg  or  https://ffmpeg.org',
+      error: 'ffmpeg not found. Bundle it at resources/bin/ffmpeg or install via: brew install ffmpeg',
     };
   }
 
-  const tempPanelFiles = [];
+  const concatFile = path.join(app.getPath('temp'), `imagginary-concat-${Date.now()}.txt`);
+  const tempFiles = [];
+
   try {
-    const validPanels = [];
-    for (const panel of panels.filter((p) => p.generatedImagePath || p.generatedImageData)) {
-      if (panel.generatedImagePath && fs.existsSync(panel.generatedImagePath)) {
-        validPanels.push({ ...panel, resolvedPath: panel.generatedImagePath });
-      } else if (panel.generatedImageData) {
-        const tmpPath = path.join(app.getPath('temp'), `imagginary-panel-${panel.id}-${Date.now()}.png`);
-        const b64 = panel.generatedImageData.replace(/^data:image\/[^;]+;base64,/, '');
+    // Resolve each panel to a real file path, writing temp files for data-URL-only panels
+    const resolved = [];
+    for (const panel of panelList) {
+      if (panel.imagePath && fs.existsSync(panel.imagePath)) {
+        resolved.push({ imagePath: panel.imagePath, duration: panel.duration });
+      } else if (panel.imageData) {
+        const tmpPath = path.join(app.getPath('temp'), `imagginary-frame-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+        const b64 = panel.imageData.replace(/^data:image\/[^;]+;base64,/, '');
         fs.writeFileSync(tmpPath, Buffer.from(b64, 'base64'));
-        tempPanelFiles.push(tmpPath);
-        validPanels.push({ ...panel, resolvedPath: tmpPath });
+        tempFiles.push(tmpPath);
+        resolved.push({ imagePath: tmpPath, duration: panel.duration });
       }
     }
 
-    if (validPanels.length === 0) {
-      return { success: false, error: 'No generated panel images found on disk' };
+    if (resolved.length === 0) {
+      return { success: false, error: 'No generated panel images found' };
     }
 
+    // Build concat demuxer file — duplicate last entry to avoid ffmpeg trimming it
     const lines = [];
-    for (const panel of validPanels) {
-      lines.push(`file '${panel.resolvedPath.replace(/'/g, "'\\''")}'`);
-      lines.push(`duration ${panel.duration}`);
+    for (const { imagePath, duration } of resolved) {
+      lines.push(`file '${imagePath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`);
+      lines.push(`duration ${duration}`);
     }
-    const last = validPanels[validPanels.length - 1];
-    lines.push(`file '${last.resolvedPath.replace(/'/g, "'\\''")}'`);
+    const last = resolved[resolved.length - 1];
+    lines.push(`file '${last.imagePath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`);
     lines.push(`duration ${last.duration}`);
-
     fs.writeFileSync(concatFile, lines.join('\n'), 'utf8');
 
+    // Pick encoder — prefer VideoToolbox on Apple Silicon for speed
     const encoder = await new Promise((resolve) => {
-      const probe = spawn('ffmpeg', ['-hide_banner', '-encoders']);
+      const probe = spawn(ffmpegBin, ['-hide_banner', '-encoders']);
       let out = '';
       probe.stdout.on('data', (d) => { out += d; });
       probe.stderr.on('data', (d) => { out += d; });
       probe.on('close', () => {
-        if (out.includes('libx264')) resolve('libx264');
-        else if (out.includes('h264_videotoolbox')) resolve('h264_videotoolbox');
+        if (out.includes('h264_videotoolbox')) resolve('h264_videotoolbox');
         else resolve('libx264');
       });
+      probe.on('error', () => resolve('libx264'));
     });
 
     const pixFmtArgs = encoder === 'h264_videotoolbox' ? [] : ['-pix_fmt', 'yuv420p'];
+    const totalDuration = resolved.reduce((s, p) => s + p.duration, 0);
 
     const ffmpegArgs = [
       '-y', '-f', 'concat', '-safe', '0', '-i', concatFile,
-      '-vf', `scale=768:432:force_original_aspect_ratio=decrease,pad=768:432:(ow-iw)/2:(oh-ih)/2,fps=${fps}`,
+      '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
       '-c:v', encoder, ...pixFmtArgs, '-movflags', '+faststart', outputPath,
     ];
 
     await new Promise((resolve, reject) => {
-      const ff = spawn('ffmpeg', ffmpegArgs);
-      ff.stderr.on('data', (data) => process.stderr.write(data));
+      const ff = spawn(ffmpegBin, ffmpegArgs);
+      let stderrBuf = '';
+      ff.stderr.on('data', (data) => {
+        stderrBuf += data.toString();
+        // Parse time= from ffmpeg progress lines and emit percent
+        const match = stderrBuf.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+        if (match && totalDuration > 0) {
+          const elapsed = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
+          const percent = Math.min(99, Math.round((elapsed / totalDuration) * 100));
+          event.sender.send('animatic-progress', percent);
+          stderrBuf = '';
+        }
+      });
       ff.on('error', reject);
       ff.on('close', (code) => {
         if (code === 0) resolve();
@@ -980,12 +1015,14 @@ ipcMain.handle('export-animatic', async (_event, panels, outputPath, fps = 24) =
       });
     });
 
+    event.sender.send('animatic-progress', 100);
+    shell.openPath(path.dirname(outputPath));
     return { success: true, outputPath };
   } catch (err) {
     return { success: false, error: err.message };
   } finally {
     try { fs.unlinkSync(concatFile); } catch { /* ignore */ }
-    for (const tmp of tempPanelFiles) {
+    for (const tmp of tempFiles) {
       try { fs.unlinkSync(tmp); } catch { /* ignore */ }
     }
   }

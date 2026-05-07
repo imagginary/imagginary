@@ -127,6 +127,7 @@ export default function App() {
   const [wanModelWarning, setWanModelWarning] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -435,8 +436,41 @@ export default function App() {
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      setProgress({ panelId, status: 'error', progress: 0, message: 'Generation failed', error: msg });
+      const isOllamaError =
+        error instanceof Error &&
+        (error.name === 'TimeoutError' ||
+          error.message.includes('timed out') ||
+          error.message.includes('Ollama'));
+
+      if (isOllamaError && (window as any).electronAPI?.getSystemMemory) {
+        try {
+          const { freeMem } = await (window as any).electronAPI.getSystemMemory() as { totalMem: number; freeMem: number };
+          const freeMB = Math.round(freeMem / (1024 * 1024));
+          if (freeMem < 1.5 * 1024 * 1024 * 1024) {
+            setProgress({
+              panelId,
+              status: 'error',
+              progress: 0,
+              message: 'Not enough memory to generate',
+              error: `Your system only has ~${freeMB} MB free. Close Chrome or other apps and try again. Imagginary Pro runs on cloud GPUs with no RAM limits.`,
+              errorLink: { label: 'Learn about Imagginary Pro →', url: 'https://imagginary.com/pro' },
+            });
+            return;
+          }
+        } catch {
+          // fall through to generic error
+        }
+        setProgress({
+          panelId,
+          status: 'error',
+          progress: 0,
+          message: 'Generation timed out',
+          error: 'Ollama took too long to respond. Try closing other apps and generating again.',
+        });
+      } else {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        setProgress({ panelId, status: 'error', progress: 0, message: 'Generation failed', error: msg });
+      }
     }
   }
 
@@ -552,11 +586,13 @@ export default function App() {
 
   async function handleGenerateAnimatic() {
     setIsExporting(true);
+    setExportProgress(0);
     try {
-      const result = await animaticExporter.export(project.panels);
+      const result = await animaticExporter.export(project.panels, (percent) => setExportProgress(percent));
       if (!result.success && result.error) alert(result.error);
     } finally {
       setIsExporting(false);
+      setExportProgress(null);
     }
   }
 
@@ -780,6 +816,7 @@ export default function App() {
         onSetup={() => setShowWelcome(true)}
         isSaving={isSaving}
         isExporting={isExporting}
+        exportProgress={exportProgress}
       />
 
       {showScriptReader && (

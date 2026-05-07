@@ -45,7 +45,7 @@ Runs via Ollama and ComfyUI on your hardware. Your screenplay, your characters, 
 
 ## Download
 
-**[Download for Mac (Apple Silicon)](https://github.com/imagginary/imagginary/releases/download/v1.0.0/Imagginary-1.0.0-arm64.dmg)**
+**[Download for Mac (Apple Silicon)](https://github.com/imagginary/imagginary/releases/download/v1.0.1/Imagginary-1.0.0-arm64.dmg)**
 
 Windows and Linux AppImage coming soon.
 
@@ -129,6 +129,26 @@ npm run dist
 
 See `SETUP.md` for details.
 
+### ffmpeg binary (for Animatic export)
+
+Animatic MP4 export requires ffmpeg. The app looks for it in this order:
+
+1. **Bundled binary** at `resources/bin/ffmpeg` (Mac/Linux) or `resources/bin/ffmpeg.exe` (Windows)
+2. **System PATH** — used automatically in development if ffmpeg is installed
+
+For packaged builds, you must place an ffmpeg binary in `resources/bin/` before running `npm run dist`:
+
+```bash
+# Mac (Apple Silicon) — download a static build from https://evermeet.cx/ffmpeg/
+cp /path/to/ffmpeg resources/bin/ffmpeg
+chmod +x resources/bin/ffmpeg
+
+# Windows — download from https://www.gyan.dev/ffmpeg/builds/
+copy ffmpeg.exe resources\bin\ffmpeg.exe
+```
+
+ffmpeg is **not** downloaded at runtime. It must be present at build time. The `resources/bin/` directory is tracked in git with a `.gitkeep` file; the binaries themselves are excluded via `.gitignore`.
+
 ---
 
 ## Architecture
@@ -207,8 +227,8 @@ Open an issue describing the creator outcome you want, not the technical impleme
 
 ## Community
 
-- **Discord** — join the community, share panels, get help
-- **Twitter/X** — follow [@imagginary](https://twitter.com/imagginary) for updates
+- **Discord** - join the community, share panels, get help
+- **Twitter/X** - follow [@imagginaryapp](https://twitter.com/imagginaryapp) for updates
 - **imagginary.com** — website and documentation
 
 ---

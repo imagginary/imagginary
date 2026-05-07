@@ -1,0 +1,202 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create placeholder Ollama binary dirs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path resources/ollama/win
+          New-Item -ItemType Directory -Force -Path resources/ollama/mac
+          New-Item -ItemType Directory -Force -Path resources/bin
+
+      - name: Download ffmpeg (win64)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile "$env:TEMP\ffmpeg-win.zip"
+          Expand-Archive "$env:TEMP\ffmpeg-win.zip" -DestinationPath "$env:TEMP\ffmpeg-win"
+          $ffmpegExe = Get-ChildItem -Recurse "$env:TEMP\ffmpeg-win" -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $ffmpegExe.FullName "resources\bin\ffmpeg-win.exe"
+
+      - name: Build and package
+        run: npm run dist -- --publish never
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            release/*.exe
+            release/latest.yml
+          if-no-files-found: warn
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create placeholder Ollama binary dirs
+        run: mkdir -p resources/ollama/mac resources/ollama/win resources/bin
+
+      - name: Download ffmpeg (arm64)
+        run: |
+          curl -fsSL "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o /tmp/ffmpeg-mac.zip
+          unzip -o /tmp/ffmpeg-mac.zip -d resources/bin/
+          mv resources/bin/ffmpeg resources/bin/ffmpeg-mac
+          chmod +x resources/bin/ffmpeg-mac
+
+      - name: Build and package
+        run: npm run dist -- --publish never
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            release/*.dmg
+            release/latest-mac.yml
+          if-no-files-found: warn
+
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create placeholder Ollama binary dirs
+        run: mkdir -p resources/ollama/win resources/ollama/mac resources/bin
+
+      - name: Download ffmpeg (linux amd64)
+        run: |
+          curl -fsSL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o /tmp/ffmpeg-linux.tar.xz
+          tar -xf /tmp/ffmpeg-linux.tar.xz -C /tmp/
+          cp /tmp/ffmpeg-*-amd64-static/ffmpeg resources/bin/ffmpeg-linux
+          chmod +x resources/bin/ffmpeg-linux
+
+      - name: Build and package
+        run: npm run dist -- --publish never
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/latest-linux.yml
+          if-no-files-found: warn
+
+  smoke-test:
+    name: Smoke Test (Linux headless)
+    runs-on: ubuntu-latest
+    needs: [build-linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install virtual display
+        run: sudo apt-get install -y xvfb
+
+      - name: Start virtual display
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Launch Electron app in background
+        run: |
+          npx electron . --no-sandbox > /tmp/electron.log 2>&1 &
+          echo "ELECTRON_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait and verify app is still running
+        run: |
+          sleep 10
+          if kill -0 $ELECTRON_PID 2>/dev/null; then
+            echo "✓ Electron app is still running after 10 seconds — smoke test passed."
+            kill $ELECTRON_PID
+          else
+            echo "✗ Electron app exited prematurely — smoke test failed."
+            echo "--- Last lines of electron.log ---"
+            tail -30 /tmp/electron.log || true
+            echo "--- End of log ---"
+            exit 1
+          fi
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-linux, smoke-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: release/
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: release/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+            release/latest.yml
+            release/latest-mac.yml
+            release/latest-linux.yml
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
