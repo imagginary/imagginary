@@ -61,6 +61,14 @@ export interface Character {
   referenceImages?: Record<string, string>;
 }
 
+export interface PanelRevision {
+  id: string;
+  imageData: string;
+  prompt: string;
+  timestamp: number;
+  label?: string;
+}
+
 export interface Panel {
   id: string;
   order: number;
@@ -74,7 +82,8 @@ export interface Panel {
   characters: string[]; // character ids
   notes: string;
   duration: number; // seconds, 1-10
-  editHistory?: string[]; // previous generatedImageData values, max 10
+  editHistory?: string[]; // previous generatedImageData values, max 10 (session undo)
+  revisions?: PanelRevision[]; // persistent cross-session revision history, max 20
   // Phase 6 — Motion Layer
   motionDescription: string;       // what the user typed for motion
   motionClipPath: string | null;   // absolute path to generated MP4/WebP

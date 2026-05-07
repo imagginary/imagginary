@@ -16,6 +16,7 @@ import { animaticExporter } from './services/AnimaticExporter';
 import {
   Project,
   Panel,
+  PanelRevision,
   Character,
   ScriptShot,
   ServiceStatus,
@@ -415,7 +416,22 @@ export default function App() {
         if (result.success) savedPath = result.filePath ?? null;
       }
 
-      updatePanel(panelId, { generatedImageData: imageData, generatedImagePath: savedPath });
+      if (panel?.generatedImageData) {
+        const newRevision: PanelRevision = {
+          id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          imageData: panel.generatedImageData,
+          prompt: panel.shotDescription,
+          timestamp: Date.now(),
+        };
+        const currentRevisions = panel.revisions ?? [];
+        updatePanel(panelId, {
+          generatedImageData: imageData,
+          generatedImagePath: savedPath,
+          revisions: [...currentRevisions, newRevision].slice(-20),
+        });
+      } else {
+        updatePanel(panelId, { generatedImageData: imageData, generatedImagePath: savedPath });
+      }
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
@@ -611,14 +627,26 @@ export default function App() {
         if (result.success) savedPath = result.filePath ?? null;
       }
 
-      // Push current image into editHistory (max 10)
+      // Push current image into editHistory (session undo, max 10)
       const currentHistory = panel.editHistory ?? [];
       const newHistory = [...currentHistory, panel.generatedImageData].slice(-10);
+
+      // Push current image into persistent revision history (max 20)
+      const inpaintRevision: PanelRevision = {
+        id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        imageData: panel.generatedImageData,
+        prompt: editDescription,
+        timestamp: Date.now(),
+        label: `Edit: ${editDescription}`,
+      };
+      const currentRevisions = panel.revisions ?? [];
+      const newRevisions = [...currentRevisions, inpaintRevision].slice(-20);
 
       updatePanel(panelId, {
         generatedImageData: imageData,
         generatedImagePath: savedPath ?? panel.generatedImagePath,
         editHistory: newHistory,
+        revisions: newRevisions,
       });
 
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Edit applied' });
@@ -684,6 +712,30 @@ export default function App() {
     updatePanel(panelId, {
       generatedImageData: previous,
       editHistory: history,
+    });
+  }
+
+  function handleRestoreRevision(panelId: string, revision: PanelRevision) {
+    const panel = project.panels.find((p) => p.id === panelId);
+    if (!panel) return;
+    const currentRevisions = panel.revisions ?? [];
+    // Save current image as a revision before restoring, so the restore is reversible
+    const beforeRestoreRevision: PanelRevision | undefined = panel.generatedImageData
+      ? {
+          id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          imageData: panel.generatedImageData,
+          prompt: panel.shotDescription,
+          timestamp: Date.now(),
+          label: 'Before restore',
+        }
+      : undefined;
+    const remaining = currentRevisions.filter((r) => r.id !== revision.id);
+    const newRevisions = beforeRestoreRevision
+      ? [...remaining, beforeRestoreRevision].slice(-20)
+      : remaining;
+    updatePanel(panelId, {
+      generatedImageData: revision.imageData,
+      revisions: newRevisions,
     });
   }
 
@@ -815,9 +867,11 @@ export default function App() {
             onUndoEdit={handleUndoEdit}
             onAnimatePanel={handleAnimatePanel}
             onClearMotion={handleClearMotion}
+            onRestoreRevision={handleRestoreRevision}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
+            isPro={false}
           />
           <ShotInput
             value={shotInput}

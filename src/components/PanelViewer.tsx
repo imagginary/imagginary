@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw } from 'lucide-react';
-import { Panel, GenerationProgress } from '../types';
+import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock } from 'lucide-react';
+import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 
 interface PanelViewerProps {
@@ -11,9 +11,11 @@ interface PanelViewerProps {
   onUndoEdit?: (panelId: string) => void;
   onAnimatePanel?: (panelId: string, motionDescription: string) => void;
   onClearMotion?: (panelId: string) => void;
+  onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
+  isPro?: boolean;
 }
 
 const BRUSH_SIZES = [8, 16, 28, 44];
@@ -36,6 +38,15 @@ function getMotionPlaceholder(mood: string | null): string {
   return MOTION_PLACEHOLDERS[mood ?? ''] ?? 'Describe the motion: camera movement, subject action, atmosphere...';
 }
 
+function formatTimestamp(ts: number): string {
+  const now = Date.now();
+  const diff = now - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
 export default function PanelViewer({
   panel,
   progress,
@@ -44,9 +55,11 @@ export default function PanelViewer({
   onUndoEdit,
   onAnimatePanel,
   onClearMotion,
+  onRestoreRevision,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
+  isPro = false,
 }: PanelViewerProps) {
   const aspectRatio = effectiveAspectRatio ?? getAspectRatio(DEFAULT_ASPECT_RATIO_ID);
   const isGenerating =
@@ -68,6 +81,10 @@ export default function PanelViewer({
   const [animateMode, setAnimateMode] = useState(false);
   const [motionInput, setMotionInput] = useState('');
 
+  // History / compare state
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [compareRevisionId, setCompareRevisionId] = useState<string | null>(null);
+
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -83,6 +100,8 @@ export default function PanelViewer({
     setHasMask(false);
     setAnimateMode(false);
     setMotionInput('');
+    setHistoryOpen(false);
+    setCompareRevisionId(null);
   }, [panel?.id]);
 
   // Pre-fill motion input from saved description when opening animate mode
@@ -226,11 +245,219 @@ export default function PanelViewer({
     onAnimatePanel(panel.id, motionInput.trim());
   }
 
+  function handleOpenHistory() {
+    setEditMode(false);
+    setAnimateMode(false);
+    setHasMask(false);
+    setHistoryOpen(true);
+    setCompareRevisionId(null);
+  }
+
+  function handleCloseHistory() {
+    setHistoryOpen(false);
+    setCompareRevisionId(null);
+  }
+
+  function handleRestore(revision: PanelRevision) {
+    if (!panel) return;
+    onRestoreRevision?.(panel.id, revision);
+    handleCloseHistory();
+  }
+
+  const revisions = panel?.revisions ?? [];
+  // Newest first for display
+  const revisionsNewestFirst = [...revisions].reverse();
+  const compareRevision = compareRevisionId
+    ? revisions.find((r) => r.id === compareRevisionId) ?? null
+    : null;
+
   const canEdit = !!panel?.generatedImageData && !isGenerating;
   const canUndo = (panel?.editHistory?.length ?? 0) > 0 && !isGenerating;
   const canAnimate = !!panel?.generatedImageData;
   const hasClip = !!(panel?.motionClipData || panel?.motionClipPath);
+  const hasRevisions = revisions.length > 0;
 
+  // ── Pro gate for history ─────────────────────────────────────────────────────
+  if (historyOpen && !isPro) {
+    return (
+      <div className="relative flex-1 flex flex-col items-center justify-center bg-gray-950 min-h-0 p-6">
+        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-xs text-center shadow-2xl">
+          <History className="w-8 h-8 text-imagginary-400 mx-auto mb-3" />
+          <p className="text-sm text-gray-200 font-semibold mb-2">Revision History</p>
+          <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+            Full panel revision history and version compare is a Pro feature. See every version, compare side-by-side, and restore any previous version.
+          </p>
+          <button className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors mb-3">
+            Upgrade to Pro — $19/month
+          </button>
+          <button
+            onClick={handleCloseHistory}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+          >
+            Maybe later
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Compare mode ────────────────────────────────────────────────────────────
+  if (historyOpen && compareRevision && panel) {
+    return (
+      <div className="relative flex-1 flex flex-col bg-gray-950 min-h-0">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 shrink-0">
+          <button
+            onClick={() => setCompareRevisionId(null)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Back
+          </button>
+          <span className="text-xs text-gray-400 font-medium">Compare Versions</span>
+        </div>
+
+        {/* Split view */}
+        <div className="flex-1 flex gap-3 p-4 min-h-0 overflow-hidden">
+          {/* Left — selected revision */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-wide">
+                {compareRevision.label ?? formatTimestamp(compareRevision.timestamp)}
+              </span>
+              <span className="text-[10px] text-gray-600">{formatTimestamp(compareRevision.timestamp)}</span>
+            </div>
+            <div
+              className="flex-1 bg-gray-900 rounded-lg overflow-hidden border border-gray-800 min-h-0"
+              style={{ aspectRatio: aspectRatio.cssRatio, maxHeight: '100%' }}
+            >
+              <img
+                src={compareRevision.imageData}
+                alt="Previous version"
+                className="w-full h-full object-contain"
+                draggable={false}
+              />
+            </div>
+            {compareRevision.prompt && (
+              <p className="text-[10px] text-gray-600 px-1 truncate" title={compareRevision.prompt}>
+                {compareRevision.prompt}
+              </p>
+            )}
+            <button
+              onClick={() => handleRestore(compareRevision)}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Restore this version
+            </button>
+          </div>
+
+          {/* Right — current version */}
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-imagginary-400 font-mono uppercase tracking-wide">Current</span>
+            </div>
+            <div
+              className="flex-1 bg-gray-900 rounded-lg overflow-hidden border border-imagginary-800/50 min-h-0"
+              style={{ aspectRatio: aspectRatio.cssRatio, maxHeight: '100%' }}
+            >
+              {panel.generatedImageData ? (
+                <img
+                  src={panel.generatedImageData}
+                  alt="Current version"
+                  className="w-full h-full object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-700">
+                  <ImageOff className="w-8 h-8" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── History drawer ───────────────────────────────────────────────────────────
+  if (historyOpen) {
+    return (
+      <div className="relative flex-1 flex flex-col bg-gray-950 min-h-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <History className="w-3.5 h-3.5 text-gray-400" />
+            <span className="text-xs text-gray-300 font-medium">Revision History</span>
+            <span className="text-[10px] text-gray-600 font-mono">({revisions.length}/20)</span>
+          </div>
+          <button
+            onClick={handleCloseHistory}
+            className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Revision grid */}
+        <div className="flex-1 overflow-y-auto p-3">
+          {revisionsNewestFirst.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-gray-700">
+              <History className="w-8 h-8 mb-2" />
+              <p className="text-xs">No revisions yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {revisionsNewestFirst.map((rev, idx) => (
+                <div key={rev.id} className="flex flex-col gap-1.5">
+                  <div className="relative bg-gray-900 rounded-lg overflow-hidden border border-gray-800 hover:border-gray-700 transition-colors">
+                    <img
+                      src={rev.imageData}
+                      alt={`Revision ${revisions.length - idx}`}
+                      className="w-full object-contain"
+                      style={{ aspectRatio: aspectRatio.cssRatio }}
+                      draggable={false}
+                    />
+                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 rounded text-[9px] text-gray-400 font-mono">
+                      v{revisions.length - idx}
+                    </div>
+                  </div>
+                  <div className="px-0.5">
+                    <p className="text-[10px] text-gray-500">{formatTimestamp(rev.timestamp)}</p>
+                    {rev.prompt && (
+                      <p className="text-[10px] text-gray-600 truncate mt-0.5" title={rev.prompt}>
+                        {rev.prompt}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => handleRestore(rev)}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
+                      title="Restore this version"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => setCompareRevisionId(rev.id)}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
+                      title="Compare with current"
+                    >
+                      <Columns2 className="w-2.5 h-2.5" />
+                      Compare
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Normal view ──────────────────────────────────────────────────────────────
   return (
     <div className="relative flex-1 flex flex-col items-center justify-center bg-gray-950 min-h-0">
       {/* Panel image / video area */}
@@ -406,8 +633,8 @@ export default function PanelViewer({
         </div>
       </div>
 
-      {/* Toolbar row — Edit Region + Animate buttons */}
-      {(canEdit || canAnimate) && !isGenerating && (
+      {/* Toolbar row — Edit Region + Animate + History buttons */}
+      {(canEdit || canAnimate || hasRevisions) && !isGenerating && (
         <div className="w-full px-6 pb-1 flex items-center gap-2">
           {canEdit && (
             <button
@@ -453,6 +680,18 @@ export default function PanelViewer({
             >
               <Undo2 className="w-3 h-3" />
               Undo Edit
+            </button>
+          )}
+
+          {hasRevisions && (
+            <button
+              onClick={handleOpenHistory}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors ml-auto"
+              title={isPro ? 'View revision history' : 'Revision history — Pro feature'}
+            >
+              <History className="w-3 h-3" />
+              History ({revisions.length})
+              {!isPro && <Lock className="w-2.5 h-2.5 text-imagginary-500/60" />}
             </button>
           )}
         </div>
