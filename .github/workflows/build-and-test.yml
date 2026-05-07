@@ -101,9 +101,9 @@ jobs:
 
       - name: Download ffmpeg (linux amd64)
         run: |
-          curl -fsSL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o /tmp/ffmpeg-linux.tar.xz
+          curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" -o /tmp/ffmpeg-linux.tar.xz
           tar -xf /tmp/ffmpeg-linux.tar.xz -C /tmp/
-          cp /tmp/ffmpeg-*-amd64-static/ffmpeg resources/bin/ffmpeg-linux
+          cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffmpeg resources/bin/ffmpeg-linux
           chmod +x resources/bin/ffmpeg-linux
 
       - name: Build and package
