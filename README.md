@@ -45,7 +45,7 @@ Runs via Ollama and ComfyUI on your hardware. Your screenplay, your characters, 
 
 ## Download
 
-**[Download for Mac (Apple Silicon)](https://github.com/imagginary/imagginary/releases/download/v1.0.0/Imagginary-1.0.0-arm64.dmg)**
+**[Download for Mac (Apple Silicon)](https://github.com/imagginary/imagginary/releases/download/v1.0.1/Imagginary-1.0.0-arm64.dmg)**
 
 Windows and Linux AppImage coming soon.
 
@@ -227,8 +227,8 @@ Open an issue describing the creator outcome you want, not the technical impleme
 
 ## Community
 
-- **Discord** — join the community, share panels, get help
-- **Twitter/X** — follow [@imagginary](https://twitter.com/imagginary) for updates
+- **Discord** - join the community, share panels, get help
+- **Twitter/X** - follow [@imagginaryapp](https://twitter.com/imagginaryapp) for updates
 - **imagginary.com** — website and documentation
 
 ---

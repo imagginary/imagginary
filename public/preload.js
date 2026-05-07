@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkComfyUI: () => ipcRenderer.invoke('check-comfyui'),
   getComfyUIProxyPort: () => ipcRenderer.invoke('get-comfyui-proxy-port'),
 
+  // System info
+  getSystemMemory: () => ipcRenderer.invoke('get-system-memory'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Platform (safe to read in preload)
   platform: process.platform,
 });

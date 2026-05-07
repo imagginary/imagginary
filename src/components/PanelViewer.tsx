@@ -343,8 +343,16 @@ export default function PanelViewer({
           {hasError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 z-10">
               <AlertCircle className="w-10 h-10 text-red-500 mb-3" />
-              <p className="text-sm text-red-400 font-medium">Generation Failed</p>
+              <p className="text-sm text-red-400 font-medium">{progress?.message ?? 'Generation Failed'}</p>
               <p className="text-xs text-gray-500 mt-1 px-6 text-center">{progress?.error}</p>
+              {progress?.errorLink && (
+                <button
+                  className="mt-3 text-xs text-violet-400 hover:text-violet-300 underline underline-offset-2"
+                  onClick={() => (window as any).electronAPI?.openExternal(progress.errorLink!.url)}
+                >
+                  {progress.errorLink.label}
+                </button>
+              )}
             </div>
           )}
 

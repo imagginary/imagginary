@@ -420,8 +420,41 @@ export default function App() {
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      setProgress({ panelId, status: 'error', progress: 0, message: 'Generation failed', error: msg });
+      const isOllamaError =
+        error instanceof Error &&
+        (error.name === 'TimeoutError' ||
+          error.message.includes('timed out') ||
+          error.message.includes('Ollama'));
+
+      if (isOllamaError && (window as any).electronAPI?.getSystemMemory) {
+        try {
+          const { freeMem } = await (window as any).electronAPI.getSystemMemory() as { totalMem: number; freeMem: number };
+          const freeMB = Math.round(freeMem / (1024 * 1024));
+          if (freeMem < 1.5 * 1024 * 1024 * 1024) {
+            setProgress({
+              panelId,
+              status: 'error',
+              progress: 0,
+              message: 'Not enough memory to generate',
+              error: `Your system only has ~${freeMB} MB free. Close Chrome or other apps and try again. Imagginary Pro runs on cloud GPUs with no RAM limits.`,
+              errorLink: { label: 'Learn about Imagginary Pro →', url: 'https://imagginary.com/pro' },
+            });
+            return;
+          }
+        } catch {
+          // fall through to generic error
+        }
+        setProgress({
+          panelId,
+          status: 'error',
+          progress: 0,
+          message: 'Generation timed out',
+          error: 'Ollama took too long to respond. Try closing other apps and generating again.',
+        });
+      } else {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        setProgress({ panelId, status: 'error', progress: 0, message: 'Generation failed', error: msg });
+      }
     }
   }
 

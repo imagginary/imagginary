@@ -903,6 +903,15 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   shell.openPath(folderPath);
 });
 
+ipcMain.handle('get-system-memory', () => ({
+  totalMem: os.totalmem(),
+  freeMem: os.freemem(),
+}));
+
+ipcMain.handle('open-external', (_event, url) => {
+  shell.openExternal(url);
+});
+
 ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
   console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
 

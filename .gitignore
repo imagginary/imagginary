@@ -8,11 +8,9 @@ resources/ollama/win/ollama.exe
 
 # Build assets (provide your own or skip for now)
 assets/icon.icns
-assets/icon.ico
 assets/dmg-background.png
 assets/installer-header.bmp
 assets/installer-sidebar.bmp
-assets/entitlements.mac.plist
 
 # Claude Code session files
 .claude/

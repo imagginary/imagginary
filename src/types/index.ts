@@ -123,6 +123,7 @@ export interface GenerationProgress {
   progress: number;
   message: string;
   error?: string;
+  errorLink?: { label: string; url: string };
 }
 
 export interface CharacterGenerationProgress {
