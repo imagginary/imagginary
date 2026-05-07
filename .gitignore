@@ -26,6 +26,8 @@ assets/entitlements.mac.plist
 .env
 .env.local
 
-# ffmpeg binaries — place manually before building (see README)
-resources/bin/ffmpeg
-resources/bin/ffmpeg.exe
+# ffmpeg binaries are downloaded by CI (see .github/workflows/build.yml)
+# For local dev, install ffmpeg via: brew install ffmpeg
+resources/bin/ffmpeg-mac
+resources/bin/ffmpeg-win.exe
+resources/bin/ffmpeg-linux

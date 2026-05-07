@@ -50,10 +50,8 @@
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extraResources": [
-        {
-          "from": "resources/ollama/mac",
-          "to": "bin"
-        }
+        { "from": "resources/ollama/mac", "to": "bin" },
+        { "from": "resources/bin/ffmpeg-mac", "to": "bin/ffmpeg-mac" }
       ]
     },
     "win": {
@@ -62,10 +60,8 @@
       ],
       "icon": "assets/icon.ico",
       "extraResources": [
-        {
-          "from": "resources/ollama/win",
-          "to": "bin"
-        }
+        { "from": "resources/ollama/win", "to": "bin" },
+        { "from": "resources/bin/ffmpeg-win.exe", "to": "bin/ffmpeg-win.exe" }
       ]
     },
     "dmg": {
@@ -85,7 +81,10 @@
     },
     "linux": {
       "target": "AppImage",
-      "category": "Graphics"
+      "category": "Graphics",
+      "extraResources": [
+        { "from": "resources/bin/ffmpeg-linux", "to": "bin/ffmpeg-linux" }
+      ]
     }
   },
   "devDependencies": {

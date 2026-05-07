@@ -907,8 +907,10 @@ ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
   console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
 
   // Resolve ffmpeg: bundled binary first, then system PATH
-  const bundledSuffix = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  const bundledFfmpeg = path.join(process.resourcesPath, 'bin', bundledSuffix);
+  const platformBinary = process.platform === 'win32' ? 'ffmpeg-win.exe'
+    : process.platform === 'darwin' ? 'ffmpeg-mac'
+    : 'ffmpeg-linux';
+  const bundledFfmpeg = path.join(process.resourcesPath, 'bin', platformBinary);
   const ffmpegBin = await (async () => {
     if (fs.existsSync(bundledFfmpeg)) return bundledFfmpeg;
     return new Promise((resolve) => {
