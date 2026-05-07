@@ -207,8 +207,8 @@ Open an issue describing the creator outcome you want, not the technical impleme
 
 ## Community
 
-- **Discord** — join the community, share panels, get help
-- **Twitter/X** — follow [@imagginary](https://twitter.com/imagginary) for updates
+- **Discord** - join the community, share panels, get help
+- **Twitter/X** - follow [@imagginaryapp](https://twitter.com/imagginaryapp) for updates
 - **imagginary.com** — website and documentation
 
 ---
