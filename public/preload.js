@@ -26,7 +26,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveVideo: (base64Data, fileName) => ipcRenderer.invoke('save-video', base64Data, fileName),
 
   // Animatic export
-  exportAnimatic: (panels, outputPath, fps) => ipcRenderer.invoke('export-animatic', panels, outputPath, fps),
+  exportAnimatic: (panelList, outputPath) => ipcRenderer.invoke('export-animatic', panelList, outputPath),
+  onAnimaticProgress: (callback) => {
+    const handler = (_event, percent) => callback(percent);
+    ipcRenderer.on('animatic-progress', handler);
+    return () => ipcRenderer.removeListener('animatic-progress', handler);
+  },
 
   // ComfyUI integration
   deleteComfyInputFile: (filename) => ipcRenderer.invoke('delete-comfy-input-file', filename),

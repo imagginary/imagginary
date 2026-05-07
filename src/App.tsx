@@ -126,6 +126,7 @@ export default function App() {
   const [wanModelWarning, setWanModelWarning] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -536,11 +537,13 @@ export default function App() {
 
   async function handleGenerateAnimatic() {
     setIsExporting(true);
+    setExportProgress(0);
     try {
-      const result = await animaticExporter.export(project.panels);
+      const result = await animaticExporter.export(project.panels, (percent) => setExportProgress(percent));
       if (!result.success && result.error) alert(result.error);
     } finally {
       setIsExporting(false);
+      setExportProgress(null);
     }
   }
 
@@ -728,6 +731,7 @@ export default function App() {
         onSetup={() => setShowWelcome(true)}
         isSaving={isSaving}
         isExporting={isExporting}
+        exportProgress={exportProgress}
       />
 
       {showScriptReader && (

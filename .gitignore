@@ -25,3 +25,7 @@ assets/entitlements.mac.plist
 *.map
 .env
 .env.local
+
+# ffmpeg binaries — place manually before building (see README)
+resources/bin/ffmpeg
+resources/bin/ffmpeg.exe

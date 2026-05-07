@@ -129,6 +129,26 @@ npm run dist
 
 See `SETUP.md` for details.
 
+### ffmpeg binary (for Animatic export)
+
+Animatic MP4 export requires ffmpeg. The app looks for it in this order:
+
+1. **Bundled binary** at `resources/bin/ffmpeg` (Mac/Linux) or `resources/bin/ffmpeg.exe` (Windows)
+2. **System PATH** — used automatically in development if ffmpeg is installed
+
+For packaged builds, you must place an ffmpeg binary in `resources/bin/` before running `npm run dist`:
+
+```bash
+# Mac (Apple Silicon) — download a static build from https://evermeet.cx/ffmpeg/
+cp /path/to/ffmpeg resources/bin/ffmpeg
+chmod +x resources/bin/ffmpeg
+
+# Windows — download from https://www.gyan.dev/ffmpeg/builds/
+copy ffmpeg.exe resources\bin\ffmpeg.exe
+```
+
+ffmpeg is **not** downloaded at runtime. It must be present at build time. The `resources/bin/` directory is tracked in git with a `.gitkeep` file; the binaries themselves are excluded via `.gitignore`.
+
 ---
 
 ## Architecture
