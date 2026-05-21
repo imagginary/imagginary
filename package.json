@@ -28,6 +28,7 @@
     "appId": "com.imagginary.app",
     "productName": "Imagginary",
     "icon": "build/icon.png",
+    "afterSign": "scripts/notarize.js",
     "directories": {
       "output": "release"
     },
@@ -58,9 +59,6 @@
         }
       ],
       "icon": "build/icon.icns",
-      "notarize": {
-        "teamId": "87PJKC62W2"
-      },
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
