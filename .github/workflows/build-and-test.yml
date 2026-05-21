@@ -78,7 +78,7 @@ jobs:
         run: |
           CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
           security create-keychain -p "temp-password" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "temp-password" $KEYCHAIN_PATH
