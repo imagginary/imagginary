@@ -5,8 +5,8 @@ exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return;
 
-  if (!process.env.APPLE_ID) {
-    console.log('Skipping notarization — APPLE_ID not set');
+  if (!process.env.APPLE_API_KEY_ID) {
+    console.log('Skipping notarization — APPLE_API_KEY_ID not set');
     return;
   }
 
@@ -14,16 +14,26 @@ exports.default = async function notarizing(context) {
   const appPath = `${appOutDir}/${appName}.app`;
 
   console.log(`Notarizing: ${appPath}`);
-  console.log(`Apple ID: ${process.env.APPLE_ID}`);
-  console.log(`Team ID: ${process.env.APPLE_TEAM_ID}`);
-  console.log(`Password set: ${!!process.env.APPLE_APP_SPECIFIC_PASSWORD}`);
+  console.log(`Key ID: ${process.env.APPLE_API_KEY_ID}`);
+  console.log(`Issuer: ${process.env.APPLE_API_ISSUER}`);
+  console.log(`Key set: ${!!process.env.APPLE_API_KEY}`);
 
-  return await notarize({
-    tool: 'notarytool',
-    appBundleId: 'com.imagginary.app',
-    appPath,
-    appleId: process.env.APPLE_ID,
-    appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
-    teamId: process.env.APPLE_TEAM_ID,
-  });
+  const keyPath = `/tmp/AuthKey_${process.env.APPLE_API_KEY_ID}.p8`;
+  require('fs').writeFileSync(keyPath, process.env.APPLE_API_KEY);
+
+  try {
+    await notarize({
+      tool: 'notarytool',
+      appPath,
+      appleApiKey: keyPath,
+      appleApiKeyId: process.env.APPLE_API_KEY_ID,
+      appleApiIssuer: process.env.APPLE_API_ISSUER,
+    });
+    console.log('Notarization complete');
+  } catch (err) {
+    console.error('Notarization failed:', err);
+    throw err;
+  } finally {
+    require('fs').unlinkSync(keyPath);
+  }
 };
