@@ -51,6 +51,7 @@ jobs:
   build-macos:
     name: Build (macOS)
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
