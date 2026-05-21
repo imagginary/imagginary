@@ -41,34 +41,28 @@ export interface WelcomeCompleteParams {
 interface Props {
   serviceStatus: ServiceStatus;
   servicesAutoStarted?: boolean;
+  comfyuiInstallMessage?: string;
   onRefreshServices: () => void;
   onComplete: (params: WelcomeCompleteParams) => void;
 }
 
-function ServiceRow({ label, status, fix }: { label: string; status: string; fix?: string }) {
+function ServiceRow({ label, status, statusText }: { label: string; status: string; statusText?: string }) {
   const isOk = status === 'connected';
   const isChecking = status === 'checking';
+  const isInstalling = !!statusText && !isOk && !isChecking;
+  const dotColor = isOk ? 'bg-green-400' : isChecking ? 'bg-yellow-400 animate-pulse' : isInstalling ? 'bg-yellow-400 animate-pulse' : 'bg-red-500';
+  const textColor = isOk ? 'text-green-400' : (isChecking || isInstalling) ? 'text-yellow-400' : 'text-red-400';
+  const displayText = statusText ?? (isOk ? 'Running — ready' : isChecking ? 'Checking…' : 'Not running');
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-3">
-        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-          isOk ? 'bg-green-400' : isChecking ? 'bg-yellow-400 animate-pulse' : 'bg-red-500'
-        }`} />
-        <span className="text-sm text-gray-200 w-28">{label}</span>
-        <span className={`text-sm ${isOk ? 'text-green-400' : isChecking ? 'text-yellow-400' : 'text-red-400'}`}>
-          {isOk ? 'Running — ready' : isChecking ? 'Checking…' : 'Not running'}
-        </span>
-      </div>
-      {!isOk && !isChecking && fix && (
-        <div className="ml-[26px] text-xs text-gray-500 font-mono bg-gray-900 rounded px-2 py-1 mt-0.5">
-          {fix}
-        </div>
-      )}
+    <div className="flex items-center gap-3">
+      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} />
+      <span className="text-sm text-gray-200 w-28">{label}</span>
+      <span className={`text-sm ${textColor}`}>{displayText}</span>
     </div>
   );
 }
 
-export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false, onRefreshServices, onComplete }: Props) {
+export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false, comfyuiInstallMessage = '', onRefreshServices, onComplete }: Props) {
   // Skip step 1 (service setup) entirely when the main process auto-started services.
   const [step, setStep] = useState(servicesAutoStarted ? 2 : 1);
   const [projectType, setProjectType] = useState<ProjectType | null>(null);
@@ -164,14 +158,24 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                   <div className="w-8 h-8 rounded-full border-2 border-imagginary-500 border-t-transparent animate-spin" />
                   <div className="flex flex-col gap-2 w-full">
                     <ServiceRow label="Ollama" status={serviceStatus.ollama} />
-                    <ServiceRow label="ComfyUI" status={serviceStatus.comfyui} />
+                    <ServiceRow
+                      label="ComfyUI"
+                      status={serviceStatus.comfyui}
+                      statusText={
+                        serviceStatus.comfyui !== 'connected' && comfyuiInstallMessage
+                          ? comfyuiInstallMessage
+                          : serviceStatus.comfyui !== 'connected'
+                          ? 'Setting up ComfyUI…'
+                          : undefined
+                      }
+                    />
                     <div className="border-t border-gray-800 pt-2 mt-1">
                       <ServiceRow label="InstantMesh" status={serviceStatus.instantmesh} />
                       <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — multi-angle character consistency</p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-600 text-center">
-                    ComfyUI may take 1–2 min on first launch. Checking automatically…
+                    Setting up your AI engine — this only happens once. Checking automatically…
                   </p>
                 </div>
               ) : (

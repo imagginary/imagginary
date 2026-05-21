@@ -1,5 +1,7 @@
 import * as electronAPI from 'electron/main';
 const { app, BrowserWindow, ipcMain, dialog, shell, session } = electronAPI;
+import updaterPkg from 'electron-updater';
+const { autoUpdater } = updaterPkg;
 import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -12,6 +14,21 @@ import net from 'node:net';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ── Debug log file ──────────────────────────────────────────────────────────
+const _logDir = process.platform === 'win32'
+  ? path.join(os.homedir(), 'AppData', 'Roaming', 'Imagginary')
+  : path.join(os.homedir(), 'Library', 'Application Support', 'Imagginary');
+try { fs.mkdirSync(_logDir, { recursive: true }); } catch { /* ignore */ }
+const _logStream = fs.createWriteStream(path.join(_logDir, 'debug.log'), { flags: 'a' });
+const _origLog   = console.log.bind(console);
+const _origWarn  = console.warn.bind(console);
+const _origError = console.error.bind(console);
+const _writeLine = (prefix, args) => {
+  _logStream.write(`${new Date().toISOString()} ${prefix}${args.map(String).join(' ')}\n`);
+};
+console.log   = (...a) => { _writeLine('',        a); _origLog(...a);   };
+console.warn  = (...a) => { _writeLine('[WARN] ', a); _origWarn(...a);  };
+console.error = (...a) => { _writeLine('[ERR]  ', a); _origError(...a); };
 
 // ── Service process handles (kept for graceful shutdown) ─────────────────────
 
@@ -22,9 +39,10 @@ let mainWindow = null;
 // Result reported to the renderer via get-service-launch-status IPC
 const serviceLaunchStatus = {
   autoStartAttempted: false,
-  ollama: 'not-attempted',   // 'external' | 'started' | 'failed' | 'not-attempted'
-  comfyui: 'not-attempted',  // same
+  ollama: 'not-attempted',        // 'external' | 'started' | 'failed' | 'not-attempted'
+  comfyui: 'not-attempted',       // same
   modelPresent: false,
+  comfyuiInstallMessage: '',      // live status shown in WelcomeFlow while ComfyUI sets up
 };
 
 // ── Utility helpers ──────────────────────────────────────────────────────────
@@ -109,10 +127,14 @@ async function startOllama(loadingWin) {
   }
 
   try {
+    const ollamaEnv = { ...process.env, HOME: os.homedir() };
+    if (process.platform === 'win32' && app.isPackaged) {
+      ollamaEnv.OLLAMA_RUNNERS_DIR = path.join(process.resourcesPath, 'bin', 'lib', 'ollama');
+    }
     ollamaProcess = spawn(binary, ['serve'], {
       stdio: 'pipe',
       detached: false,
-      env: { ...process.env, HOME: os.homedir() },
+      env: ollamaEnv,
     });
 
     ollamaProcess.stdout.on('data', (d) => console.log('[Ollama]', d.toString().trim()));
@@ -140,9 +162,9 @@ async function startOllama(loadingWin) {
 
 // ── Ollama model ensure ──────────────────────────────────────────────────────
 
-async function ensureOllamaModel(loadingWin, model = 'qwen2.5:7b') {
-  sendLoadingUpdate(loadingWin, 'Checking AI model…', 22);
-
+/** Returns true if `model` is present in Ollama's local model list. */
+async function checkModelPresent(model) {
+  const modelBase = model.split(':')[0];
   const tags = await new Promise((resolve) => {
     http.get('http://localhost:11434/api/tags', { timeout: 5000 }, (res) => {
       let data = '';
@@ -150,42 +172,205 @@ async function ensureOllamaModel(loadingWin, model = 'qwen2.5:7b') {
       res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
     }).on('error', () => resolve(null));
   });
-
   const models = tags?.models || [];
-  const modelBase = model.split(':')[0];
-  if (models.some((m) => m.name === model || m.name.startsWith(modelBase + ':'))) {
-    console.log(`[Ollama] Model ${model} already present.`);
+  return models.some((m) => m.name === model || m.name.startsWith(modelBase + ':'));
+}
+
+/**
+ * Run one `ollama pull` attempt.
+ * Parses NDJSON progress lines and streams MB progress to the loading screen.
+ * Returns true if the process exited 0, false otherwise.
+ */
+const PULL_STALL_MS   = 45_000;   // kill if no bytes for 45 s
+const PULL_CEILING_MS = 20 * 60_000; // hard cap per attempt: 20 min
+
+function attemptPullOnce(loadingWin, model) {
+  return new Promise((resolve) => {
+    const binary = getOllamaBinary();
+    const pull = spawn(binary, ['pull', model], {
+      stdio: 'pipe',
+      env: { ...process.env, HOME: os.homedir(), PATH: ENRICHED_PATH, OLLAMA_HOST: '127.0.0.1:11434' },
+    });
+
+    let buf = '';
+    let done = false;
+
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      clearTimeout(stallTimer);
+      clearTimeout(ceilingTimer);
+      resolve(result);
+    };
+
+    // Stall detector — reset on every data event
+    let stallTimer = setTimeout(() => {
+      console.warn('[Ollama pull] Stalled — no data for 45 s. Killing process.');
+      pull.kill();
+      finish(false);
+    }, PULL_STALL_MS);
+
+    // Hard ceiling
+    const ceilingTimer = setTimeout(() => {
+      console.warn('[Ollama pull] Hard timeout (20 min). Killing process.');
+      pull.kill();
+      finish(false);
+    }, PULL_CEILING_MS);
+
+    const onData = (chunk) => {
+      // Reset stall timer on every received byte
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        console.warn('[Ollama pull] Stalled — no data for 45 s. Killing process.');
+        pull.kill();
+        finish(false);
+      }, PULL_STALL_MS);
+
+      buf += chunk.toString();
+      const lines = buf.split('\n');
+      buf = lines.pop(); // keep trailing incomplete line
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        console.log('[Ollama pull]', line);
+        try {
+          const obj = JSON.parse(line);
+          if (obj.total && obj.completed !== undefined) {
+            const pct     = Math.round((obj.completed / obj.total) * 100);
+            const mb      = Math.round(obj.completed / 1024 / 1024);
+            const totalMb = Math.round(obj.total / 1024 / 1024);
+            sendLoadingUpdate(
+              loadingWin,
+              `Downloading AI model: ${mb} MB of ${totalMb} MB`,
+              25 + Math.round(pct * 0.28)
+            );
+          } else if (obj.status && !obj.total) {
+            sendLoadingUpdate(loadingWin, `AI model: ${obj.status}`, 26);
+          }
+        } catch { /* plain-text line — already logged */ }
+      }
+    };
+
+    pull.stdout.on('data', onData);
+    pull.stderr.on('data', onData);
+    pull.on('error', (err) => { console.error('[Ollama pull] spawn error:', err.message); finish(false); });
+    pull.on('close', (code) => { console.log('[Ollama pull] exit code:', code); finish(code === 0); });
+  });
+}
+
+/**
+ * Ensure an Ollama model is present, pulling if necessary.
+ * Tries PREFERRED_MODEL first, then silently falls back to FALLBACK_MODEL.
+ * Only surfaces the Retry button after both have exhausted auto-retries.
+ * Never returns until one model is confirmed present.
+ */
+async function ensureOllamaModel(loadingWin, preferredModel = 'qwen2.5:1.5b') {
+  const FALLBACK_MODEL = 'qwen2.5:1.5b';
+  const MAX_AUTO = 3;
+
+  sendLoadingUpdate(loadingWin, 'Waiting for Ollama to initialise…', 21);
+
+  // Ensure ~/.ollama/id_ed25519 exists before attempting any pull.
+  // Only `ollama serve` generates this key — `ollama list` / `ollama pull` do not.
+  // When an external server is already on 11434 we spin up the bundled binary on
+  // a different port just long enough for it to write the key, then kill it.
+  const ollamaKeyPath = path.join(os.homedir(), '.ollama', 'id_ed25519');
+  if (app.isPackaged && !fs.existsSync(ollamaKeyPath)) {
+    const ollamaBin = path.join(process.resourcesPath, 'bin', 'ollama');
+    console.log('[Ollama] id_ed25519 missing — spawning temp serve on :11435 to init data dir…');
+    const tempServe = spawn(ollamaBin, ['serve'], {
+      env: { ...process.env, HOME: os.homedir(), OLLAMA_HOST: '127.0.0.1:11435' },
+      stdio: 'ignore',
+    });
+    // Wait up to 5 s for the key to appear, then kill regardless
+    const keyDeadlineInit = Date.now() + 5_000;
+    while (!fs.existsSync(ollamaKeyPath) && Date.now() < keyDeadlineInit) {
+      await sleep(200);
+    }
+    tempServe.kill();
+    console.log(
+      fs.existsSync(ollamaKeyPath)
+        ? '[Ollama] id_ed25519 created — temp serve killed.'
+        : '[Ollama] id_ed25519 still missing after 5 s — proceeding anyway.'
+    );
+  }
+
+  // Wait for ~/.ollama/id_ed25519 — port open ≠ data dir ready on first run
+  const keyDeadline = Date.now() + 15_000;
+  while (!fs.existsSync(ollamaKeyPath) && Date.now() < keyDeadline) {
+    await sleep(500);
+  }
+  console.log(
+    fs.existsSync(ollamaKeyPath)
+      ? '[Ollama] Data directory ready.'
+      : '[Ollama] Data directory not ready after 15s — proceeding anyway.'
+  );
+
+  sendLoadingUpdate(loadingWin, 'Checking AI model…', 22);
+
+  // Check if either model is already present — skip pull entirely
+  if (await checkModelPresent(preferredModel)) {
+    console.log(`[Ollama] Model ${preferredModel} already present.`);
+    return true;
+  }
+  if (await checkModelPresent(FALLBACK_MODEL)) {
+    console.log(`[Ollama] Fallback model ${FALLBACK_MODEL} already present.`);
     return true;
   }
 
-  console.log(`[Ollama] Model ${model} not found — pulling…`);
-  sendLoadingUpdate(loadingWin, `Downloading AI model (first launch, ~4GB)…`, 25);
-
-  const binary = getOllamaBinary();
-  try {
-    await new Promise((resolve, reject) => {
-      const pull = spawn(binary, ['pull', model], {
-        stdio: 'pipe',
-        env: { ...process.env, HOME: os.homedir() },
-      });
-      const onLine = (d) => {
-        const line = d.toString().trim();
-        console.log('[Ollama pull]', line);
-        const match = line.match(/(\d+)%/);
-        if (match) {
-          const pct = parseInt(match[1], 10);
-          sendLoadingUpdate(loadingWin, `Downloading AI model… ${pct}%`, 25 + Math.round(pct * 0.28));
+  // tryPullModel — attempt MAX_AUTO pulls of a single model, return true on success
+  async function tryPullModel(model, sizeHint) {
+    let autoRetries = 0;
+    while (autoRetries < MAX_AUTO) {
+      console.log(`[Ollama] Pulling ${model} (attempt ${autoRetries + 1}/${MAX_AUTO})…`);
+      sendLoadingUpdate(loadingWin, `Downloading AI model${sizeHint ? ' ' + sizeHint : ''}…`, 25);
+      const pullOk = await attemptPullOnce(loadingWin, model);
+      if (pullOk) {
+        sendLoadingUpdate(loadingWin, 'Verifying AI model…', 53);
+        if (await checkModelPresent(model)) {
+          console.log(`[Ollama] Model ${model} verified in /api/tags.`);
+          return true;
         }
-      };
-      pull.stdout.on('data', onLine);
-      pull.stderr.on('data', onLine);
-      pull.on('error', reject);
-      pull.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ollama pull exited with code ${code}`)));
-    });
-    return true;
-  } catch (err) {
-    console.error('[Ollama] Model pull failed:', err.message);
+        console.warn('[Ollama] Pull reported success but model absent from /api/tags.');
+      }
+      autoRetries++;
+      if (autoRetries < MAX_AUTO) {
+        const msg = `Download failed — retrying (${autoRetries + 1}/${MAX_AUTO})…`;
+        console.warn('[Ollama]', msg);
+        sendLoadingUpdate(loadingWin, msg, 25);
+        await sleep(3000);
+      }
+    }
     return false;
+  }
+
+  // Outer loop — user-driven retries restart the full preferred→fallback cascade
+  while (true) {
+    // Try preferred model first
+    const preferredOk = await tryPullModel(preferredModel, '(~4 GB, first launch)');
+    if (preferredOk) return true;
+
+    // Silently try the smaller fallback before bothering the user
+    console.warn(`[Ollama] ${preferredModel} failed — trying fallback ${FALLBACK_MODEL}…`);
+    sendLoadingUpdate(loadingWin, `Trying smaller model (${FALLBACK_MODEL}, ~1 GB)…`, 25);
+    const fallbackOk = await tryPullModel(FALLBACK_MODEL, '(~1 GB)');
+    if (fallbackOk) return true;
+
+    // Both exhausted — show Retry button and wait for user
+    console.error('[Ollama] Both models failed. Waiting for user retry.');
+    if (loadingWin && !loadingWin.isDestroyed()) {
+      loadingWin.webContents.send(
+        'show-retry-button',
+        'AI model download failed — check your internet connection and click Retry.'
+      );
+    }
+    await new Promise((resolve) => ipcMain.once('retry-model-pull', resolve));
+
+    if (loadingWin && !loadingWin.isDestroyed()) {
+      loadingWin.webContents.send('hide-retry-button');
+    }
+    sendLoadingUpdate(loadingWin, 'Retrying AI model download…', 25);
+    await sleep(1000);
   }
 }
 
@@ -217,63 +402,336 @@ async function findComfyUIPath() {
 }
 
 /** Returns true if a command is available on PATH. */
-function checkCommand(cmd, args = ['--version']) {
+// Packaged Electron apps on macOS get a minimal launchd PATH (/usr/bin:/bin only).
+// Homebrew (/opt/homebrew/bin) and user installs (/usr/local/bin) are not included.
+// We build an enriched PATH and probe absolute candidate paths for tools.
+const ENRICHED_PATH = process.platform === 'win32'
+  ? [process.env.PATH || ''].join(';')
+  : [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/opt/anaconda3/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      process.env.PATH || '',
+    ].join(':');
+
+const GIT_CANDIDATES = process.platform === 'win32'
+  ? [
+      'C:\\Program Files\\Git\\bin\\git.exe',
+      'C:\\Program Files\\Git\\cmd\\git.exe',
+      'C:\\Program Files (x86)\\Git\\bin\\git.exe',
+      'git.exe',
+    ]
+  : [
+      '/usr/bin/git',
+      '/opt/homebrew/bin/git',
+      '/usr/local/bin/git',
+    ];
+
+const PYTHON_CANDIDATES = process.platform === 'win32'
+  ? [
+      // Standard Python.org installer locations on Windows
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python310', 'python.exe'),
+      'C:\\Python311\\python.exe',
+      'C:\\Python312\\python.exe',
+      'python.exe',
+      'python3.exe',
+    ]
+  : [
+      '/opt/homebrew/bin/python3',
+      '/usr/local/bin/python3',
+      '/opt/anaconda3/bin/python3',
+      // Python.org framework installs
+      '/Library/Frameworks/Python.framework/Versions/3.13/bin/python3',
+      '/Library/Frameworks/Python.framework/Versions/3.12/bin/python3',
+      '/Library/Frameworks/Python.framework/Versions/3.11/bin/python3',
+      '/Library/Frameworks/Python.framework/Versions/3.10/bin/python3',
+      '/Library/Frameworks/Python.framework/Versions/3.9/bin/python3',
+      '/usr/bin/python3',
+    ];
+
+// Embedded Python location for Windows (set up automatically if no system Python found)
+const WIN_PYTHON_DIR = path.join(os.homedir(), 'AppData', 'Roaming', 'Imagginary', 'python');
+const WIN_PYTHON_EXE = path.join(WIN_PYTHON_DIR, 'python.exe');
+
+/** Try each candidate path and return the first one that runs successfully. */
+function findCommand(candidates) {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: 5000 }, (err) => resolve(!err));
+    let i = 0;
+    function tryNext() {
+      if (i >= candidates.length) return resolve(null);
+      const cmd = candidates[i++];
+      console.log('[findCommand] trying:', cmd);
+      execFile(cmd, ['--version'], { timeout: 5000, env: { ...process.env, PATH: ENRICHED_PATH } }, (err) => {
+        console.log(`[findCommand] ${cmd}: ${err ? 'not found — ' + err.code : 'OK'}`);
+        if (!err) resolve(cmd);
+        else tryNext();
+      });
+    }
+    tryNext();
+  });
+}
+
+/** Download a URL to a local file, following redirects. */
+function httpsDownload(url, destPath) {
+  return new Promise((resolve, reject) => {
+    function get(u) {
+      https.get(u, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return get(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed: HTTP ${res.statusCode} from ${u}`));
+        }
+        const file = fs.createWriteStream(destPath);
+        res.pipe(file);
+        file.on('finish', () => file.close(resolve));
+        file.on('error', (e) => { fs.unlink(destPath, () => {}); reject(e); });
+      }).on('error', reject);
+    }
+    get(url);
+  });
+}
+
+/**
+ * Ensure a working Python 3 binary is available on Windows.
+ * If a system Python is found, returns its path immediately.
+ * Otherwise downloads the Python 3.11 embeddable package, bootstraps pip,
+ * and installs virtualenv — then returns the embedded python.exe path.
+ * macOS: never called.
+ */
+async function ensureWindowsPython(setInstallMsg) {
+  // Already set up from a previous launch
+  if (fs.existsSync(WIN_PYTHON_EXE)) {
+    console.log('[Python] Using cached embedded Python at', WIN_PYTHON_EXE);
+    return WIN_PYTHON_EXE;
+  }
+
+  // Check for a system Python first (rare but possible)
+  const systemPython = await findCommand(PYTHON_CANDIDATES);
+  if (systemPython) {
+    console.log('[Python] Found system Python at', systemPython);
+    return systemPython;
+  }
+
+  // No Python found — download the embeddable package
+  console.log('[Python] No system Python found — downloading embeddable Python 3.11…');
+  setInstallMsg('Setting up Python…');
+
+  const zipUrl = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip';
+  const zipPath = path.join(os.tmpdir(), 'python-embed.zip');
+
+  await httpsDownload(zipUrl, zipPath);
+  console.log('[Python] Downloaded embeddable package to', zipPath);
+
+  fs.mkdirSync(WIN_PYTHON_DIR, { recursive: true });
+
+  // Extract (Windows 10+ tar.exe supports zip)
+  await new Promise((resolve, reject) => {
+    const tar = spawn('tar', ['-xf', zipPath, '-C', WIN_PYTHON_DIR], { stdio: 'pipe' });
+    tar.stderr.on('data', (d) => console.log('[Python extract]', d.toString().trim()));
+    tar.on('error', reject);
+    tar.on('close', (code) => {
+      fs.unlink(zipPath, () => {});
+      code === 0 ? resolve() : reject(new Error(`Python extraction failed (code ${code})`));
+    });
+  });
+
+  // The embeddable package ships with a python3XX._pth file that disables site-packages
+  // by default (keeps '#import site' commented). Uncomment it so pip and installed
+  // packages are importable.
+  const pthFiles = fs.readdirSync(WIN_PYTHON_DIR).filter((f) => f.endsWith('._pth'));
+  for (const pthFile of pthFiles) {
+    const pthPath = path.join(WIN_PYTHON_DIR, pthFile);
+    const pth = fs.readFileSync(pthPath, 'utf8');
+    fs.writeFileSync(pthPath, pth.replace('#import site', 'import site'), 'utf8');
+    console.log('[Python] Enabled site-packages in', pthFile);
+  }
+  fs.mkdirSync(path.join(WIN_PYTHON_DIR, 'Lib', 'site-packages'), { recursive: true });
+
+  // Bootstrap pip via get-pip.py
+  console.log('[Python] Bootstrapping pip…');
+  const getPipPath = path.join(os.tmpdir(), 'get-pip.py');
+  await httpsDownload('https://bootstrap.pypa.io/get-pip.py', getPipPath);
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(WIN_PYTHON_EXE, [getPipPath], { stdio: 'pipe' });
+    proc.stdout.on('data', (d) => console.log('[pip bootstrap]', d.toString().trim()));
+    proc.stderr.on('data', (d) => console.log('[pip bootstrap]', d.toString().trim()));
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      fs.unlink(getPipPath, () => {});
+      code === 0 ? resolve() : reject(new Error(`pip bootstrap failed (code ${code})`));
+    });
+  });
+
+  // Install virtualenv — the embeddable Python lacks ensurepip so we can't use
+  // the stdlib 'venv' module; virtualenv works without it.
+  console.log('[Python] Installing virtualenv…');
+  await new Promise((resolve, reject) => {
+    const proc = spawn(WIN_PYTHON_EXE, ['-m', 'pip', 'install', '--quiet', 'virtualenv'], { stdio: 'pipe' });
+    proc.stdout.on('data', (d) => console.log('[pip]', d.toString().trim()));
+    proc.stderr.on('data', (d) => console.log('[pip]', d.toString().trim()));
+    proc.on('error', reject);
+    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`virtualenv install failed (code ${code})`)));
+  });
+
+  console.log('[Python] Embedded Python ready at', WIN_PYTHON_EXE);
+  return WIN_PYTHON_EXE;
+}
+
+/**
+ * Download ComfyUI as a ZIP (no git required).
+ * Used on Windows where git is rarely pre-installed.
+ */
+function downloadComfyUIZip(comfyPath, setInstallMsg) {
+  return new Promise((resolve, reject) => {
+    const zipUrl = 'https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip';
+    const zipDest = path.join(os.tmpdir(), 'comfyui-master.zip');
+    const extractDir = path.dirname(comfyPath);
+
+    setInstallMsg('Downloading ComfyUI… (first launch, ~150 MB)');
+    console.log('[ComfyUI] Downloading zip from', zipUrl);
+
+    httpsDownload(zipUrl, zipDest).then(() => {
+      setInstallMsg('Extracting ComfyUI…');
+      console.log('[ComfyUI] Extracting', zipDest, 'to', extractDir);
+      const tar = spawn('tar', ['-xf', zipDest, '-C', extractDir], { stdio: 'pipe' });
+      tar.stderr.on('data', (d) => console.log('[ComfyUI extract]', d.toString().trim()));
+      tar.on('error', reject);
+      tar.on('close', (code) => {
+        fs.unlink(zipDest, () => {});
+        if (code !== 0) return reject(new Error(`Extraction failed (code ${code})`));
+        const extracted = path.join(extractDir, 'ComfyUI-master');
+        try { fs.renameSync(extracted, comfyPath); } catch (e) { return reject(e); }
+        console.log('[ComfyUI] Extracted to', comfyPath);
+        resolve();
+      });
+    }).catch(reject);
   });
 }
 
 /** Clone ComfyUI and pip-install its deps. Returns the install path, or null on failure. */
 async function installComfyUI(loadingWin) {
+  console.log('[Phase14] installComfyUI() called');
   const comfyPath = path.join(os.homedir(), 'ComfyUI');
 
-  sendLoadingUpdate(loadingWin, 'Checking prerequisites for ComfyUI…', 56);
+  const setInstallMsg = (msg) => {
+    serviceLaunchStatus.comfyuiInstallMessage = msg;
+    sendLoadingUpdate(loadingWin, msg, 56);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('comfyui-status-update', msg);
+    }
+  };
 
-  const gitOk = await checkCommand('git');
-  if (!gitOk) {
-    sendLoadingUpdate(loadingWin, '⚠ git not found — install Xcode Command Line Tools', 57);
+  setInstallMsg('Checking prerequisites for ComfyUI…');
+  console.log('[ComfyUI] Checking for git and python3…');
+
+  const gitBin = await findCommand(GIT_CANDIDATES);
+  if (!gitBin && process.platform !== 'win32') {
+    setInstallMsg('⚠ git not found — install Xcode Command Line Tools');
     console.warn('[ComfyUI] git unavailable — cannot auto-install');
     return null;
   }
-
-  let pythonBin = null;
-  for (const py of ['python3', 'python']) {
-    if (await checkCommand(py)) { pythonBin = py; break; }
-  }
-  if (!pythonBin) {
-    sendLoadingUpdate(loadingWin, '⚠ Python 3 not found — install Python to continue', 57);
-    console.warn('[ComfyUI] Python unavailable — cannot auto-install');
-    return null;
+  if (!gitBin) {
+    console.log('[ComfyUI] git not found on Windows — will use ZIP download');
+  } else {
+    console.log('[ComfyUI] Using git:', gitBin);
   }
 
-  sendLoadingUpdate(loadingWin, 'Installing ComfyUI (first launch, ~2 min)…', 57);
-  console.log('[ComfyUI] Cloning to', comfyPath);
+  const isWin = process.platform === 'win32';
+
+  let pythonBin;
+  if (isWin) {
+    try {
+      pythonBin = await ensureWindowsPython(setInstallMsg);
+    } catch (err) {
+      setInstallMsg(`⚠ Python setup failed: ${err.message.slice(0, 50)}`);
+      console.error('[ComfyUI] Windows Python setup failed:', err.message);
+      return null;
+    }
+  } else {
+    pythonBin = await findCommand(PYTHON_CANDIDATES);
+    if (!pythonBin) {
+      setInstallMsg('⚠ Python 3 not found — install Python to continue');
+      console.warn('[ComfyUI] Python unavailable — cannot auto-install');
+      return null;
+    }
+  }
+  console.log('[ComfyUI] Using python:', pythonBin);
+
+  const spawnEnv = { ...process.env, PATH: ENRICHED_PATH, ...(isWin ? {} : { HOME: os.homedir() }) };
+  const venvPython = isWin
+    ? path.join(comfyPath, 'venv', 'Scripts', 'python.exe')
+    : path.join(comfyPath, 'venv', 'bin', 'python3');
+  const venvPip = isWin
+    ? path.join(comfyPath, 'venv', 'Scripts', 'pip.exe')
+    : path.join(comfyPath, 'venv', 'bin', 'pip');
+
+  // Embeddable Python lacks ensurepip, so 'python -m venv' won't work on Windows.
+  // Use 'python -m virtualenv' instead (installed during ensureWindowsPython).
+  const venvModule = isWin ? 'virtualenv' : 'venv';
 
   try {
+    // 1. Fetch ComfyUI source — git clone on macOS/Linux, ZIP download on Windows
+    if (gitBin) {
+      setInstallMsg('Cloning ComfyUI (first launch, ~2 min)…');
+      console.log('[ComfyUI] Cloning to', comfyPath);
+      await new Promise((resolve, reject) => {
+        const git = spawn(gitBin, ['clone', 'https://github.com/comfyanonymous/ComfyUI', comfyPath], {
+          stdio: 'pipe',
+          env: spawnEnv,
+        });
+        git.stdout.on('data', (d) => console.log('[ComfyUI clone]', d.toString().trim()));
+        git.stderr.on('data', (d) => console.log('[ComfyUI clone]', d.toString().trim()));
+        git.on('error', reject);
+        git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git clone failed (code ${code})`)));
+      });
+    } else {
+      await downloadComfyUIZip(comfyPath, setInstallMsg);
+    }
+
+    // 2. Create a dedicated venv — isolates deps from system/Conda Python entirely
+    setInstallMsg('Creating Python virtual environment…');
+    console.log('[ComfyUI] Creating venv at', path.join(comfyPath, 'venv'));
     await new Promise((resolve, reject) => {
-      const git = spawn('git', ['clone', 'https://github.com/comfyanonymous/ComfyUI', comfyPath], { stdio: 'pipe' });
-      git.stderr.on('data', (d) => console.log('[ComfyUI install]', d.toString().trim()));
-      git.on('error', reject);
-      git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git clone failed (code ${code})`)));
+      const venv = spawn(pythonBin, ['-m', venvModule, path.join(comfyPath, 'venv')], {
+        stdio: 'pipe',
+        env: spawnEnv,
+      });
+      venv.stdout.on('data', (d) => console.log('[ComfyUI venv]', d.toString().trim()));
+      venv.stderr.on('data', (d) => console.log('[ComfyUI venv]', d.toString().trim()));
+      venv.on('error', reject);
+      venv.on('close', (code) => code === 0 ? resolve() : reject(new Error(`venv creation failed (code ${code})`)));
     });
 
-    sendLoadingUpdate(loadingWin, 'Installing ComfyUI dependencies…', 62);
-
+    // 3. Install requirements into the venv — full output captured for debugging
+    setInstallMsg('Installing ComfyUI dependencies (this takes a few minutes)…');
+    console.log('[ComfyUI] Installing requirements with venv pip:', venvPip);
     await new Promise((resolve, reject) => {
-      const pip = spawn(pythonBin, ['-m', 'pip', 'install', '-r', 'requirements.txt', '--quiet'], {
+      const pip = spawn(venvPip, ['install', '-r', 'requirements.txt'], {
         cwd: comfyPath,
         stdio: 'pipe',
+        env: spawnEnv,
       });
-      pip.stderr.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trim()));
+      // Log ALL output — no --quiet so failures are visible in debug.log
+      pip.stdout.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trimEnd()));
+      pip.stderr.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trimEnd()));
       pip.on('error', reject);
       pip.on('close', (code) => code === 0 ? resolve() : reject(new Error(`pip install failed (code ${code})`)));
     });
 
+    setInstallMsg('ComfyUI installed — starting up…');
     console.log('[ComfyUI] Auto-install complete at', comfyPath);
     return comfyPath;
   } catch (err) {
     console.error('[ComfyUI] Auto-install failed:', err.message);
-    sendLoadingUpdate(loadingWin, `ComfyUI install failed: ${err.message.slice(0, 55)}`, 57);
+    setInstallMsg(`ComfyUI install failed: ${err.message.slice(0, 55)}`);
     return null;
   }
 }
@@ -287,13 +745,12 @@ async function findWorkingPython(comfyPath) {
   const candidates = [
     venvBin,
     path.join(comfyPath, 'venv', 'bin', 'python'),
-    'python3',
-    'python',
+    ...PYTHON_CANDIDATES,
   ];
 
   for (const py of candidates) {
     const works = await new Promise((resolve) => {
-      execFile(py, ['--version'], { timeout: 5000 }, (err) => resolve(!err));
+      execFile(py, ['--version'], { timeout: 5000, env: { ...process.env, PATH: ENRICHED_PATH } }, (err) => resolve(!err));
     });
     if (works) {
       console.log('[ComfyUI] Using Python:', py);
@@ -304,6 +761,7 @@ async function findWorkingPython(comfyPath) {
 }
 
 async function startComfyUI(loadingWin) {
+  console.log('[Phase14] startComfyUI() called');
   sendLoadingUpdate(loadingWin, 'Checking ComfyUI…', 55);
 
   // Already running externally — use it.
@@ -311,6 +769,33 @@ async function startComfyUI(loadingWin) {
     console.log('[ComfyUI] Already running externally.');
     serviceLaunchStatus.comfyui = 'external';
     return { ok: true, comfyPath: null };
+  }
+
+  // Windows: silently install VC++ Redistributable before any native Python/ComfyUI code runs.
+  // A flag file is written after first successful install so we skip it on every subsequent launch.
+  if (process.platform === 'win32' && app.isPackaged) {
+    const vcRedist = path.join(process.resourcesPath, 'bin', 'vc_redist.x64.exe');
+    const vcFlag   = path.join(os.homedir(), 'AppData', 'Roaming', 'Imagginary', 'vc_installed');
+    if (!fs.existsSync(vcFlag) && fs.existsSync(vcRedist)) {
+      sendLoadingUpdate(loadingWin, 'Installing required components…', 55);
+      console.log('[VC++] Running', vcRedist);
+      await new Promise((resolve) => {
+        execFile(vcRedist, ['/quiet', '/norestart'], { timeout: 120_000 }, (err) => {
+          if (err) {
+            console.warn('[VC++] Installer exited with code', err.code, '(may already be installed)');
+          } else {
+            console.log('[VC++] Installed successfully.');
+          }
+          // Write flag regardless — even exit 1638 (already installed) means VC++ is present.
+          try { fs.mkdirSync(path.dirname(vcFlag), { recursive: true }); fs.writeFileSync(vcFlag, '1'); } catch { /* ignore */ }
+          resolve();
+        });
+      });
+    } else if (fs.existsSync(vcFlag)) {
+      console.log('[VC++] Already installed (flag present) — skipping.');
+    } else {
+      console.warn('[VC++] vc_redist.x64.exe not found at', vcRedist);
+    }
   }
 
   sendLoadingUpdate(loadingWin, 'Looking for ComfyUI…', 56);
@@ -334,18 +819,36 @@ async function startComfyUI(loadingWin) {
     return { ok: false, comfyPath };
   }
 
+  // Windows only: detect CUDA and fall back to CPU mode if unavailable.
+  // macOS uses MPS automatically and never needs --cpu.
+  let extraArgs = [];
+  if (process.platform === 'win32') {
+    const cudaAvailable = await new Promise((resolve) => {
+      execFile(python, ['-c', 'import torch; print(torch.cuda.is_available())'], { timeout: 15_000 }, (err, stdout) => {
+        if (err) { console.log('[ComfyUI] CUDA check failed — assuming no CUDA'); return resolve(false); }
+        resolve(stdout.trim() === 'True');
+      });
+    });
+    if (!cudaAvailable) {
+      console.log('[ComfyUI] No CUDA GPU detected — adding --cpu flag');
+      extraArgs = ['--cpu'];
+    } else {
+      console.log('[ComfyUI] CUDA GPU detected');
+    }
+  }
+
   sendLoadingUpdate(loadingWin, 'Starting ComfyUI…', 66);
   console.log('[ComfyUI] Launching from', comfyPath);
 
   try {
     comfyuiProcess = spawn(
       python,
-      ['main.py', '--port', '8188', '--preview-method', 'none', '--listen', '127.0.0.1'],
+      ['main.py', '--port', '8188', '--preview-method', 'none', '--listen', '127.0.0.1', ...extraArgs],
       {
         cwd: comfyPath,
         stdio: 'pipe',
         detached: false,
-        env: { ...process.env, PYTHONPATH: comfyPath },
+        env: { ...process.env, PATH: ENRICHED_PATH, HOME: os.homedir(), PYTHONPATH: comfyPath },
       }
     );
 
@@ -353,9 +856,14 @@ async function startComfyUI(loadingWin) {
     comfyuiProcess.stderr.on('data', (d) => {
       const msg = d.toString().trim();
       console.log('[ComfyUI]', msg);
-      // Relay meaningful status lines to loading window
       if (msg.includes('Loading') || msg.includes('Starting') || msg.includes('ready')) {
-        sendLoadingUpdate(loadingWin, `ComfyUI: ${msg.slice(0, 60)}`, 68);
+        const shortMsg = `ComfyUI: ${msg.slice(0, 60)}`;
+        sendLoadingUpdate(loadingWin, shortMsg, 68);
+        // Also relay to main window once it's open (port wait may still be running)
+        serviceLaunchStatus.comfyuiInstallMessage = shortMsg;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('comfyui-status-update', shortMsg);
+        }
       }
     });
     comfyuiProcess.on('error', (err) => console.error('[ComfyUI] spawn error:', err.message));
@@ -482,22 +990,48 @@ function markLaunched() {
 
 // ── Service startup orchestrator ─────────────────────────────────────────────
 
+function ensureOllamaRunner() {
+  if (!app.isPackaged || process.platform !== 'darwin') return;
+  const runnerDir = '/Applications/Ollama.app/Contents/Resources';
+  if (fs.existsSync(path.join(runnerDir, 'ollama'))) return;
+  console.log('[Ollama] Copying bundled Ollama runner to system location…');
+  fs.mkdirSync(runnerDir, { recursive: true });
+  const srcDir = path.join(process.resourcesPath, 'bin');
+  for (const file of fs.readdirSync(srcDir)) {
+    const src = path.join(srcDir, file);
+    if (!fs.statSync(src).isFile()) continue;
+    const dest = path.join(runnerDir, file);
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, 0o755);
+  }
+  console.log('[Ollama] Ollama runner ready.');
+}
+
 async function startBundledServices(loadingWin) {
+  console.log('[Phase14] startBundledServices called, isPackaged:', app.isPackaged);
   serviceLaunchStatus.autoStartAttempted = true;
+
+  // 0. Ensure Ollama runner files are in place before starting the server
+  ensureOllamaRunner();
 
   // 1. Ollama
   const ollamaOk = await startOllama(loadingWin);
   sendLoadingUpdate(loadingWin, ollamaOk ? 'Ollama ready.' : 'Ollama unavailable — continuing.', 20);
 
-  // 2. AI model (qwen2.5:7b)
+  // 2. AI model (qwen2.5:1.5b) — ensureOllamaModel polls for ~/.ollama/id_ed25519 internally
   if (ollamaOk) {
-    await ensureOllamaModel(loadingWin, 'qwen2.5:7b');
+    await ensureOllamaModel(loadingWin, 'qwen2.5:1.5b');
   }
   sendLoadingUpdate(loadingWin, 'AI model ready.', 54);
 
   // 3. ComfyUI (auto-installs if not found in packaged build)
+  console.log('[Phase14] Checking for ComfyUI...');
   const { ok: comfyOk, comfyPath } = await startComfyUI(loadingWin);
   sendLoadingUpdate(loadingWin, comfyOk ? 'ComfyUI ready.' : 'ComfyUI not available — continuing.', 70);
+  // Push connected status to renderer immediately — don't wait for polling
+  if (comfyOk && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('comfyui-connected');
+  }
 
   // 4. DreamShaper model download on first launch
   if (comfyOk && isFirstLaunch()) {
@@ -518,7 +1052,7 @@ async function startBundledServices(loadingWin) {
 function createLoadingWindow() {
   const win = new BrowserWindow({
     width: 420,
-    height: 320,
+    height: 400,
     frame: false,
     transparent: false,
     resizable: false,
@@ -533,6 +1067,7 @@ function createLoadingWindow() {
   win.loadFile(path.join(__dirname, 'loading.html'));
   return win;
 }
+
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -567,6 +1102,20 @@ function createMainWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
+
+  // Auto-update: download in background; show banner on update-available
+  // Errors (e.g. code signature validation) are caught silently — banner stays visible
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('update-available', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-available');
+      }
+    });
+    autoUpdater.on('error', () => { /* silent — banner stays, no crash */ });
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }
 }
 
 // ── ComfyUI local proxy ───────────────────────────────────────────────────────
@@ -684,6 +1233,12 @@ function startComfyUIProxy() {
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Clear ShipIt update cache to prevent stale/cached update state on launch
+  try {
+    const shipItCache = path.join(os.homedir(), 'Library', 'Caches', 'com.imagginary.app.ShipIt');
+    if (fs.existsSync(shipItCache)) fs.rmSync(shipItCache, { recursive: true, force: true });
+  } catch { /* ignore — non-critical */ }
+
   // ── Relax CSP to allow renderer fetch() to localhost services ────────────
   // In packaged Electron the renderer runs from file:// (null origin). Chromium
   // blocks fetch() to http://localhost:* by default. Setting connect-src here
@@ -698,7 +1253,6 @@ app.whenReady().then(async () => {
     if (
       details.url.includes('8188') ||
       details.url.includes('11434') ||
-      details.url.includes('7860') ||
       (proxyStr && details.url.includes(proxyStr))
     ) {
       console.error('[Request blocked]', details.url, details.error);
@@ -898,6 +1452,8 @@ ipcMain.handle('read-image', async (_event, filePath) => {
 });
 
 ipcMain.handle('get-app-data-path', async () => app.getPath('userData'));
+
+ipcMain.on('open-download-page', () => shell.openExternal('https://imagginary.com'));
 
 ipcMain.handle('open-folder', async (_event, folderPath) => {
   shell.openPath(folderPath);

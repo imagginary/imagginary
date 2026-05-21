@@ -135,45 +135,9 @@ export default function ShotInput({
         </button>
       </div>
 
-      {/* Options toggle row */}
-      <div className="mt-2 flex items-center justify-between">
-        <p className="text-[10px] text-gray-700">
-          Press Enter to generate · Describe shot type, subject, setting, mood, lighting
-        </p>
-        <button
-          onClick={() => setOptionsOpen((o) => !o)}
-          className={`flex items-center gap-1 text-[10px] transition-colors ${
-            constraintsSet ? 'text-imagginary-500 hover:text-imagginary-400' : 'text-gray-600 hover:text-gray-400'
-          }`}
-        >
-          {optionsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          {constraintsSet ? 'Options set' : '+ Options'}
-        </button>
-      </div>
-
-      {/* Expandable constraints row */}
-      {optionsOpen && (
-        <div className="mt-2.5 flex gap-2 items-end">
-          <ConstraintSelect
-            label="Shot Type"
-            value={shotType}
-            options={SHOT_TYPE_OPTIONS}
-            onChange={updateShotType}
-          />
-          <ConstraintSelect
-            label="Camera Angle"
-            value={angle}
-            options={ANGLE_OPTIONS}
-            onChange={updateAngle}
-          />
-          <ConstraintSelect
-            label="Mood"
-            value={mood}
-            options={MOOD_OPTIONS}
-            onChange={updateMood}
-          />
-        </div>
-      )}
+      <p className="mt-2 text-[10px] text-gray-700">
+        Press Enter to generate · Describe shot type, subject, setting, mood, lighting
+      </p>
     </div>
   );
 }

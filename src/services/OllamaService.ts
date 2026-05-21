@@ -3,7 +3,7 @@ import FILM_DICTIONARY, { lookupFilmTerm } from '../data/FilmLanguageDictionary'
 
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 const MODEL = 'qwen2.5:14b';
-const FALLBACK_MODELS = ['qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
+const FALLBACK_MODELS = ['qwen2.5:1.5b', 'qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
 
 // Build a compact film dictionary context for the prompt
 function buildDictionaryContext(): string {
@@ -58,8 +58,14 @@ export class OllamaService {
     if ((window as any).electronAPI?.checkOllama) {
       try {
         const result = await (window as any).electronAPI.checkOllama();
-        this.isConnected = result.connected;
-        return result.connected;
+        if (!result.connected) {
+          this.isConnected = false;
+          return false;
+        }
+        // Confirmed connected — discover which model is actually installed
+        await this.discoverAvailableModel();
+        this.isConnected = true;
+        return true;
       } catch {
         this.isConnected = false;
         return false;
@@ -75,19 +81,32 @@ export class OllamaService {
         this.isConnected = false;
         return false;
       }
-      const data = await response.json() as { models: Array<{ name: string }> };
-      const models = data.models?.map((m) => m.name) ?? [];
-
-      // Find best available model
-      const preferred = [MODEL, ...FALLBACK_MODELS].find((m) =>
-        models.some((available) => available.startsWith(m.split(':')[0]))
-      );
-      this.availableModel = preferred ?? null;
+      await this.discoverAvailableModel();
       this.isConnected = true;
       return true;
     } catch {
       this.isConnected = false;
       return false;
+    }
+  }
+
+  private async discoverAvailableModel(): Promise<void> {
+    try {
+      const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) return;
+      const data = await response.json() as { models: Array<{ name: string }> };
+      const installed = data.models?.map((m) => m.name) ?? [];
+      // Exact match only — prefix matching caused qwen2.5:7b to satisfy qwen2.5:14b
+      const found = installed.find((name) =>
+        [MODEL, ...FALLBACK_MODELS].includes(name)
+      ) ?? null;
+      this.availableModel = found;
+      console.log('[OllamaService] Installed models:', installed.join(', ') || '(none)');
+      console.log('[OllamaService] Using model:', this.availableModel ?? '(none found)');
+    } catch {
+      // Leave availableModel unchanged if the tags request fails
     }
   }
 
@@ -105,7 +124,7 @@ export class OllamaService {
   }
 
   async parseShot(description: string): Promise<StructuredPrompt> {
-    const model = this.availableModel ?? MODEL;
+    const model = this.availableModel ?? FALLBACK_MODELS[0];
 
     const userPrompt = `Parse this shot description and return structured JSON:
 
@@ -156,7 +175,7 @@ Return only valid JSON with these fields: subject, background, mood, lighting, a
    * Term lists are derived dynamically from FILM_DICTIONARY — never hardcoded.
    */
   async parseScreenplay(scriptText: string): Promise<ScriptShot[]> {
-    const model = this.availableModel ?? MODEL;
+    const model = this.availableModel ?? FALLBACK_MODELS[0];
 
     const shotTypes = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'shot-type').map((t) => t.term))].join(', ');
     const angles    = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'camera-angle').map((t) => t.term))].join(', ');
@@ -261,7 +280,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
    * Lightweight second pass — more reliable than relying on per-shot extraction.
    */
   async extractCharacterNames(scriptText: string): Promise<string[]> {
-    const model = this.availableModel ?? MODEL;
+    const model = this.availableModel ?? FALLBACK_MODELS[0];
 
     const systemPrompt =
 `Extract all character names from this script excerpt.
@@ -300,7 +319,7 @@ If no characters are identifiable return an empty array [].`;
   }
 
   async refineMotionPrompt(description: string): Promise<string> {
-    const model = this.availableModel ?? MODEL;
+    const model = this.availableModel ?? FALLBACK_MODELS[0];
 
     const systemPrompt = `You are a video motion prompt engineer for Wan 2.2 image-to-video.
 Convert the user's motion description into a concise Wan 2.2 compatible prompt.

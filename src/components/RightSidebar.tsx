@@ -225,7 +225,7 @@ export default function RightSidebar({
           className="w-full flex items-center justify-center gap-2 py-2.5 bg-imagginary-500 hover:bg-imagginary-400 disabled:bg-gray-900 disabled:text-gray-700 text-black text-xs font-semibold rounded transition-colors"
         >
           <Zap className="w-3.5 h-3.5" />
-          Generate
+          Generate New
         </button>
         <button
           onClick={onRegenerate}
