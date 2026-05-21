@@ -1,16 +1,17 @@
 {
   "name": "imagginary",
-  "version": "1.0.0",
+  "version": "1.0.9",
   "description": "Imagginary — local-first AI storyboard generator for filmmakers",
   "main": "public/electron.mjs",
   "scripts": {
     "dev:renderer": "webpack serve --config webpack.config.js",
     "dev:electron": "wait-on http://localhost:3000 && ELECTRON_RUN_AS_NODE= ELECTRON_START_URL=http://localhost:3000 electron .",
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "prebuild": "node scripts/generate-icons.js",
     "build": "cross-env NODE_ENV=production webpack --config webpack.config.js",
     "start": "electron .",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run prebuild && npm run build && electron-builder"
   },
   "keywords": [
     "storyboard",
@@ -48,10 +49,18 @@
           "arch": [
             "arm64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon.icns",
-      "identity": null,
+      "notarize": {
+        "teamId": "87PJKC62W2"
+      },
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
@@ -112,8 +121,12 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Imagginary",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "artifactName": "${productName}-Setup.${ext}"
@@ -132,6 +145,11 @@
           "to": "sounds"
         }
       ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "imagginary",
+      "repo": "imagginary"
     }
   },
   "devDependencies": {
@@ -139,6 +157,7 @@
     "@babel/preset-env": "^7.29.2",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@electron/notarize": "^3.1.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.5.2",
@@ -152,8 +171,10 @@
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",
     "html-webpack-plugin": "^5.6.6",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.9",
     "postcss-loader": "^8.2.1",
+    "sharp": "^0.34.5",
     "style-loader": "^4.0.0",
     "tailwindcss": "^4.2.2",
     "ts-loader": "^9.5.7",
@@ -164,6 +185,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
