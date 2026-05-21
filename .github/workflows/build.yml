@@ -11,6 +11,7 @@ permissions:
 jobs:
   build-mac:
     runs-on: macos-14  # Apple Silicon runner
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create placeholder Ollama binary dirs
+        run: mkdir -p resources/ollama/mac resources/ollama/win resources/bin
+
       - name: Download ffmpeg (arm64)
         run: |
           curl -fsSL "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o /tmp/ffmpeg-mac.zip
@@ -29,14 +33,29 @@ jobs:
           mv resources/bin/ffmpeg resources/bin/ffmpeg-mac
           chmod +x resources/bin/ffmpeg-mac
 
+      - name: Install Apple certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
+          security create-keychain -p "temp-password" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "temp-password" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "temp-password" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
       - name: Build DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: npm run dist
 
       - name: Upload DMG to release
@@ -45,6 +64,11 @@ jobs:
           files: release/*.dmg
           draft: false
           prerelease: false
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
 
   build-win:
     runs-on: windows-latest
