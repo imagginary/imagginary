@@ -7,6 +7,7 @@ import PanelList from './components/PanelList';
 import PanelViewer from './components/PanelViewer';
 import PoseEditor from './components/PoseEditor';
 import MotionLibrary from './components/MotionLibrary';
+import VideoTransfer from './components/VideoTransfer';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
@@ -155,6 +156,8 @@ export default function App() {
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
   // Phase 6C — Motion Library
   const [showMotionLibrary, setShowMotionLibrary] = useState(false);
+  // Phase 6E — Video Transfer
+  const [showVideoTransfer, setShowVideoTransfer] = useState(false);
   // Phase 9 — 3D Mesh / Turntable
   const [meshProgress, setMeshProgress] = useState<MeshGenerationProgress | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
@@ -948,6 +951,26 @@ export default function App() {
     setShowMotionLibrary(false);
   }
 
+  async function handleVideoTransferComplete(videoData: string, clipPath: string | null) {
+    if (!activePanelId) return;
+    let savedPath = clipPath;
+    if (!savedPath && window.electronAPI?.saveVideo) {
+      const isMP4 = videoData.startsWith('data:video/mp4');
+      const ext = isMP4 ? 'mp4' : 'webp';
+      const b64 = videoData.replace(/^data:[^;]+;base64,/, '');
+      const saved = await window.electronAPI.saveVideo(
+        b64,
+        `transfer_${activePanelId}_${Date.now()}.${ext}`
+      );
+      if (saved.success) savedPath = saved.filePath ?? null;
+    }
+    updatePanel(activePanelId, {
+      motionClipData: videoData,
+      motionClipPath: savedPath,
+    });
+    setShowVideoTransfer(false);
+  }
+
   function handleUndoEdit(panelId: string) {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.editHistory?.length) return;
@@ -1133,6 +1156,7 @@ export default function App() {
             onRestoreRevision={handleRestoreRevision}
             onOpenPoseEditor={() => setShowPoseEditor(true)}
             onOpenMotionLibrary={() => setShowMotionLibrary(true)}
+            onOpenVideoTransfer={() => setShowVideoTransfer(true)}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
@@ -1183,6 +1207,17 @@ export default function App() {
           comfyuiConnected={serviceStatus.comfyui === 'connected'}
           onApply={handleApplyMotionClip}
           onClose={() => setShowMotionLibrary(false)}
+        />
+      )}
+
+      {/* Phase 6E — Video Transfer modal */}
+      {showVideoTransfer && activePanel && (
+        <VideoTransfer
+          panel={activePanel}
+          characters={project.characters}
+          isPro={false}
+          onComplete={handleVideoTransferComplete}
+          onClose={() => setShowVideoTransfer(false)}
         />
       )}
     </div>

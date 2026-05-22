@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles } from 'lucide-react';
+import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles, Upload } from 'lucide-react';
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 
@@ -14,6 +14,7 @@ interface PanelViewerProps {
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
   onOpenPoseEditor?: () => void;
   onOpenMotionLibrary?: () => void;
+  onOpenVideoTransfer?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -60,6 +61,7 @@ export default function PanelViewer({
   onRestoreRevision,
   onOpenPoseEditor,
   onOpenMotionLibrary,
+  onOpenVideoTransfer,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -709,6 +711,17 @@ export default function PanelViewer({
             >
               <Film className="w-3 h-3" />
               Motion Library
+            </button>
+          )}
+
+          {canAnimate && (
+            <button
+              onClick={() => onOpenVideoTransfer?.()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+              title="Upload a reference video and transfer its pose sequence to a character (Pro+)"
+            >
+              <Upload className="w-3 h-3" />
+              Video Transfer
             </button>
           )}
 

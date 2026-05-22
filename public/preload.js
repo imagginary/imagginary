@@ -102,6 +102,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('motion-clip-progress', handler);
   },
 
+  // Phase 6E — Video Transfer (Pro+)
+  validateTransferVideo: (filePath) => ipcRenderer.invoke('validate-transfer-video', filePath),
+  extractTransferPoses: (filePath) => ipcRenderer.invoke('extract-transfer-poses', filePath),
+  cleanupTransferFrames: (tempDir) => ipcRenderer.invoke('cleanup-transfer-frames', tempDir),
+  onTransferPoseProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('transfer-pose-progress', handler);
+    return () => ipcRenderer.removeListener('transfer-pose-progress', handler);
+  },
+
   // Platform (safe to read in preload)
   platform: process.platform,
 });

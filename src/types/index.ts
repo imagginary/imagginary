@@ -195,6 +195,17 @@ export interface MotionLibraryProgress {
   error?: string;
 }
 
+// ── Phase 6E — Video Transfer ─────────────────────────────────────────────────
+
+export interface VideoValidationResult {
+  valid: boolean;
+  duration: number;
+  frameCount: number;
+  warnings: string[];
+  estimatedQuality: number;
+  rejectionReason?: string;
+}
+
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────
 
 export interface ScriptShot {
