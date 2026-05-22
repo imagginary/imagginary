@@ -26,6 +26,7 @@ import {
   ServiceStatus,
   GenerationProgress,
   CharacterGenerationProgress,
+  MeshGenerationProgress,
   StyleProfile,
 } from './types';
 import {
@@ -105,6 +106,16 @@ interface ElectronAPI {
   openFolder: (path: string) => void;
   exportPDF: (base64Data: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
   exportFCPXML: (xmlString: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
+  // Phase 9 — 3D Mesh / Turntable
+  generate3DMesh: (params: { characterId: string; portraitImagePath: string }) => Promise<{
+    success: boolean;
+    objPath?: string;
+    glbPath?: string;
+    turntableVideoPath?: string;
+    error?: string;
+  }>;
+  onMeshProgress: (cb: (data: MeshGenerationProgress) => void) => () => void;
+  openMeshFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {
@@ -141,6 +152,8 @@ export default function App() {
   // Phase 6B — Pose Engine
   const [showPoseEditor, setShowPoseEditor] = useState(false);
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
+  // Phase 9 — 3D Mesh / Turntable
+  const [meshProgress, setMeshProgress] = useState<MeshGenerationProgress | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -362,6 +375,73 @@ export default function App() {
       panels: prev.panels.map((p) => ({ ...p, characters: p.characters.filter((cid) => cid !== id) })),
       updatedAt: Date.now(),
     }));
+  }
+
+  // ── Phase 9 — 3D Mesh / Turntable ───────────────────────────────────────────
+
+  useEffect(() => {
+    if (!window.electronAPI?.onMeshProgress) return;
+    const cleanup = window.electronAPI.onMeshProgress((data: MeshGenerationProgress) => {
+      setMeshProgress(data);
+      if (data.stage === 'complete' || data.stage === 'error') {
+        setTimeout(() => setMeshProgress((p) => (p?.characterId === data.characterId ? null : p)), 4000);
+      }
+    });
+    return cleanup;
+  }, []);
+
+  async function handleGenerate3DMesh(characterId: string) {
+    const character = project.characters.find((c) => c.id === characterId);
+    if (!character?.referenceImagePath) {
+      alert('Character needs a reference image before generating a 3D mesh.');
+      return;
+    }
+    if (!window.electronAPI?.generate3DMesh) return;
+
+    setMeshProgress({
+      characterId,
+      stage: 'generating-mesh',
+      pct: 0,
+      message: `Generating 3D mesh for ${character.name}…`,
+    });
+
+    const result = await window.electronAPI.generate3DMesh({
+      characterId,
+      portraitImagePath: character.referenceImagePath,
+    }) as { success: boolean; objPath?: string; glbPath?: string; turntableVideoPath?: string; error?: string };
+
+    if (!result.success) {
+      setMeshProgress({
+        characterId,
+        stage: 'error',
+        pct: 0,
+        message: 'Mesh generation failed',
+        error: result.error ?? 'InstantMesh not available — make sure it is running on port 7860.',
+      });
+      return;
+    }
+
+    // Persist mesh paths on the character
+    const updated = characterLibraryService.update(characterId, {
+      meshPath: result.objPath,
+      glbPath: result.glbPath,
+      turntableVideoPath: result.turntableVideoPath,
+      meshGeneratedAt: Date.now(),
+    });
+    if (updated) {
+      setProject((prev) => ({
+        ...prev,
+        characters: prev.characters.map((c) => (c.id === characterId ? updated : c)),
+        updatedAt: Date.now(),
+      }));
+    }
+
+    setMeshProgress({
+      characterId,
+      stage: 'complete',
+      pct: 100,
+      message: `3D model ready for ${character.name}`,
+    });
   }
 
   // ── Panel generation ─────────────────────────────────────────────────────────
@@ -1012,6 +1092,9 @@ export default function App() {
               onCreateCharacter={handleCreateCharacter}
               onDeleteCharacter={deleteCharacter}
               generationProgress={charProgress}
+              onGenerate3DMesh={handleGenerate3DMesh}
+              meshProgress={meshProgress}
+              isPro={false}
             />
           </div>
         </div>

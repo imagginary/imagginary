@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { UserPlus, Trash2, ChevronDown, ChevronRight, CheckCircle, Loader2, AlertCircle, ImageOff } from 'lucide-react';
-import { Character, CharacterGenerationProgress } from '../types';
+import { UserPlus, Trash2, ChevronDown, ChevronRight, CheckCircle, Loader2, AlertCircle, ImageOff, Box } from 'lucide-react';
+import { Character, CharacterGenerationProgress, MeshGenerationProgress } from '../types';
+import TurntableViewer from './TurntableViewer';
 
 interface CharacterLibraryProps {
   characters: Character[];
   onCreateCharacter: (name: string, description: string) => void;
   onDeleteCharacter: (id: string) => void;
   generationProgress: CharacterGenerationProgress | null;
+  onGenerate3DMesh: (characterId: string) => void;
+  meshProgress: MeshGenerationProgress | null;
+  isPro?: boolean;
 }
 
 const ANGLE_LABELS: Array<{ key: keyof Character['multiViewData'] & string; label: string }> = [
@@ -43,13 +47,16 @@ function CharacterRow({
   character,
   onDelete,
   isGenerating,
+  onOpen3D,
 }: {
   character: Character;
   onDelete: () => void;
   isGenerating: boolean;
+  onOpen3D: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasMultiView = character.multiViewStatus === 'ready' && character.multiViewData;
+  const hasMesh = Boolean(character.meshPath || character.turntableVideoPath);
 
   return (
     <div className="border-b border-gray-800/50 last:border-0">
@@ -95,6 +102,21 @@ function CharacterRow({
           </div>
         </div>
 
+        {/* 3D button — visible on hover when multiview is ready */}
+        {hasMultiView && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpen3D(); }}
+            className={`p-0.5 rounded transition-all shrink-0 ${
+              hasMesh
+                ? 'text-imagginary-400 opacity-100'
+                : 'opacity-0 group-hover:opacity-100 text-gray-600 hover:text-imagginary-400'
+            }`}
+            title={hasMesh ? 'View 3D model' : 'Generate 3D model'}
+          >
+            <Box className="w-3 h-3" />
+          </button>
+        )}
+
         {/* Delete */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -117,10 +139,14 @@ export default function CharacterLibrary({
   onCreateCharacter,
   onDeleteCharacter,
   generationProgress,
+  onGenerate3DMesh,
+  meshProgress,
+  isPro = false,
 }: CharacterLibraryProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [viewing3DId, setViewing3DId] = useState<string | null>(null);
 
   function handleAdd() {
     if (!newName.trim()) return;
@@ -131,88 +157,103 @@ export default function CharacterLibrary({
   }
 
   const activeId = generationProgress?.characterId;
+  const viewing3DCharacter = viewing3DId ? characters.find((c) => c.id === viewing3DId) ?? null : null;
 
   return (
-    <div className="flex flex-col max-h-72 overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800 shrink-0">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Characters</span>
-        <button
-          onClick={() => setIsAdding((v) => !v)}
-          className="p-0.5 rounded text-gray-600 hover:text-gray-300 transition-colors"
-          title="Add character"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* New character form */}
-      {isAdding && (
-        <div className="px-2 py-2 space-y-1.5 bg-gray-900/60 border-b border-gray-800 shrink-0">
-          <input
-            autoFocus
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            placeholder="Character name"
-            className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none focus:border-imagginary-600"
-          />
-          <input
-            type="text"
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            placeholder="Description — e.g. middle-aged detective, trench coat"
-            className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none focus:border-imagginary-600"
-          />
-          <div className="flex gap-1.5">
-            <button
-              onClick={handleAdd}
-              disabled={!newName.trim()}
-              className="flex-1 py-1.5 bg-imagginary-600 hover:bg-imagginary-500 disabled:bg-gray-800 disabled:text-gray-600 text-black text-xs font-semibold rounded transition-colors"
-            >
-              Generate Character
-            </button>
-            <button
-              onClick={() => setIsAdding(false)}
-              className="px-3 py-1.5 bg-gray-800 text-gray-400 text-xs rounded hover:bg-gray-700 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
+    <>
+      <div className="flex flex-col max-h-72 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800 shrink-0">
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Characters</span>
+          <button
+            onClick={() => setIsAdding((v) => !v)}
+            className="p-0.5 rounded text-gray-600 hover:text-gray-300 transition-colors"
+            title="Add character"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+          </button>
         </div>
-      )}
 
-      {/* Generation progress banner */}
-      {generationProgress && generationProgress.stage !== 'complete' && generationProgress.stage !== 'error' && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-imagginary-950/30 border-b border-imagginary-800/20 shrink-0">
-          <Loader2 className="w-3 h-3 text-imagginary-400 animate-spin shrink-0" />
-          <span className="text-[10px] text-imagginary-400 truncate">{generationProgress.message}</span>
-        </div>
-      )}
-      {generationProgress?.stage === 'error' && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-950/30 border-b border-red-800/20 shrink-0">
-          <AlertCircle className="w-3 h-3 text-red-400 shrink-0" />
-          <span className="text-[10px] text-red-400 truncate">{generationProgress.error ?? 'Character generation failed'}</span>
-        </div>
-      )}
-
-      {/* Character list */}
-      <div className="overflow-y-auto flex-1">
-        {characters.map((character) => (
-          <CharacterRow
-            key={character.id}
-            character={character}
-            onDelete={() => onDeleteCharacter(character.id)}
-            isGenerating={activeId === character.id && generationProgress?.stage === 'generating-multiview'}
-          />
-        ))}
-        {characters.length === 0 && (
-          <div className="px-3 py-3 text-[10px] text-gray-700 text-center">
-            No characters defined
+        {/* New character form */}
+        {isAdding && (
+          <div className="px-2 py-2 space-y-1.5 bg-gray-900/60 border-b border-gray-800 shrink-0">
+            <input
+              autoFocus
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+              placeholder="Character name"
+              className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none focus:border-imagginary-600"
+            />
+            <input
+              type="text"
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+              placeholder="Description — e.g. middle-aged detective, trench coat"
+              className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 placeholder-gray-600 outline-none focus:border-imagginary-600"
+            />
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleAdd}
+                disabled={!newName.trim()}
+                className="flex-1 py-1.5 bg-imagginary-600 hover:bg-imagginary-500 disabled:bg-gray-800 disabled:text-gray-600 text-black text-xs font-semibold rounded transition-colors"
+              >
+                Generate Character
+              </button>
+              <button
+                onClick={() => setIsAdding(false)}
+                className="px-3 py-1.5 bg-gray-800 text-gray-400 text-xs rounded hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Generation progress banner */}
+        {generationProgress && generationProgress.stage !== 'complete' && generationProgress.stage !== 'error' && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-imagginary-950/30 border-b border-imagginary-800/20 shrink-0">
+            <Loader2 className="w-3 h-3 text-imagginary-400 animate-spin shrink-0" />
+            <span className="text-[10px] text-imagginary-400 truncate">{generationProgress.message}</span>
+          </div>
+        )}
+        {generationProgress?.stage === 'error' && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-950/30 border-b border-red-800/20 shrink-0">
+            <AlertCircle className="w-3 h-3 text-red-400 shrink-0" />
+            <span className="text-[10px] text-red-400 truncate">{generationProgress.error ?? 'Character generation failed'}</span>
+          </div>
+        )}
+
+        {/* Character list */}
+        <div className="overflow-y-auto flex-1">
+          {characters.map((character) => (
+            <CharacterRow
+              key={character.id}
+              character={character}
+              onDelete={() => onDeleteCharacter(character.id)}
+              isGenerating={activeId === character.id && generationProgress?.stage === 'generating-multiview'}
+              onOpen3D={() => setViewing3DId(character.id)}
+            />
+          ))}
+          {characters.length === 0 && (
+            <div className="px-3 py-3 text-[10px] text-gray-700 text-center">
+              No characters defined
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* TurntableViewer modal — rendered outside the sidebar overflow container */}
+      {viewing3DCharacter && (
+        <TurntableViewer
+          character={viewing3DCharacter}
+          isPro={isPro}
+          onClose={() => setViewing3DId(null)}
+          onGenerate={(id) => { onGenerate3DMesh(id); }}
+          meshProgress={meshProgress}
+        />
+      )}
+    </>
   );
 }

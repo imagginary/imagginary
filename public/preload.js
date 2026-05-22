@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSystemMemory: () => ipcRenderer.invoke('get-system-memory'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Phase 9 — 3D Mesh / Turntable (Pro+)
+  generate3DMesh: (params) => ipcRenderer.invoke('generate-3d-mesh', params),
+  onMeshProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('mesh-progress', handler);
+    return () => ipcRenderer.removeListener('mesh-progress', handler);
+  },
+  openMeshFile: (filePath) => ipcRenderer.invoke('open-mesh-file', filePath),
+
   // Platform (safe to read in preload)
   platform: process.platform,
 });

@@ -59,6 +59,26 @@ export interface Character {
   createdAt: number;
   // Legacy compatibility — kept so old project files still load
   referenceImages?: Record<string, string>;
+  // Phase 9 — 3D Mesh / Turntable (Pro+)
+  meshPath?: string;           // absolute path to .obj file
+  glbPath?: string;            // absolute path to .glb file
+  turntableVideoPath?: string; // absolute path to turntable MP4
+  meshGeneratedAt?: number;    // unix timestamp
+}
+
+export interface MeshResult {
+  objPath: string;
+  glbPath: string;
+  turntableVideoPath: string;
+  multiViewPaths: MultiViewPaths;
+}
+
+export interface MeshGenerationProgress {
+  characterId: string;
+  stage: 'generating-mesh' | 'generating-turntable' | 'complete' | 'error';
+  pct: number;
+  message: string;
+  error?: string;
 }
 
 export interface PanelRevision {
