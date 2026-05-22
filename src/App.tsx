@@ -5,6 +5,7 @@ import StylePicker from './components/StylePicker';
 import WelcomeFlow, { WelcomeCompleteParams } from './components/WelcomeFlow';
 import PanelList from './components/PanelList';
 import PanelViewer from './components/PanelViewer';
+import PoseEditor from './components/PoseEditor';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
@@ -15,6 +16,7 @@ import { instantMeshService } from './services/InstantMeshService';
 import { animaticExporter } from './services/AnimaticExporter';
 import { productionExporter } from './services/ProductionExporter';
 import { motionComicExporter } from './services/MotionComicExporter';
+import { poseEngineService } from './services/PoseEngineService';
 import {
   Project,
   Panel,
@@ -85,6 +87,8 @@ function createEmptyPanel(order: number): Panel {
     motionDescription: '',
     motionClipPath: null,
     motionClipData: null,
+    poseClipPath: null,
+    poseClipData: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -134,6 +138,9 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [isExportingMotionComic, setIsExportingMotionComic] = useState(false);
   const [motionComicProgress, setMotionComicProgress] = useState(0);
+  // Phase 6B — Pose Engine
+  const [showPoseEditor, setShowPoseEditor] = useState(false);
+  const [isPoseGenerating, setIsPoseGenerating] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -567,6 +574,20 @@ export default function App() {
     if (!migratedProject.aspectRatioId) {
       migratedProject = { ...migratedProject, aspectRatioId: DEFAULT_ASPECT_RATIO_ID };
     }
+    // Migrate panels that predate Phase 6B (add poseClipPath / poseClipData defaults)
+    const panelsNeedMigration = migratedProject.panels.some(
+      (p) => p.poseClipPath === undefined || p.poseClipData === undefined
+    );
+    if (panelsNeedMigration) {
+      migratedProject = {
+        ...migratedProject,
+        panels: migratedProject.panels.map((p) => ({
+          ...p,
+          poseClipPath: p.poseClipPath ?? null,
+          poseClipData: p.poseClipData ?? null,
+        })),
+      };
+    }
     setProject(migratedProject);
     lastSavedPath.current = migratedProject.filePath;
     characterLibraryService.loadFromProject(migratedProject.characters);
@@ -759,6 +780,73 @@ export default function App() {
     updatePanel(panelId, { motionClipData: null, motionClipPath: null, motionDescription: '' });
   }
 
+  async function handleGeneratePoseAnimation(params: {
+    poseTemplateIds: string[];
+    description: string;
+    framesPerSegment: number;
+  }) {
+    if (!activePanelId) return;
+    const panel = project.panels.find((p) => p.id === activePanelId);
+    if (!panel?.generatedImageData) return;
+
+    setIsPoseGenerating(true);
+    setProgress({
+      panelId: activePanelId,
+      status: 'animating',
+      progress: 0,
+      message: 'Building pose sequence…',
+    });
+
+    try {
+      const result = await poseEngineService.generatePoseAnimation({
+        imageData: panel.generatedImageData,
+        description: params.description,
+        poseTemplateIds: params.poseTemplateIds,
+        framesPerSegment: params.framesPerSegment,
+        onProgress: (pct, msg) =>
+          setProgress({ panelId: activePanelId, status: 'animating', progress: pct, message: msg }),
+      });
+
+      // Persist the video to disk
+      let clipPath: string | null = result.videoPath;
+      if (window.electronAPI?.saveVideo) {
+        const isMP4 = result.videoData.startsWith('data:video/mp4');
+        const ext = isMP4 ? 'mp4' : 'webp';
+        const b64 = result.videoData.replace(/^data:[^;]+;base64,/, '');
+        const saved = await window.electronAPI.saveVideo(
+          b64,
+          `pose_${activePanelId}_${Date.now()}.${ext}`
+        );
+        if (saved.success) clipPath = saved.filePath ?? null;
+      }
+
+      updatePanel(activePanelId, {
+        poseClipData: result.videoData,
+        poseClipPath: clipPath,
+      });
+
+      setProgress({
+        panelId: activePanelId,
+        status: 'complete',
+        progress: 100,
+        message: 'Pose animation ready',
+      });
+      setTimeout(() => setProgress(null), 2000);
+      setShowPoseEditor(false);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      setProgress({
+        panelId: activePanelId,
+        status: 'error',
+        progress: 0,
+        message: 'Pose generation failed',
+        error: msg,
+      });
+    } finally {
+      setIsPoseGenerating(false);
+    }
+  }
+
   function handleUndoEdit(panelId: string) {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.editHistory?.length) return;
@@ -939,6 +1027,7 @@ export default function App() {
             onAnimatePanel={handleAnimatePanel}
             onClearMotion={handleClearMotion}
             onRestoreRevision={handleRestoreRevision}
+            onOpenPoseEditor={() => setShowPoseEditor(true)}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
@@ -969,6 +1058,17 @@ export default function App() {
           />
         </div>
       </div>
+
+      {/* Phase 6B — Pose Editor modal */}
+      {showPoseEditor && activePanel && (
+        <PoseEditor
+          panel={activePanel}
+          isPro={false}
+          isGenerating={isPoseGenerating}
+          onGenerate={handleGeneratePoseAnimation}
+          onClose={() => setShowPoseEditor(false)}
+        />
+      )}
     </div>
   );
 }

@@ -88,6 +88,9 @@ export interface Panel {
   motionDescription: string;       // what the user typed for motion
   motionClipPath: string | null;   // absolute path to generated MP4/WebP
   motionClipData: string | null;   // base64 data URL for browser playback
+  // Phase 6B — Pose Engine
+  poseClipPath: string | null;     // absolute path to pose-animated MP4
+  poseClipData: string | null;     // base64 data URL for browser playback
   // Aspect ratio override — null means inherit from project.aspectRatioId
   aspectRatioId?: string | null;
   createdAt: number;

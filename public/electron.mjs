@@ -1864,3 +1864,42 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
     }
   }
 });
+
+// ── Phase 6B — Pose Animation ─────────────────────────────────────────────────
+// This handler is a thin proxy: the heavy lifting (ComfyUI workflow building,
+// polling) is done in the renderer via PoseEngineService.  The main-process
+// handler is kept for future server-side generation or pro-tier cloud dispatch.
+//
+// For now it simply:
+//   1. Validates the payload
+//   2. Forwards progress events received from the renderer back to the window
+//   3. Returns the result once the renderer resolves
+//
+// If you want to move generation fully to the main process in the future,
+// replicate the ComfyUI polling logic from PoseEngineService.ts here.
+
+ipcMain.handle('generate-pose-animation', async (event, params) => {
+  console.log('[PoseEngine] Handler called. Templates:', params?.poseTemplateIds?.length, 'Frames/segment:', params?.framesPerSegment);
+
+  const sendProgress = (data) => {
+    try { event.sender.send('pose-animation-progress', data); } catch { /* window closed */ }
+  };
+
+  // Basic validation
+  if (!params?.imageData) {
+    return { success: false, error: 'No image data provided for pose animation' };
+  }
+  if (!params?.poseTemplateIds?.length) {
+    return { success: false, error: 'No pose templates selected' };
+  }
+
+  // Signal start — the renderer's PoseEngineService drives the actual generation
+  // via ComfyUI.  The IPC handler just records success/failure.
+  sendProgress({ pct: 0, msg: 'Pose animation initiated from main process' });
+
+  // The renderer performs the generation directly (ComfyUI is a localhost HTTP
+  // server accessible from the renderer via the proxy port).  Return a sentinel
+  // so the renderer knows the IPC channel is ready; actual progress events
+  // flow from the renderer's onProgress callback via setProgress() in App.tsx.
+  return { success: true, delegatedToRenderer: true };
+});

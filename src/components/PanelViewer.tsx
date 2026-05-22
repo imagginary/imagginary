@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock } from 'lucide-react';
+import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles } from 'lucide-react';
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 
@@ -12,6 +12,7 @@ interface PanelViewerProps {
   onAnimatePanel?: (panelId: string, motionDescription: string) => void;
   onClearMotion?: (panelId: string) => void;
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
+  onOpenPoseEditor?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -56,6 +57,7 @@ export default function PanelViewer({
   onAnimatePanel,
   onClearMotion,
   onRestoreRevision,
+  onOpenPoseEditor,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -274,7 +276,9 @@ export default function PanelViewer({
   const canEdit = !!panel?.generatedImageData && !isGenerating;
   const canUndo = (panel?.editHistory?.length ?? 0) > 0 && !isGenerating;
   const canAnimate = !!panel?.generatedImageData;
+  const canPose = !!panel?.generatedImageData && (panel?.characters?.length ?? 0) > 0;
   const hasClip = !!(panel?.motionClipData || panel?.motionClipPath);
+  const hasPoseClip = !!(panel?.poseClipData || panel?.poseClipPath);
   const hasRevisions = revisions.length > 0;
 
   // ── Pro gate for history ─────────────────────────────────────────────────────
@@ -641,8 +645,8 @@ export default function PanelViewer({
         </div>
       </div>
 
-      {/* Toolbar row — Edit Region + Animate + History buttons */}
-      {(canEdit || canAnimate || hasRevisions) && !isGenerating && (
+      {/* Toolbar row — Edit Region + Animate + Pose + History buttons */}
+      {(canEdit || canAnimate || canPose || hasRevisions) && !isGenerating && (
         <div className="w-full px-6 pb-1 flex items-center gap-2">
           {canEdit && (
             <button
@@ -677,6 +681,21 @@ export default function PanelViewer({
             >
               <Film className="w-3 h-3" />
               {animateMode ? 'Animating…' : hasClip ? 'Clip Ready' : 'Animate'}
+            </button>
+          )}
+
+          {canPose && (
+            <button
+              onClick={() => onOpenPoseEditor?.()}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                hasPoseClip
+                  ? 'text-violet-400 hover:text-violet-300 hover:bg-violet-900/20'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+              }`}
+              title="Open Pose Engine to generate a skeleton-guided animation"
+            >
+              <Sparkles className="w-3 h-3" />
+              {hasPoseClip ? 'Pose Ready' : 'Pose'}
             </button>
           )}
 

@@ -45,6 +45,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('motion-comic-progress', handler);
   },
 
+  // Phase 6B — Pose Engine
+  generatePoseAnimation: (params) => ipcRenderer.invoke('generate-pose-animation', params),
+  onPoseAnimationProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('pose-animation-progress', handler);
+    return () => ipcRenderer.removeListener('pose-animation-progress', handler);
+  },
+
   // ComfyUI integration
   deleteComfyInputFile: (filename) => ipcRenderer.invoke('delete-comfy-input-file', filename),
 
