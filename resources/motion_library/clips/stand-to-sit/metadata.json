@@ -1,0 +1,14 @@
+{
+  "id": "stand-to-sit",
+  "name": "Stand to Sit",
+  "description": "Character lowers from standing through crouching into seated position",
+  "category": "transitions",
+  "duration": 2.0,
+  "tags": [
+    "transition",
+    "sit down",
+    "lower",
+    "chair"
+  ],
+  "confidence": 90
+}

@@ -1,0 +1,15 @@
+{
+  "id": "combat-defense",
+  "name": "Combat Defense",
+  "description": "Guard position dropping into defensive crouch, protecting head",
+  "category": "fight",
+  "duration": 1.0,
+  "tags": [
+    "defend",
+    "block",
+    "guard",
+    "combat",
+    "defensive"
+  ],
+  "confidence": 92
+}

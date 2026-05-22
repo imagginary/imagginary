@@ -1,0 +1,15 @@
+{
+  "id": "dance-step",
+  "name": "Dance Step",
+  "description": "Simple rhythmic dance move with hip sway and arm swing",
+  "category": "dance",
+  "duration": 2.0,
+  "tags": [
+    "dance",
+    "rhythm",
+    "party",
+    "groove",
+    "celebrate"
+  ],
+  "confidence": 88
+}

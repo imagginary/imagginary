@@ -1,0 +1,15 @@
+{
+  "id": "crowd-cheer",
+  "name": "Crowd Cheer",
+  "description": "Enthusiastic cheer with arms pumping up, celebration",
+  "category": "crowd",
+  "duration": 1.5,
+  "tags": [
+    "cheer",
+    "celebrate",
+    "crowd",
+    "victory",
+    "arms up"
+  ],
+  "confidence": 87
+}

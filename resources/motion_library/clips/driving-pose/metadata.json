@@ -1,0 +1,15 @@
+{
+  "id": "driving-pose",
+  "name": "Driving Pose",
+  "description": "Seated at wheel, slight forward lean, hands shifting position",
+  "category": "driving",
+  "duration": 2.0,
+  "tags": [
+    "drive",
+    "car",
+    "wheel",
+    "vehicle",
+    "seated"
+  ],
+  "confidence": 89
+}

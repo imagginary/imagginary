@@ -1,0 +1,15 @@
+{
+  "id": "desk-work",
+  "name": "Desk Work",
+  "description": "Seated typing posture shifting to leaning forward in concentration",
+  "category": "work",
+  "duration": 2.5,
+  "tags": [
+    "work",
+    "typing",
+    "office",
+    "desk",
+    "computer"
+  ],
+  "confidence": 91
+}

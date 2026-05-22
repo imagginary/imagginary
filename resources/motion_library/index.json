@@ -1,0 +1,183 @@
+[
+  {
+    "id": "walk-cycle",
+    "name": "Walk Cycle",
+    "description": "Natural walking forward motion, steady pace with arm swing",
+    "category": "walks",
+    "duration": 2.0,
+    "tags": ["walk", "walking", "forward", "locomotion", "stride"],
+    "confidence": 94,
+    "isStarter": true
+  },
+  {
+    "id": "turn-reveal",
+    "name": "Turn Reveal",
+    "description": "Character turns from profile to face camera, dramatic reveal",
+    "category": "turns",
+    "duration": 1.5,
+    "tags": ["turn", "reveal", "rotate", "cinematic", "dramatic"],
+    "confidence": 91
+  },
+  {
+    "id": "wave-greeting",
+    "name": "Wave Greeting",
+    "description": "Friendly overhead wave, arm raised and hand sweeping",
+    "category": "gestures",
+    "duration": 1.5,
+    "tags": ["wave", "greeting", "hello", "friendly", "gesture"],
+    "confidence": 96
+  },
+  {
+    "id": "surprise-reaction",
+    "name": "Surprise Reaction",
+    "description": "Startled backward step, hands raised in shock",
+    "category": "reactions",
+    "duration": 1.0,
+    "tags": ["surprise", "shock", "startled", "reaction", "scared"],
+    "confidence": 93
+  },
+  {
+    "id": "punch-combo",
+    "name": "Punch Combo",
+    "description": "Fighting stance to extended punch, returning to guard",
+    "category": "combat",
+    "duration": 1.5,
+    "tags": ["punch", "fight", "combat", "strike", "action"],
+    "confidence": 89
+  },
+  {
+    "id": "emotional-despair",
+    "name": "Emotional Despair",
+    "description": "Character slumps into despair, head bowing, shoulders dropping",
+    "category": "emotional",
+    "duration": 2.0,
+    "tags": ["sad", "despair", "grief", "emotional", "crying", "sorrow"],
+    "confidence": 92
+  },
+  {
+    "id": "hero-reveal",
+    "name": "Hero Reveal",
+    "description": "Dramatic silhouette to triumphant arms-raised victory pose",
+    "category": "cinematic",
+    "duration": 2.0,
+    "tags": ["hero", "triumph", "victory", "cinematic", "dramatic", "reveal"],
+    "confidence": 97
+  },
+  {
+    "id": "sprint-burst",
+    "name": "Sprint Burst",
+    "description": "Explosive sprint start, full running stride at speed",
+    "category": "running",
+    "duration": 1.5,
+    "tags": ["run", "sprint", "fast", "dash", "athletic"],
+    "confidence": 95
+  },
+  {
+    "id": "dance-step",
+    "name": "Dance Step",
+    "description": "Simple rhythmic dance move with hip sway and arm swing",
+    "category": "dance",
+    "duration": 2.0,
+    "tags": ["dance", "rhythm", "party", "move", "groove", "celebrate"],
+    "confidence": 88
+  },
+  {
+    "id": "desk-work",
+    "name": "Desk Work",
+    "description": "Seated typing posture shifting to leaning forward in concentration",
+    "category": "work",
+    "duration": 2.5,
+    "tags": ["work", "typing", "office", "desk", "computer", "focus"],
+    "confidence": 91
+  },
+  {
+    "id": "sitting-idle",
+    "name": "Sitting Idle",
+    "description": "Relaxed seated pose shifting weight between casual positions",
+    "category": "sitting",
+    "duration": 3.0,
+    "tags": ["sit", "idle", "relax", "casual", "rest"],
+    "confidence": 93
+  },
+  {
+    "id": "standing-idle",
+    "name": "Standing Idle",
+    "description": "Relaxed weight shift from neutral to contrapposto stance",
+    "category": "standing",
+    "duration": 2.0,
+    "tags": ["stand", "idle", "neutral", "wait", "rest"],
+    "confidence": 96
+  },
+  {
+    "id": "stand-to-sit",
+    "name": "Stand to Sit",
+    "description": "Character lowers from standing through crouching into seated position",
+    "category": "transitions",
+    "duration": 2.0,
+    "tags": ["transition", "sit down", "lower", "chair", "sit"],
+    "confidence": 90
+  },
+  {
+    "id": "crowd-cheer",
+    "name": "Crowd Cheer",
+    "description": "Enthusiastic cheer with arms pumping up, celebration gesture",
+    "category": "crowd",
+    "duration": 1.5,
+    "tags": ["cheer", "celebrate", "crowd", "chanting", "victory", "arms up"],
+    "confidence": 87
+  },
+  {
+    "id": "reach-upward",
+    "name": "Reach Upward",
+    "description": "Character stretches and reaches up toward something overhead",
+    "category": "nature",
+    "duration": 1.5,
+    "tags": ["reach", "stretch", "up", "grasp", "climb", "nature"],
+    "confidence": 94
+  },
+  {
+    "id": "driving-pose",
+    "name": "Driving Pose",
+    "description": "Seated at wheel, slight forward lean, hands shifting position",
+    "category": "driving",
+    "duration": 2.0,
+    "tags": ["drive", "car", "wheel", "vehicle", "seated", "driving"],
+    "confidence": 89
+  },
+  {
+    "id": "combat-defense",
+    "name": "Combat Defense",
+    "description": "Guard position dropping into defensive crouch, protecting head",
+    "category": "fight",
+    "duration": 1.0,
+    "tags": ["defend", "block", "guard", "combat", "defensive", "protect"],
+    "confidence": 92
+  },
+  {
+    "id": "chase-sprint",
+    "name": "Chase Sprint",
+    "description": "Desperate full-body sprint with forward lean, arms driving",
+    "category": "chase",
+    "duration": 1.5,
+    "tags": ["chase", "run", "pursue", "sprint", "escape", "fast"],
+    "confidence": 93
+  },
+  {
+    "id": "falling-stumble",
+    "name": "Falling Stumble",
+    "description": "Character loses balance and falls forward, arms reaching out",
+    "category": "falling",
+    "duration": 1.0,
+    "tags": ["fall", "stumble", "trip", "ground", "down"],
+    "confidence": 88
+  },
+  {
+    "id": "romance-reach",
+    "name": "Romance Reach",
+    "description": "Tender reaching gesture toward someone, open embracing stance",
+    "category": "romance",
+    "duration": 2.0,
+    "tags": ["romance", "reach", "tender", "love", "embrace", "connect"],
+    "confidence": 91
+  }
+]

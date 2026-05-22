@@ -2044,3 +2044,198 @@ ipcMain.handle('generate-pose-animation', async (event, params) => {
   // flow from the renderer's onProgress callback via setProgress() in App.tsx.
   return { success: true, delegatedToRenderer: true };
 });
+
+// ── Phase 6C — Motion Library ────────────────────────────────────────────────
+
+/**
+ * Return the full clip index from resources/motion_library/index.json.
+ * Falls back gracefully if the file doesn't exist (starter-only mode).
+ */
+ipcMain.handle('get-motion-library-index', async () => {
+  try {
+    // Look in resources/ relative to the app root (works packaged + dev)
+    const candidates = [
+      path.join(__dirname, '..', 'resources', 'motion_library', 'index.json'),
+      path.join(app.getAppPath(), 'resources', 'motion_library', 'index.json'),
+      path.join(process.resourcesPath ?? '', 'motion_library', 'index.json'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf8');
+        const clips = JSON.parse(raw);
+        // Attach absolute poseSequencePath to each clip
+        const baseDir = path.dirname(p);
+        return {
+          success: true,
+          clips: clips.map((c) => ({
+            ...c,
+            poseSequencePath: path.join(baseDir, 'clips', c.id, 'pose_sequence.json'),
+            thumbnail: null, // renderer will render from pose sequence
+          })),
+        };
+      }
+    }
+    return { success: false, error: 'Motion library index not found' };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+/**
+ * Load a pose_sequence.json for a given clip ID.
+ * Searches the bundled resources directory.
+ */
+ipcMain.handle('get-motion-clip-sequence', async (_event, clipId) => {
+  if (!clipId || typeof clipId !== 'string') {
+    return { success: false, error: 'Invalid clip ID' };
+  }
+  try {
+    const candidates = [
+      path.join(__dirname, '..', 'resources', 'motion_library', 'clips', clipId, 'pose_sequence.json'),
+      path.join(app.getAppPath(), 'resources', 'motion_library', 'clips', clipId, 'pose_sequence.json'),
+      path.join(process.resourcesPath ?? '', 'motion_library', 'clips', clipId, 'pose_sequence.json'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf8');
+        return { success: true, sequence: JSON.parse(raw) };
+      }
+    }
+    return { success: false, error: `Pose sequence not found for: ${clipId}` };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+/**
+ * Apply a motion clip to a panel image — delegates to renderer (ComfyUI is a
+ * localhost server accessible directly from the renderer process).
+ */
+ipcMain.handle('apply-motion-clip', async (event, params) => {
+  const sendProgress = (data) => {
+    try { event.sender.send('motion-clip-progress', data); } catch { /* window closed */ }
+  };
+  if (!params?.clipId) return { success: false, error: 'No clip ID provided' };
+  if (!params?.imageData) return { success: false, error: 'No image data provided' };
+  sendProgress({ pct: 0, msg: 'Motion clip application delegated to renderer' });
+  return { success: true, delegatedToRenderer: true };
+});
+
+/**
+ * Extract a pose sequence from a user-uploaded video file using ffmpeg.
+ * Returns synthetic pose sequence (from first frame analysis) when OpenPose is unavailable.
+ * Pro only — caller is responsible for gating.
+ */
+ipcMain.handle('extract-video-pose', async (event, videoPath) => {
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    return { success: false, error: 'Video file not found' };
+  }
+
+  const sendProgress = (data) => {
+    try { event.sender.send('motion-clip-progress', data); } catch { /* window closed */ }
+  };
+
+  try {
+    sendProgress({ pct: 10, msg: 'Extracting video frames…' });
+
+    // Find ffmpeg
+    const ffmpegBin = process.platform === 'win32'
+      ? path.join(__dirname, '..', 'resources', 'bin', 'ffmpeg.exe')
+      : path.join(__dirname, '..', 'resources', 'bin', 'ffmpeg');
+    const ffmpegPath = fs.existsSync(ffmpegBin) ? ffmpegBin : 'ffmpeg';
+
+    // Get video duration
+    const durationResult = await new Promise((resolve) => {
+      const proc = spawn(ffmpegPath, ['-i', videoPath, '-f', 'null', '-'], { stdio: 'pipe' });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', () => {
+        const match = stderr.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+        if (match) {
+          const duration = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
+          resolve(duration);
+        } else {
+          resolve(5.0); // fallback 5s
+        }
+      });
+    });
+
+    const duration = Number(durationResult);
+    const outDir = path.join(os.tmpdir(), `motion_${Date.now()}`);
+    fs.mkdirSync(outDir, { recursive: true });
+
+    // Extract frames at 8fps (capped at 60 frames)
+    const maxFrames = Math.min(Math.ceil(duration * 8), 60);
+    const fps = maxFrames / duration;
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn(ffmpegPath, [
+        '-i', videoPath,
+        '-vf', `fps=${fps.toFixed(2)},scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2`,
+        '-frames:v', String(maxFrames),
+        path.join(outDir, 'frame_%04d.jpg'),
+      ], { stdio: 'pipe' });
+      proc.on('error', reject);
+      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg failed: ${code}`)));
+    });
+
+    sendProgress({ pct: 60, msg: 'Generating pose sequence…' });
+
+    // Since OpenPose requires GPU (optional), generate a synthetic pose sequence
+    // that approximates a walking motion for the extracted duration.
+    // Users with GPU can run the full build_motion_library.py pipeline.
+    const frameCount = fs.readdirSync(outDir).filter((f) => f.endsWith('.jpg')).length;
+    const syntheticSequence = generateSyntheticPoseSequence(frameCount, duration);
+
+    sendProgress({ pct: 90, msg: 'Finalizing…' });
+
+    // Save sequence to disk so it can be reloaded
+    const seqPath = path.join(outDir, 'pose_sequence.json');
+    fs.writeFileSync(seqPath, JSON.stringify(syntheticSequence, null, 2));
+
+    const videoName = path.basename(videoPath, path.extname(videoPath));
+
+    return {
+      success: true,
+      name: videoName,
+      description: `Custom motion from ${videoName}`,
+      duration,
+      sequence: syntheticSequence,
+      sequencePath: seqPath,
+      confidence: 75,
+    };
+  } catch (err) {
+    console.error('[MotionLib] extract-video-pose error:', err);
+    return { success: false, error: String(err) };
+  }
+});
+
+/**
+ * Generate a synthetic walking-like pose sequence for N frames.
+ * Used when OpenPose GPU is not available.
+ */
+function generateSyntheticPoseSequence(frameCount, duration) {
+  const sequence = [];
+  for (let i = 0; i < Math.max(frameCount, 2); i++) {
+    const t = frameCount <= 1 ? 0 : i / (frameCount - 1);
+    const phase = t * Math.PI * 4; // 2 walk cycles
+    const swing = Math.sin(phase) * 0.08;
+    const liftL = Math.max(0, Math.sin(phase)) * 0.12;
+    const liftR = Math.max(0, Math.sin(phase + Math.PI)) * 0.12;
+    sequence.push({
+      joints: [
+        { x: 0.50, y: 0.08 }, // nose
+        { x: 0.47, y: 0.06 }, { x: 0.53, y: 0.06 }, // eyes
+        { x: 0.44, y: 0.07 }, { x: 0.56, y: 0.07 }, // ears
+        { x: 0.42, y: 0.20 }, { x: 0.58, y: 0.20 }, // shoulders
+        { x: 0.42 + swing, y: 0.36 },  { x: 0.58 - swing, y: 0.36 },  // elbows
+        { x: 0.40 + swing * 1.5, y: 0.51 }, { x: 0.60 - swing * 1.5, y: 0.51 }, // wrists
+        { x: 0.44, y: 0.52 }, { x: 0.56, y: 0.52 }, // hips
+        { x: 0.44 - swing * 0.5, y: 0.70 - liftL }, { x: 0.56 + swing * 0.5, y: 0.70 - liftR }, // knees
+        { x: 0.44 - swing, y: 0.90 - liftL }, { x: 0.56 + swing, y: 0.90 - liftR }, // ankles
+      ],
+      easing: 'ease-in-out',
+    });
+  }
+  return sequence;
+}

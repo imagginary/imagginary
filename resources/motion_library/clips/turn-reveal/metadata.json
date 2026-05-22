@@ -1,0 +1,14 @@
+{
+  "id": "turn-reveal",
+  "name": "Turn Reveal",
+  "description": "Character turns from profile to face camera",
+  "category": "turns",
+  "duration": 1.5,
+  "tags": [
+    "turn",
+    "reveal",
+    "rotate",
+    "cinematic"
+  ],
+  "confidence": 91
+}

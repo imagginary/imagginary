@@ -1,0 +1,15 @@
+{
+  "id": "reach-upward",
+  "name": "Reach Upward",
+  "description": "Character stretches and reaches up toward something overhead",
+  "category": "nature",
+  "duration": 1.5,
+  "tags": [
+    "reach",
+    "stretch",
+    "up",
+    "grasp",
+    "nature"
+  ],
+  "confidence": 94
+}

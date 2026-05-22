@@ -91,6 +91,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openMeshFile: (filePath) => ipcRenderer.invoke('open-mesh-file', filePath),
 
+  // Phase 6C — Motion Library
+  getMotionLibraryIndex: () => ipcRenderer.invoke('get-motion-library-index'),
+  getMotionClipSequence: (clipId) => ipcRenderer.invoke('get-motion-clip-sequence', clipId),
+  applyMotionClip: (params) => ipcRenderer.invoke('apply-motion-clip', params),
+  extractVideoPose: (videoPath) => ipcRenderer.invoke('extract-video-pose', videoPath),
+  onMotionClipProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('motion-clip-progress', handler);
+    return () => ipcRenderer.removeListener('motion-clip-progress', handler);
+  },
+
   // Platform (safe to read in preload)
   platform: process.platform,
 });

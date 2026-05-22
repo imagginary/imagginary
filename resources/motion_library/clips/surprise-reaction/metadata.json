@@ -1,0 +1,14 @@
+{
+  "id": "surprise-reaction",
+  "name": "Surprise Reaction",
+  "description": "Startled backward step, hands raised in shock",
+  "category": "reactions",
+  "duration": 1.0,
+  "tags": [
+    "surprise",
+    "shock",
+    "startled",
+    "scared"
+  ],
+  "confidence": 93
+}

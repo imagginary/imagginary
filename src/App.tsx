@@ -6,6 +6,7 @@ import WelcomeFlow, { WelcomeCompleteParams } from './components/WelcomeFlow';
 import PanelList from './components/PanelList';
 import PanelViewer from './components/PanelViewer';
 import PoseEditor from './components/PoseEditor';
+import MotionLibrary from './components/MotionLibrary';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
@@ -152,6 +153,8 @@ export default function App() {
   // Phase 6B — Pose Engine
   const [showPoseEditor, setShowPoseEditor] = useState(false);
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
+  // Phase 6C — Motion Library
+  const [showMotionLibrary, setShowMotionLibrary] = useState(false);
   // Phase 9 — 3D Mesh / Turntable
   const [meshProgress, setMeshProgress] = useState<MeshGenerationProgress | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
@@ -927,6 +930,24 @@ export default function App() {
     }
   }
 
+  async function handleApplyMotionClip({ clipId, videoData }: { clipId: string; videoData: string }) {
+    if (!activePanelId) return;
+    let clipPath: string | null = null;
+    if (window.electronAPI?.saveVideo) {
+      const b64 = videoData.replace(/^data:[^;]+;base64,/, '');
+      const saved = await window.electronAPI.saveVideo(
+        b64,
+        `motion_${clipId}_${Date.now()}.mp4`
+      );
+      if (saved.success) clipPath = saved.filePath ?? null;
+    }
+    updatePanel(activePanelId, {
+      motionClipData: videoData,
+      motionClipPath: clipPath,
+    });
+    setShowMotionLibrary(false);
+  }
+
   function handleUndoEdit(panelId: string) {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.editHistory?.length) return;
@@ -1111,6 +1132,7 @@ export default function App() {
             onClearMotion={handleClearMotion}
             onRestoreRevision={handleRestoreRevision}
             onOpenPoseEditor={() => setShowPoseEditor(true)}
+            onOpenMotionLibrary={() => setShowMotionLibrary(true)}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
@@ -1150,6 +1172,17 @@ export default function App() {
           isGenerating={isPoseGenerating}
           onGenerate={handleGeneratePoseAnimation}
           onClose={() => setShowPoseEditor(false)}
+        />
+      )}
+
+      {/* Phase 6C — Motion Library modal */}
+      {showMotionLibrary && activePanel && (
+        <MotionLibrary
+          panel={activePanel}
+          isPro={false}
+          comfyuiConnected={serviceStatus.comfyui === 'connected'}
+          onApply={handleApplyMotionClip}
+          onClose={() => setShowMotionLibrary(false)}
         />
       )}
     </div>

@@ -1,0 +1,15 @@
+{
+  "id": "emotional-despair",
+  "name": "Emotional Despair",
+  "description": "Character slumps into despair, head bowing, shoulders dropping",
+  "category": "emotional",
+  "duration": 2.0,
+  "tags": [
+    "sad",
+    "despair",
+    "grief",
+    "emotional",
+    "sorrow"
+  ],
+  "confidence": 92
+}

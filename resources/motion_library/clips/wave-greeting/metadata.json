@@ -1,0 +1,14 @@
+{
+  "id": "wave-greeting",
+  "name": "Wave Greeting",
+  "description": "Friendly overhead wave with arm raised and hand sweeping",
+  "category": "gestures",
+  "duration": 1.5,
+  "tags": [
+    "wave",
+    "greeting",
+    "hello",
+    "friendly"
+  ],
+  "confidence": 96
+}

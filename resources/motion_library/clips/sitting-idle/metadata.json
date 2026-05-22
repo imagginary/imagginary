@@ -1,0 +1,15 @@
+{
+  "id": "sitting-idle",
+  "name": "Sitting Idle",
+  "description": "Relaxed seated pose shifting weight between casual positions",
+  "category": "sitting",
+  "duration": 3.0,
+  "tags": [
+    "sit",
+    "idle",
+    "relax",
+    "casual",
+    "rest"
+  ],
+  "confidence": 93
+}

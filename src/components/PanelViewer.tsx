@@ -13,6 +13,7 @@ interface PanelViewerProps {
   onClearMotion?: (panelId: string) => void;
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
   onOpenPoseEditor?: () => void;
+  onOpenMotionLibrary?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -58,6 +59,7 @@ export default function PanelViewer({
   onClearMotion,
   onRestoreRevision,
   onOpenPoseEditor,
+  onOpenMotionLibrary,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -696,6 +698,17 @@ export default function PanelViewer({
             >
               <Sparkles className="w-3 h-3" />
               {hasPoseClip ? 'Pose Ready' : 'Pose'}
+            </button>
+          )}
+
+          {canAnimate && (
+            <button
+              onClick={() => onOpenMotionLibrary?.()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+              title="Browse and apply pre-cleared motion clips from the library"
+            >
+              <Film className="w-3 h-3" />
+              Motion Library
             </button>
           )}
 

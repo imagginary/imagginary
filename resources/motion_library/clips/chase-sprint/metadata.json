@@ -1,0 +1,15 @@
+{
+  "id": "chase-sprint",
+  "name": "Chase Sprint",
+  "description": "Desperate full-body sprint with forward lean, arms driving",
+  "category": "chase",
+  "duration": 1.5,
+  "tags": [
+    "chase",
+    "run",
+    "pursue",
+    "sprint",
+    "escape"
+  ],
+  "confidence": 93
+}

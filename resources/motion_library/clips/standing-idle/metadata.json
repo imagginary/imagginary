@@ -1,0 +1,15 @@
+{
+  "id": "standing-idle",
+  "name": "Standing Idle",
+  "description": "Relaxed weight shift from neutral to contrapposto stance",
+  "category": "standing",
+  "duration": 2.0,
+  "tags": [
+    "stand",
+    "idle",
+    "neutral",
+    "wait",
+    "rest"
+  ],
+  "confidence": 96
+}

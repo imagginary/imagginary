@@ -1,0 +1,15 @@
+{
+  "id": "falling-stumble",
+  "name": "Falling Stumble",
+  "description": "Character loses balance and falls forward, arms reaching out",
+  "category": "falling",
+  "duration": 1.0,
+  "tags": [
+    "fall",
+    "stumble",
+    "trip",
+    "ground",
+    "down"
+  ],
+  "confidence": 88
+}

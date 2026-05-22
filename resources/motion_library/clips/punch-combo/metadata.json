@@ -1,0 +1,14 @@
+{
+  "id": "punch-combo",
+  "name": "Punch Combo",
+  "description": "Fighting stance to extended punch, returning to guard",
+  "category": "combat",
+  "duration": 1.5,
+  "tags": [
+    "punch",
+    "fight",
+    "combat",
+    "strike"
+  ],
+  "confidence": 89
+}

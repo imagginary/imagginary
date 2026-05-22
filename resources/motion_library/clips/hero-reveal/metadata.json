@@ -1,0 +1,15 @@
+{
+  "id": "hero-reveal",
+  "name": "Hero Reveal",
+  "description": "Dramatic silhouette to triumphant arms-raised victory pose",
+  "category": "cinematic",
+  "duration": 2.0,
+  "tags": [
+    "hero",
+    "triumph",
+    "victory",
+    "cinematic",
+    "dramatic"
+  ],
+  "confidence": 97
+}

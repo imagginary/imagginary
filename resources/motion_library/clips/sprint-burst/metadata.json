@@ -1,0 +1,15 @@
+{
+  "id": "sprint-burst",
+  "name": "Sprint Burst",
+  "description": "Explosive sprint start, full running stride at speed",
+  "category": "running",
+  "duration": 1.5,
+  "tags": [
+    "run",
+    "sprint",
+    "fast",
+    "dash",
+    "athletic"
+  ],
+  "confidence": 95
+}

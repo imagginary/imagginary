@@ -1,0 +1,14 @@
+{
+  "id": "walk-cycle",
+  "name": "Walk Cycle",
+  "description": "Natural walking forward motion with arm swing",
+  "category": "walks",
+  "duration": 2.0,
+  "tags": [
+    "walk",
+    "walking",
+    "forward",
+    "stride"
+  ],
+  "confidence": 94
+}

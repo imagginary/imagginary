@@ -165,6 +165,36 @@ export interface CharacterGenerationProgress {
   error?: string;
 }
 
+// ── Phase 6C — Motion Library ─────────────────────────────────────────────────
+
+export type MotionCategory =
+  | 'walks' | 'turns' | 'gestures' | 'reactions' | 'combat' | 'emotional'
+  | 'cinematic' | 'sports' | 'dance' | 'work' | 'sitting' | 'standing'
+  | 'transitions' | 'crowd' | 'nature' | 'vehicle' | 'animal' | 'fight'
+  | 'chase' | 'romance' | 'comedy' | 'horror' | 'drama' | 'action'
+  | 'slow-motion' | 'running' | 'falling' | 'climbing' | 'swimming' | 'driving';
+
+export interface MotionClip {
+  id: string;
+  name: string;
+  description: string;
+  category: MotionCategory | string;
+  duration: number;
+  thumbnail: string | null;       // base64 SVG data URL rendered from first pose frame
+  poseSequencePath: string | null; // absolute path to pose_sequence.json (null for starter)
+  tags: string[];
+  confidence: number;             // 0-100 quality score
+  isStarter?: boolean;
+}
+
+export interface MotionLibraryProgress {
+  clipId: string;
+  stage: 'loading-pose' | 'building-workflow' | 'generating' | 'complete' | 'error';
+  pct: number;
+  message: string;
+  error?: string;
+}
+
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────
 
 export interface ScriptShot {
