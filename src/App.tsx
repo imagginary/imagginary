@@ -8,6 +8,7 @@ import PanelViewer from './components/PanelViewer';
 import PoseEditor from './components/PoseEditor';
 import MotionLibrary from './components/MotionLibrary';
 import VideoTransfer from './components/VideoTransfer';
+import VoiceStudio from './components/VoiceStudio';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
@@ -92,6 +93,8 @@ function createEmptyPanel(order: number): Panel {
     motionClipData: null,
     poseClipPath: null,
     poseClipData: null,
+    voicePath: null,
+    voiceCharacterId: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -158,6 +161,8 @@ export default function App() {
   const [showMotionLibrary, setShowMotionLibrary] = useState(false);
   // Phase 6E — Video Transfer
   const [showVideoTransfer, setShowVideoTransfer] = useState(false);
+  // Phase 15 — Voice Studio
+  const [showVoiceStudio, setShowVoiceStudio] = useState(false);
   // Phase 9 — 3D Mesh / Turntable
   const [meshProgress, setMeshProgress] = useState<MeshGenerationProgress | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
@@ -971,6 +976,15 @@ export default function App() {
     setShowVideoTransfer(false);
   }
 
+  function handleVoiceComplete(wavPath: string, characterId: string | null) {
+    if (!activePanelId) return;
+    updatePanel(activePanelId, {
+      voicePath: wavPath,
+      voiceCharacterId: characterId,
+    });
+    setShowVoiceStudio(false);
+  }
+
   function handleUndoEdit(panelId: string) {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.editHistory?.length) return;
@@ -1157,6 +1171,7 @@ export default function App() {
             onOpenPoseEditor={() => setShowPoseEditor(true)}
             onOpenMotionLibrary={() => setShowMotionLibrary(true)}
             onOpenVideoTransfer={() => setShowVideoTransfer(true)}
+            onOpenVoiceStudio={() => setShowVoiceStudio(true)}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
@@ -1218,6 +1233,17 @@ export default function App() {
           isPro={false}
           onComplete={handleVideoTransferComplete}
           onClose={() => setShowVideoTransfer(false)}
+        />
+      )}
+
+      {/* Phase 15 — Voice Studio modal */}
+      {showVoiceStudio && activePanel && (
+        <VoiceStudio
+          panel={activePanel}
+          characters={project.characters}
+          isPro={false}
+          onComplete={handleVoiceComplete}
+          onClose={() => setShowVoiceStudio(false)}
         />
       )}
     </div>

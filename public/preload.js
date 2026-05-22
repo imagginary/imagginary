@@ -112,6 +112,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('transfer-pose-progress', handler);
   },
 
+  // Phase 15 — Voice Layer (Coqui TTS)
+  checkCoquiTTS: () => ipcRenderer.invoke('check-coqui-tts'),
+  getVoiceLibrary: () => ipcRenderer.invoke('get-voice-library'),
+  getVoiceSample: (voiceId) => ipcRenderer.invoke('get-voice-sample', voiceId),
+  generateVoice: (params) => ipcRenderer.invoke('generate-voice', params),
+  installCoquiTTS: () => ipcRenderer.invoke('install-coqui-tts'),
+  cloneVoice: (params) => ipcRenderer.invoke('clone-voice', params),
+  onVoiceProgress: (cb) => {
+    const handler = (_event, pct) => cb(pct);
+    ipcRenderer.on('voice-progress', handler);
+    return () => ipcRenderer.removeListener('voice-progress', handler);
+  },
+  onInstallProgress: (cb) => {
+    const handler = (_event, msg) => cb(msg);
+    ipcRenderer.on('install-progress', handler);
+    return () => ipcRenderer.removeListener('install-progress', handler);
+  },
+
   // Platform (safe to read in preload)
   platform: process.platform,
 });

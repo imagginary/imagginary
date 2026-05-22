@@ -2481,6 +2481,280 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
   }
 });
 
+// ── Phase 15 — Voice Layer (Coqui TTS) ───────────────────────────────────────
+
+/**
+ * Resolve the ComfyUI venv Python executable (mac/win).
+ * Falls back to the system python3/python if the venv doesn't exist yet.
+ */
+function resolveVenvPython() {
+  const isWin = process.platform === 'win32';
+  const comfyPath = path.join(os.homedir(), 'ComfyUI');
+  const venvPython = isWin
+    ? path.join(comfyPath, 'venv', 'Scripts', 'python.exe')
+    : path.join(comfyPath, 'venv', 'bin', 'python3');
+  if (fs.existsSync(venvPython)) return venvPython;
+  // Fallback to system python
+  const systemCandidates = isWin
+    ? ['python.exe', 'python3.exe']
+    : ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3', 'python3'];
+  for (const p of systemCandidates) {
+    try {
+      if (p.startsWith('/') && fs.existsSync(p)) return p;
+      if (!p.startsWith('/')) return p; // let spawn resolve from PATH
+    } catch { /* skip */ }
+  }
+  return 'python3';
+}
+
+/**
+ * Check whether Coqui TTS is importable in the ComfyUI venv.
+ */
+ipcMain.handle('check-coqui-tts', async () => {
+  try {
+    const pythonBin = resolveVenvPython();
+    const version = await new Promise((resolve) => {
+      const proc = spawn(pythonBin, ['-c', 'import TTS; print(TTS.__version__)'], { stdio: 'pipe' });
+      let out = '';
+      proc.stdout.on('data', (d) => { out += d.toString(); });
+      proc.on('close', (code) => {
+        resolve(code === 0 ? out.trim() : null);
+      });
+      proc.on('error', () => resolve(null));
+    });
+    if (version) {
+      return { available: true, version };
+    }
+    return { available: false, installCommand: 'pip install TTS' };
+  } catch {
+    return { available: false, installCommand: 'pip install TTS' };
+  }
+});
+
+/**
+ * Read the bundled voices/index.json and return the voice library.
+ */
+ipcMain.handle('get-voice-library', async () => {
+  try {
+    const candidates = [
+      path.join(__dirname, '..', 'resources', 'voices', 'index.json'),
+      path.join(app.getAppPath(), 'resources', 'voices', 'index.json'),
+      path.join(process.resourcesPath ?? '', 'voices', 'index.json'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const voices = JSON.parse(fs.readFileSync(p, 'utf8'));
+        return { success: true, voices };
+      }
+    }
+    return { success: false, error: 'Voice library index not found' };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+/**
+ * Return the path to a pre-recorded sample WAV for the given voice ID.
+ */
+ipcMain.handle('get-voice-sample', async (_event, voiceId) => {
+  if (!voiceId || typeof voiceId !== 'string') {
+    return { success: false, error: 'Invalid voice ID' };
+  }
+  try {
+    const candidates = [
+      path.join(__dirname, '..', 'resources', 'voices', 'samples', `${voiceId}.wav`),
+      path.join(app.getAppPath(), 'resources', 'voices', 'samples', `${voiceId}.wav`),
+      path.join(process.resourcesPath ?? '', 'voices', 'samples', `${voiceId}.wav`),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return { success: true, samplePath: p };
+    }
+    return { success: false, error: `Sample not found for: ${voiceId}` };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+
+/**
+ * Run Coqui TTS to synthesise speech from text.
+ * Streams progress events back to the renderer.
+ *
+ * Uses: python -m TTS --text "..." --model_name "..." [--speaker_idx "..."] --out_path output.wav
+ */
+ipcMain.handle('generate-voice', async (event, params) => {
+  const { text, voiceId, modelName, speakerId } = params ?? {};
+  if (!text || !voiceId) {
+    return { success: false, error: 'text and voiceId are required' };
+  }
+
+  const sendProgress = (pct) => {
+    try { event.sender.send('voice-progress', pct); } catch { /* window closed */ }
+  };
+
+  try {
+    sendProgress(5);
+    const pythonBin = resolveVenvPython();
+
+    // Output to app data dir
+    const appDataDir = app.getPath('userData');
+    const voiceDir = path.join(appDataDir, 'voices');
+    fs.mkdirSync(voiceDir, { recursive: true });
+    const outPath = path.join(voiceDir, `voice_${voiceId}_${Date.now()}.wav`);
+
+    const args = [
+      '-m', 'TTS',
+      '--text', text,
+      '--model_name', modelName ?? 'tts_models/en/vctk/vits',
+      '--out_path', outPath,
+    ];
+    if (speakerId) args.push('--speaker_idx', speakerId);
+
+    sendProgress(15);
+    console.log('[Voice] Running:', pythonBin, args.slice(0, 6).join(' '), '…');
+
+    const result = await new Promise((resolve) => {
+      const proc = spawn(pythonBin, args, { stdio: 'pipe' });
+      let stderr = '';
+      let progressTick = 20;
+
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+        // Coqui prints progress to stderr; emit rough incremental ticks
+        if (progressTick < 90) {
+          progressTick = Math.min(90, progressTick + 5);
+          sendProgress(progressTick);
+        }
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outPath)) {
+          resolve({ success: true, wavPath: outPath });
+        } else {
+          const errMsg = stderr.split('\n').filter(Boolean).slice(-3).join(' ') || 'TTS process failed';
+          resolve({ success: false, error: errMsg });
+        }
+      });
+
+      proc.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    sendProgress(100);
+    return result;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Install Coqui TTS into the ComfyUI venv via pip.
+ * Streams install log lines as 'install-progress' events.
+ */
+ipcMain.handle('install-coqui-tts', async (event) => {
+  const sendProgress = (msg) => {
+    try { event.sender.send('install-progress', msg); } catch { /* window closed */ }
+  };
+
+  try {
+    const isWin = process.platform === 'win32';
+    const comfyPath = path.join(os.homedir(), 'ComfyUI');
+    const venvPip = isWin
+      ? path.join(comfyPath, 'venv', 'Scripts', 'pip.exe')
+      : path.join(comfyPath, 'venv', 'bin', 'pip');
+    const pipBin = fs.existsSync(venvPip) ? venvPip : 'pip3';
+
+    sendProgress(`Using pip: ${pipBin}`);
+
+    const result = await new Promise((resolve) => {
+      const proc = spawn(pipBin, ['install', 'TTS'], { stdio: 'pipe' });
+
+      proc.stdout.on('data', (d) => sendProgress(d.toString().trim()));
+      proc.stderr.on('data', (d) => sendProgress(d.toString().trim()));
+
+      proc.on('close', (code) => {
+        resolve({ success: code === 0 });
+      });
+      proc.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    return result;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Studio only — fine-tune a Coqui model from a voice sample file.
+ * Returns the new VoiceProfile on success.
+ */
+ipcMain.handle('clone-voice', async (event, params) => {
+  const { audioSamplePath, name } = params ?? {};
+  if (!audioSamplePath || !name) {
+    return { success: false, error: 'audioSamplePath and name are required' };
+  }
+  if (!fs.existsSync(audioSamplePath)) {
+    return { success: false, error: 'Audio sample file not found' };
+  }
+
+  try {
+    const pythonBin = resolveVenvPython();
+    const appDataDir = app.getPath('userData');
+    const cloneDir = path.join(appDataDir, 'voice_clones', name.replace(/[^a-z0-9_-]/gi, '_'));
+    fs.mkdirSync(cloneDir, { recursive: true });
+
+    // Use Coqui's YourTTS / fine-tune path for custom clones
+    const args = [
+      '-m', 'TTS',
+      '--model_name', 'tts_models/multilingual/multi-dataset/your_tts',
+      '--speaker_wav', audioSamplePath,
+      '--language_idx', 'en',
+      '--text', 'Voice clone test.',
+      '--out_path', path.join(cloneDir, 'test_output.wav'),
+    ];
+
+    console.log('[VoiceClone] Starting clone for:', name);
+    const result = await new Promise((resolve) => {
+      const proc = spawn(pythonBin, args, { stdio: 'pipe' });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true });
+        } else {
+          const errMsg = stderr.split('\n').filter(Boolean).slice(-3).join(' ') || 'Clone failed';
+          resolve({ success: false, error: errMsg });
+        }
+      });
+      proc.on('error', (err) => resolve({ success: false, error: err.message }));
+    });
+
+    if (!result.success) return result;
+
+    const profile = {
+      id: `custom-${Date.now()}`,
+      name,
+      description: `Custom voice cloned from sample`,
+      style: 'custom',
+      gender: 'male',
+      age: 'adult',
+      accent: 'custom',
+      samplePath: audioSamplePath,
+      isCustom: true,
+      tier: 'studio',
+      modelName: 'tts_models/multilingual/multi-dataset/your_tts',
+      speakerWav: audioSamplePath,
+    };
+    return { success: true, profile };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Generate a synthetic walking-like pose sequence for N frames.
  * Used when OpenPose GPU is not available.

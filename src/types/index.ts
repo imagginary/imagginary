@@ -111,6 +111,9 @@ export interface Panel {
   // Phase 6B — Pose Engine
   poseClipPath: string | null;     // absolute path to pose-animated MP4
   poseClipData: string | null;     // base64 data URL for browser playback
+  // Phase 15 — Voice Layer
+  voicePath?: string | null;        // absolute path to generated WAV file
+  voiceCharacterId?: string | null; // which character is speaking
   // Aspect ratio override — null means inherit from project.aspectRatioId
   aspectRatioId?: string | null;
   createdAt: number;
