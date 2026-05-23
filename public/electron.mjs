@@ -2486,8 +2486,8 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 const DODO_API_KEY   = process.env.DODO_API_KEY   ?? '';
 const DODO_API_BASE  = process.env.DODO_API_BASE   ?? 'https://api.dodopayments.com';
 const CHECKOUT_URLS  = {
-  pro:    process.env.DODO_PRO_CHECKOUT_URL    ?? 'https://checkout.dodopayments.com/buy/REPLACE_PRO',
-  studio: process.env.DODO_STUDIO_CHECKOUT_URL ?? 'https://checkout.dodopayments.com/buy/REPLACE_STUDIO',
+  pro:    process.env.DODO_PRO_CHECKOUT_URL    ?? 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
+  studio: process.env.DODO_STUDIO_CHECKOUT_URL ?? 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
 };
 
 function getLicensePath() {
