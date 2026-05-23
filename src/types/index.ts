@@ -1,5 +1,17 @@
 // Widened to string — options driven by FILM_DICTIONARY at runtime
 export type ShotType = string;
+
+// ── License / Tier ────────────────────────────────────────────────────────────
+
+export type LicenseTier = 'community' | 'pro' | 'studio';
+
+export interface License {
+  key: string;
+  tier: LicenseTier;
+  email: string;
+  activatedAt: number;
+  expiresAt: number | null;
+}
 export type CameraAngle = string;
 export type Mood = string;
 
@@ -127,7 +139,7 @@ export interface StyleProfile {
   loraName: string | null;
   promptSuffix: string;
   negativePrompt: string;   // '' for community styles, style-specific terms for pro
-  tier: 'community' | 'pro';
+  tier: 'community' | 'pro' | 'studio';
   previewImageUrl: string | null; // null until Phase 8 Pro preview images are added
 }
 

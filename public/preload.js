@@ -112,6 +112,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('transfer-pose-progress', handler);
   },
 
+  // License / Dodo Payments
+  validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
+  getLicense: () => ipcRenderer.invoke('get-license'),
+  saveLicense: (license) => ipcRenderer.invoke('save-license', license),
+  clearLicense: () => ipcRenderer.invoke('clear-license'),
+  openCheckout: (tier) => ipcRenderer.invoke('open-checkout', tier),
+
   // Phase 15 — Voice Layer (Coqui TTS)
   checkCoquiTTS: () => ipcRenderer.invoke('check-coqui-tts'),
   getVoiceLibrary: () => ipcRenderer.invoke('get-voice-library'),

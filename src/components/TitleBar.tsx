@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, ScrollText, FileText, FileCode, Lock, X, Clapperboard } from 'lucide-react';
+import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap } from 'lucide-react';
 import { ServiceStatus } from '../types';
 
 interface TitleBarProps {
@@ -18,6 +18,7 @@ interface TitleBarProps {
   isExporting: boolean;
   exportProgress: number | null;
   isStudio?: boolean;
+  onActivateLicense?: () => void;
   isExportingMotionComic: boolean;
   motionComicProgress: number;
   hasMotionClips: boolean;
@@ -84,6 +85,7 @@ export default function TitleBar({
   isExporting,
   exportProgress,
   isStudio = false,
+  onActivateLicense,
   isExportingMotionComic,
   motionComicProgress,
   hasMotionClips,
@@ -91,12 +93,12 @@ export default function TitleBar({
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   function handleExportPDF() {
-    if (!isStudio) { setShowUpgrade(true); return; }
+    if (!isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
     onExportPDF();
   }
 
   function handleExportXML() {
-    if (!isStudio) { setShowUpgrade(true); return; }
+    if (!isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
     onExportXML();
   }
 
@@ -195,6 +197,27 @@ export default function TitleBar({
           >
             <HelpCircle className="w-3.5 h-3.5" />
           </button>
+
+          <div className="w-px h-4 bg-gray-700 mx-1" />
+
+          {/* License / tier indicator */}
+          {isStudio ? (
+            <button
+              onClick={onActivateLicense}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase text-violet-300 hover:text-violet-200 hover:bg-violet-900/20 transition-colors"
+              title="Studio — manage license"
+            >
+              <Star className="w-3 h-3" /> Studio
+            </button>
+          ) : (
+            <button
+              onClick={onActivateLicense}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase text-imagginary-400 hover:text-imagginary-300 hover:bg-imagginary-900/20 transition-colors"
+              title="Upgrade to Pro or Studio"
+            >
+              <Zap className="w-3 h-3" /> Upgrade
+            </button>
+          )}
 
           <div className="w-px h-4 bg-gray-700 mx-1" />
 

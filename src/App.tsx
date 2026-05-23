@@ -9,9 +9,11 @@ import PoseEditor from './components/PoseEditor';
 import MotionLibrary from './components/MotionLibrary';
 import VideoTransfer from './components/VideoTransfer';
 import VoiceStudio from './components/VoiceStudio';
+import ActivateLicense from './components/ActivateLicense';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
+import { licenseService } from './services/LicenseService';
 import { ollamaService } from './services/OllamaService';
 import { comfyUIService } from './services/ComfyUIService';
 import { characterLibraryService } from './services/CharacterLibraryService';
@@ -31,6 +33,7 @@ import {
   CharacterGenerationProgress,
   MeshGenerationProgress,
   StyleProfile,
+  License,
 } from './types';
 import {
   STYLE_CLASSIC_STORYBOARD,
@@ -170,6 +173,9 @@ export default function App() {
   const [showStylePicker, setShowStylePicker] = useState(false);
   // Phase 14 — true when the main process auto-started Ollama + ComfyUI successfully
   const [servicesAutoStarted, setServicesAutoStarted] = useState(false);
+  // License
+  const [license, setLicense] = useState<License | null>(null);
+  const [showActivateLicense, setShowActivateLicense] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPath = useRef<string | null>(null);
 
@@ -183,6 +189,11 @@ export default function App() {
         (status.comfyui === 'started' || status.comfyui === 'external');
       setServicesAutoStarted(bothOk);
     });
+  }, []);
+
+  // ── License load ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    licenseService.load().then(() => setLicense(licenseService.getLicense()));
   }, []);
 
   // ── Service status polling ───────────────────────────────────────────────────
@@ -1073,7 +1084,8 @@ export default function App() {
         isSaving={isSaving}
         isExporting={isExporting}
         exportProgress={exportProgress}
-        isStudio={false}
+        isStudio={licenseService.isStudio()}
+        onActivateLicense={() => setShowActivateLicense(true)}
         isExportingMotionComic={isExportingMotionComic}
         motionComicProgress={motionComicProgress}
         hasMotionClips={hasMotionClips}
@@ -1152,7 +1164,7 @@ export default function App() {
               generationProgress={charProgress}
               onGenerate3DMesh={handleGenerate3DMesh}
               meshProgress={meshProgress}
-              isPro={false}
+              isPro={licenseService.isPro()}
             />
           </div>
         </div>
@@ -1175,7 +1187,7 @@ export default function App() {
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
-            isPro={false}
+            isPro={licenseService.isPro()}
           />
           <ShotInput
             value={shotInput}
@@ -1207,7 +1219,7 @@ export default function App() {
       {showPoseEditor && activePanel && (
         <PoseEditor
           panel={activePanel}
-          isPro={false}
+          isPro={licenseService.isPro()}
           isGenerating={isPoseGenerating}
           onGenerate={handleGeneratePoseAnimation}
           onClose={() => setShowPoseEditor(false)}
@@ -1218,7 +1230,7 @@ export default function App() {
       {showMotionLibrary && activePanel && (
         <MotionLibrary
           panel={activePanel}
-          isPro={false}
+          isPro={licenseService.isPro()}
           comfyuiConnected={serviceStatus.comfyui === 'connected'}
           onApply={handleApplyMotionClip}
           onClose={() => setShowMotionLibrary(false)}
@@ -1230,7 +1242,7 @@ export default function App() {
         <VideoTransfer
           panel={activePanel}
           characters={project.characters}
-          isPro={false}
+          isPro={licenseService.isPro()}
           onComplete={handleVideoTransferComplete}
           onClose={() => setShowVideoTransfer(false)}
         />
@@ -1241,9 +1253,18 @@ export default function App() {
         <VoiceStudio
           panel={activePanel}
           characters={project.characters}
-          isPro={false}
+          isPro={licenseService.isPro()}
           onComplete={handleVoiceComplete}
           onClose={() => setShowVoiceStudio(false)}
+        />
+      )}
+
+      {/* License activation modal */}
+      {showActivateLicense && (
+        <ActivateLicense
+          currentLicense={license}
+          onLicenseChange={() => setLicense(licenseService.getLicense())}
+          onClose={() => setShowActivateLicense(false)}
         />
       )}
     </div>

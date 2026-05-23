@@ -2481,6 +2481,103 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
   }
 });
 
+// ── License / Dodo Payments ───────────────────────────────────────────────────
+
+const DODO_API_KEY   = process.env.DODO_API_KEY   ?? '';
+const DODO_API_BASE  = process.env.DODO_API_BASE   ?? 'https://api.dodopayments.com';
+const CHECKOUT_URLS  = {
+  pro:    process.env.DODO_PRO_CHECKOUT_URL    ?? 'https://checkout.dodopayments.com/buy/REPLACE_PRO',
+  studio: process.env.DODO_STUDIO_CHECKOUT_URL ?? 'https://checkout.dodopayments.com/buy/REPLACE_STUDIO',
+};
+
+function getLicensePath() {
+  return path.join(app.getPath('userData'), 'imagginary-license.json');
+}
+
+/** Detect tier from Dodo response — checks metadata.tier first, then product name. */
+function detectTier(data) {
+  const meta = data?.metadata?.tier?.toLowerCase();
+  if (meta === 'studio') return 'studio';
+  if (meta === 'pro') return 'pro';
+  const name = (data?.product_name ?? data?.name ?? '').toLowerCase();
+  if (name.includes('studio')) return 'studio';
+  return 'pro';
+}
+
+ipcMain.handle('validate-license', async (_event, key) => {
+  if (!key) return { valid: false, error: 'No key provided.' };
+  if (!DODO_API_KEY) return { valid: false, error: 'License validation unavailable.' };
+  try {
+    const res = await fetch(
+      `${DODO_API_BASE}/licenses/${encodeURIComponent(key.trim())}/validate`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${DODO_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      }
+    );
+    if (!res.ok) {
+      if (res.status === 404) return { valid: false, error: 'License key not found. Check for typos.' };
+      if (res.status === 403) return { valid: false, error: 'License key has been deactivated.' };
+      return { valid: false, error: `Validation failed: HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    if (data.status !== 'active') return { valid: false, error: `License is ${data.status}.` };
+    const tier     = detectTier(data);
+    const email    = data.customer?.email ?? data.email ?? '';
+    const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : null;
+    const license  = { key: key.trim(), tier, email, activatedAt: Date.now(), expiresAt };
+    fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
+    return { valid: true, tier, email, expiresAt };
+  } catch (err) {
+    console.error('[License] validate error:', err.message);
+    return { valid: false, error: 'Could not reach license server. Check your connection.' };
+  }
+});
+
+ipcMain.handle('get-license', () => {
+  try {
+    const p = getLicensePath();
+    if (!fs.existsSync(p)) return null;
+    const license = JSON.parse(fs.readFileSync(p, 'utf8'));
+    // Expire on-disk entry automatically
+    if (license.expiresAt && Date.now() > license.expiresAt) {
+      fs.unlinkSync(p);
+      return null;
+    }
+    return license;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('save-license', (_event, license) => {
+  try {
+    fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
+ipcMain.handle('clear-license', () => {
+  try {
+    const p = getLicensePath();
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+    return { success: true };
+  } catch {
+    return { success: true }; // idempotent
+  }
+});
+
+ipcMain.handle('open-checkout', (_event, tier) => {
+  const url = CHECKOUT_URLS[tier] ?? CHECKOUT_URLS.pro;
+  shell.openExternal(url);
+});
+
 // ── Phase 15 — Voice Layer (Coqui TTS) ───────────────────────────────────────
 
 /**
