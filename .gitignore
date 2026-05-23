@@ -29,3 +29,7 @@ assets/installer-sidebar.bmp
 resources/bin/ffmpeg-mac
 resources/bin/ffmpeg-win.exe
 resources/bin/ffmpeg-linux
+
+# Runtime config — written by CI from GitHub Secrets, never committed
+# Contains DODO_API_KEY. See scripts/write-config.js
+resources/config.json

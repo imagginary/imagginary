@@ -14,6 +14,23 @@ import net from 'node:net';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ── Runtime config (written by CI from GitHub Secrets, bundled in resources/) ─
+// Lets us embed DODO_API_KEY without hardcoding it in source.
+// Falls back to process.env for local dev (set via shell or .env loader).
+let _runtimeConfig = {};
+try {
+  const _cfgCandidates = [
+    path.join(__dirname, '..', 'resources', 'config.json'),                        // packaged app
+    path.join(process.resourcesPath ?? '', 'config.json'),                         // extraResources root
+    path.join(__dirname, '..', '..', 'resources', 'config.json'),                  // dev tree
+  ];
+  for (const _p of _cfgCandidates) {
+    if (fs.existsSync(_p)) { _runtimeConfig = JSON.parse(fs.readFileSync(_p, 'utf8')); break; }
+  }
+} catch { /* missing in dev — process.env fallback used below */ }
+/** Read key from bundled config first, fall back to process.env. */
+function _cfg(key) { return _runtimeConfig[key] || process.env[key] || ''; }
+
 // ── Debug log file ──────────────────────────────────────────────────────────
 const _logDir = process.platform === 'win32'
   ? path.join(os.homedir(), 'AppData', 'Roaming', 'Imagginary')
@@ -2483,11 +2500,11 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 
 // ── License / Dodo Payments ───────────────────────────────────────────────────
 
-const DODO_API_KEY   = process.env.DODO_API_KEY   ?? '';
-const DODO_API_BASE  = process.env.DODO_API_BASE   ?? 'https://api.dodopayments.com';
+const DODO_API_KEY   = _cfg('DODO_API_KEY');
+const DODO_API_BASE  = _cfg('DODO_API_BASE') || 'https://api.dodopayments.com';
 const CHECKOUT_URLS  = {
-  pro:    process.env.DODO_PRO_CHECKOUT_URL    ?? 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
-  studio: process.env.DODO_STUDIO_CHECKOUT_URL ?? 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
+  pro:    _cfg('DODO_PRO_CHECKOUT_URL')    || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
+  studio: _cfg('DODO_STUDIO_CHECKOUT_URL') || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
 };
 
 function getLicensePath() {
