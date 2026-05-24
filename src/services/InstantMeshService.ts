@@ -1,4 +1,6 @@
 import { MultiViewPaths, MeshResult } from '../types';
+import { settingsService } from './SettingsService';
+import { turntableService } from './TurntableService';
 
 const INSTANTMESH_BASE_URL = 'http://127.0.0.1:7860';
 const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
@@ -27,6 +29,15 @@ export class InstantMeshService {
   }
 
   async generateMultiView(imageBase64: string): Promise<MultiViewResult | null> {
+    // If a cloud provider is selected, delegate to TurntableService
+    const provider = settingsService.get().turntable3dProvider;
+    if (provider !== 'instantmesh') {
+      // Cloud 3D providers (Meshy, Tripo) generate meshes, not multiview images —
+      // return null so the caller falls back to prompt-only character generation.
+      await turntableService.generateMultiView(imageBase64);
+      return null;
+    }
+
     const connected = await this.checkConnection();
     if (!connected) return null;
 

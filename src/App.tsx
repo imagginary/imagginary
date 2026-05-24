@@ -10,11 +10,16 @@ import MotionLibrary from './components/MotionLibrary';
 import VideoTransfer from './components/VideoTransfer';
 import VoiceStudio from './components/VoiceStudio';
 import ActivateLicense from './components/ActivateLicense';
+import SettingsModal from './components/SettingsModal';
+import SharedStudioPanel from './components/SharedStudioPanel';
+import ShareProjectModal from './components/ShareProjectModal';
+import { sharedStudioService, SharedStudioEvent } from './services/SharedStudioService';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
 import { licenseService } from './services/LicenseService';
 import { telemetryService } from './services/TelemetryService';
+import { settingsService } from './services/SettingsService';
 import { ollamaService } from './services/OllamaService';
 import { comfyUIService } from './services/ComfyUIService';
 import { characterLibraryService } from './services/CharacterLibraryService';
@@ -125,6 +130,7 @@ interface ElectronAPI {
   }>;
   onMeshProgress: (cb: (data: MeshGenerationProgress) => void) => () => void;
   openMeshFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  onJoinSharedProject: (cb: (data: { projectId: string }) => void) => () => void;
 }
 
 declare global {
@@ -177,6 +183,11 @@ export default function App() {
   // License
   const [license, setLicense] = useState<License | null>(null);
   const [showActivateLicense, setShowActivateLicense] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  // Phase 13 — Shared Studio
+  const [isSharedSession, setIsSharedSession] = useState(false);
+  const [sessionUsers, setSessionUsers] = useState<Array<{ userId: string; userName: string }>>([]);
+  const [showShareModal, setShowShareModal] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPath = useRef<string | null>(null);
 
@@ -197,8 +208,9 @@ export default function App() {
     telemetryService.init();
   }, []);
 
-  // ── License load ─────────────────────────────────────────────────────────────
+  // ── Settings + License load ───────────────────────────────────────────────────
   useEffect(() => {
+    settingsService.load();
     licenseService.load().then(() => setLicense(licenseService.getLicense()));
   }, []);
 
@@ -722,6 +734,70 @@ export default function App() {
     characterLibraryService.loadFromProject([]);
   }
 
+  // ── Phase 13 — Shared Studio ──────────────────────────────────────────────────
+  function handleSharedStudioEvent(event: SharedStudioEvent) {
+    switch (event.type) {
+      case 'project_update':
+        setProject((prev) => ({
+          ...event.project,
+          panels: event.project.panels.map((incomingPanel) => {
+            const localPanel = prev.panels.find((p) => p.id === incomingPanel.id);
+            // Keep local panel if it's currently being generated
+            if (localPanel && progress?.panelId === localPanel.id) return localPanel;
+            return incomingPanel;
+          }),
+        }));
+        break;
+      case 'user_joined':
+        setSessionUsers((prev) => [
+          ...prev.filter((u) => u.userId !== event.userId),
+          { userId: event.userId, userName: event.userName },
+        ]);
+        break;
+      case 'user_left':
+        setSessionUsers((prev) => prev.filter((u) => u.userId !== event.userId));
+        break;
+    }
+  }
+
+  async function startSharedSession() {
+    if (!licenseService.isStudio()) return;
+    if (!sharedStudioService.isConfigured()) {
+      setShowSettings(true);
+      return;
+    }
+    const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent);
+    if (joined) setIsSharedSession(true);
+  }
+
+  async function handleLeaveSharedSession() {
+    await sharedStudioService.leaveProject();
+    setIsSharedSession(false);
+    setSessionUsers([]);
+  }
+
+  // Broadcast project updates to teammates (1 second debounce)
+  useEffect(() => {
+    if (!isSharedSession) return;
+    const timer = setTimeout(() => {
+      sharedStudioService.broadcastProjectUpdate(project);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [project, isSharedSession]);
+
+  // Listen for deep-link join events from electron main process
+  useEffect(() => {
+    if (!window.electronAPI?.onJoinSharedProject) return;
+    const cleanup = window.electronAPI.onJoinSharedProject(({ projectId }: { projectId: string }) => {
+      if (!licenseService.isStudio()) return;
+      if (!sharedStudioService.isConfigured()) { setShowSettings(true); return; }
+      sharedStudioService.joinProject(projectId, handleSharedStudioEvent).then((ok) => {
+        if (ok) setIsSharedSession(true);
+      });
+    });
+    return cleanup;
+  }, []);
+
   async function handleGenerateAnimatic() {
     setIsExporting(true);
     setExportProgress(0);
@@ -1007,6 +1083,11 @@ export default function App() {
     setShowVoiceStudio(false);
   }
 
+  function handleLipSyncComplete(videoUrl: string) {
+    if (!activePanelId) return;
+    updatePanel(activePanelId, { lipSyncPath: videoUrl });
+  }
+
   function handleUndoEdit(panelId: string) {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.editHistory?.length) return;
@@ -1092,6 +1173,7 @@ export default function App() {
         onExportMotionComic={handleExportMotionComic}
         onOpenScriptReader={() => setShowScriptReader(true)}
         onSetup={() => setShowWelcome(true)}
+        onOpenSettings={() => setShowSettings(true)}
         onExportPDF={handleExportPDF}
         onExportXML={handleExportXML}
         isSaving={isSaving}
@@ -1102,7 +1184,25 @@ export default function App() {
         isExportingMotionComic={isExportingMotionComic}
         motionComicProgress={motionComicProgress}
         hasMotionClips={hasMotionClips}
+        isSharedSession={isSharedSession}
+        onStartSharedSession={startSharedSession}
       />
+
+      {isSharedSession && (
+        <SharedStudioPanel
+          projectId={project.id}
+          users={sessionUsers}
+          onInvite={() => setShowShareModal(true)}
+          onLeave={handleLeaveSharedSession}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareProjectModal
+          projectId={project.id}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
 
       {showScriptReader && (
         <ScriptReader
@@ -1268,7 +1368,17 @@ export default function App() {
           characters={project.characters}
           isPro={licenseService.isPro()}
           onComplete={handleVoiceComplete}
+          onLipSyncComplete={handleLipSyncComplete}
+          onOpenSettings={() => { setShowVoiceStudio(false); setShowSettings(true); }}
           onClose={() => setShowVoiceStudio(false)}
+        />
+      )}
+
+      {/* Settings modal */}
+      {showSettings && (
+        <SettingsModal
+          isPro={licenseService.isPro()}
+          onClose={() => setShowSettings(false)}
         />
       )}
 

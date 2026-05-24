@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Character, Panel } from '../types';
 import { VoiceProfile, voiceService, CoquiCheckResult } from '../services/VoiceService';
+import { lipSyncService } from '../services/LipSyncService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ interface VoiceStudioProps {
   isPro: boolean;
   isStudio?: boolean;
   onComplete: (wavPath: string, characterId: string | null) => void;
+  onLipSyncComplete: (videoUrl: string) => void;
+  onOpenSettings: () => void;
   onClose: () => void;
 }
 
@@ -125,6 +128,8 @@ export default function VoiceStudio({
   isPro,
   isStudio = false,
   onComplete,
+  onLipSyncComplete,
+  onOpenSettings,
   onClose,
 }: VoiceStudioProps) {
   const [installState, setInstallState] = useState<InstallState>('checking');
@@ -147,16 +152,22 @@ export default function VoiceStudio({
   const [isCloning, setIsCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
 
+  // Lip sync state
+  const [lipSyncAvailable, setLipSyncAvailable] = useState(false);
+  const [isGeneratingLipSync, setIsGeneratingLipSync] = useState(false);
+  const [lipSyncProgress, setLipSyncProgress] = useState({ pct: 0, message: '' });
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloneInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Boot: check Coqui TTS availability ─────────────────────────────────────
+  // ── Boot: check Coqui TTS + lip sync availability ──────────────────────────
 
   useEffect(() => {
     voiceService.checkCoquiTTS().then((res: CoquiCheckResult) => {
       setInstallState(res.available ? 'available' : 'not-installed');
     });
+    lipSyncService.isAvailable().then(setLipSyncAvailable);
   }, []);
 
   // ── Load voice library once Coqui is available ──────────────────────────────
@@ -266,6 +277,23 @@ export default function VoiceStudio({
     if (!generatedWavPath) return;
     onComplete(generatedWavPath, selectedCharacterId);
   }, [generatedWavPath, selectedCharacterId, onComplete]);
+
+  // ── Lip sync ──────────────────────────────────────────────────────────────────
+
+  async function handleGenerateLipSync() {
+    if (!panel.voicePath || !panel.generatedImageData) return;
+    setIsGeneratingLipSync(true);
+    const imageBase64 = panel.generatedImageData.replace(/^data:image\/[^;]+;base64,/, '');
+    const result = await lipSyncService.generateLipSync(
+      imageBase64,
+      panel.voicePath,
+      (pct, message) => setLipSyncProgress({ pct, message })
+    );
+    setIsGeneratingLipSync(false);
+    if (result) onLipSyncComplete(result.videoUrl);
+  }
+
+  const handleRegenerateLipSync = handleGenerateLipSync;
 
   // ── Voice clone ──────────────────────────────────────────────────────────────
 
@@ -557,14 +585,49 @@ export default function VoiceStudio({
                 </div>
               )}
 
-              {/* S2V lip sync placeholder */}
-              <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/30 p-4 text-center space-y-1.5">
-                <p className="text-xs font-semibold text-gray-600">Lip Sync — Coming Soon</p>
-                <p className="text-[10px] text-gray-700">
-                  Wan 2.2 S2V lip sync will animate your storyboard panels to match the generated audio.
-                  Pending GPU validation on RunPod.
-                </p>
-              </div>
+              {/* Phase 15 Pt2 — Lip Sync */}
+              {panel.voicePath ? (
+                lipSyncAvailable ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-400">Lip Sync</p>
+                    {isGeneratingLipSync ? (
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {lipSyncProgress.message}
+                      </div>
+                    ) : panel.lipSyncPath ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] text-green-500">Lip sync ready</p>
+                        <button onClick={handleRegenerateLipSync} className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+                          Regenerate
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleGenerateLipSync}
+                        className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors"
+                      >
+                        Generate Lip Sync
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/30 p-4 text-center space-y-2">
+                    <p className="text-xs font-semibold text-gray-500">Lip Sync</p>
+                    <p className="text-[10px] text-gray-600">Add your Sync.so API key in Settings to enable lip sync.</p>
+                    <button
+                      onClick={onOpenSettings}
+                      className="text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors"
+                    >
+                      Open Settings →
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/30 p-4 text-center">
+                  <p className="text-[10px] text-gray-700">Generate voice first to enable lip sync.</p>
+                </div>
+              )}
 
             </div>
           )}

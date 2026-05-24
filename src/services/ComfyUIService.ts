@@ -1,6 +1,8 @@
 import { StructuredPrompt, StyleProfile } from '../types';
 import { AspectRatio } from '../data/AspectRatios';
 import { characterLibraryService } from './CharacterLibraryService';
+import { settingsService } from './SettingsService';
+import { telemetryService } from './TelemetryService';
 
 // In packaged Electron the renderer runs from file:// (null origin) and ComfyUI rejects
 // those requests with 403. The main process runs a transparent local HTTP proxy that
@@ -350,6 +352,22 @@ export class ComfyUIService {
     style?: StyleProfile,
     shotAngle: string = ''
   ): Promise<string> {
+    // Phase 10 — Cloud Bridge: route to Muapi if enabled
+    const settings = settingsService.get();
+    if (settings.cloudGenerationEnabled && settings.muapiApiKey) {
+      return this.generateImageCloud(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
+    }
+    return this.generateImageLocal(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
+  }
+
+  private async generateImageLocal(
+    prompt: StructuredPrompt,
+    aspectRatio: AspectRatio,
+    onProgress?: (progress: number, message: string) => void,
+    characterIds: string[] = [],
+    style?: StyleProfile,
+    shotAngle: string = ''
+  ): Promise<string> {
     if (!this.defaultCheckpoint) {
       await this.getAvailableCheckpoints();
     }
@@ -394,6 +412,21 @@ export class ComfyUIService {
       ? await this.isNodeAvailable('IPAdapterUnifiedLoader')
       : false;
 
+    // If IPAdapter not installed locally but Fal.ai key exists → use cloud
+    if (!hasIPAdapter && referenceImageFilename && settingsService.getKey('falApiKey')) {
+      try {
+        const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
+        const falResult = await this.runCloudIPAdapter(
+          referenceImageFilename,
+          positivePrompt,
+          settingsService.getKey('falApiKey')
+        );
+        if (falResult) return falResult;
+      } catch {
+        // Fall through to local generation without IPAdapter
+      }
+    }
+
     // Resolve LoRA filename — silently skips if not installed (expected for Pro placeholders)
     let resolvedLora: string | null = null;
     if (style?.loraName) {
@@ -430,6 +463,111 @@ export class ComfyUIService {
     return this.pollForCompletion(promptId, onProgress);
   }
 
+  private async generateImageCloud(
+    prompt: StructuredPrompt,
+    aspectRatio: AspectRatio,
+    onProgress?: (progress: number, message: string) => void,
+    characterIds: string[] = [],
+    style?: StyleProfile,
+    shotAngle: string = ''
+  ): Promise<string> {
+    const settings = settingsService.get();
+    const apiKey = settings.muapiApiKey;
+    const endpoint = settings.muapiEndpoint || 'https://api.muapi.io/v1/comfyui';
+
+    onProgress?.(5, 'Connecting to cloud…');
+
+    // Resolve character description for prompt injection (same as local path)
+    let characterDescription: string | null = null;
+    if (characterIds.length > 0) {
+      for (const cid of characterIds) {
+        const character = characterLibraryService.get(cid);
+        if (character?.description) {
+          characterDescription = character.description;
+          break;
+        }
+      }
+    }
+
+    // Build workflow identical to local — no IPAdapter (no local file upload to cloud)
+    const workflow = this.buildWorkflow(
+      prompt,
+      aspectRatio,
+      characterDescription,
+      undefined,
+      { promptSuffix: style?.promptSuffix, negativePromptSuffix: style?.negativePrompt },
+      null,
+      false
+    );
+
+    onProgress?.(15, 'Submitting to cloud…');
+
+    try {
+      const submitRes = await fetch(`${endpoint}/prompt`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: workflow }),
+      });
+
+      if (!submitRes.ok) {
+        throw new Error(`Cloud generation failed: HTTP ${submitRes.status}`);
+      }
+
+      const { prompt_id } = await submitRes.json() as { prompt_id: string };
+      onProgress?.(25, 'Generating in cloud…');
+
+      for (let i = 0; i < 120; i++) {
+        await new Promise<void>((r) => setTimeout(r, 3000));
+
+        const histRes = await fetch(`${endpoint}/history/${prompt_id}`, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+        if (!histRes.ok) continue;
+
+        const history = await histRes.json() as Record<string, {
+          status?: { completed?: boolean; status_str?: string };
+          outputs?: Record<string, { images?: { filename: string }[] }>;
+        }>;
+        const entry = history[prompt_id];
+        if (!entry) continue;
+
+        onProgress?.(25 + Math.min(i * 0.6, 65), 'Generating in cloud…');
+
+        if (entry.status?.completed) {
+          onProgress?.(92, 'Downloading result…');
+          for (const node of Object.values(entry.outputs ?? {})) {
+            const img = node.images?.[0];
+            if (img?.filename) {
+              const imgRes = await fetch(`${endpoint}/view?filename=${encodeURIComponent(img.filename)}`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` },
+              });
+              if (!imgRes.ok) throw new Error('Failed to download cloud result');
+              const blob = await imgRes.blob();
+              const base64 = await blobToBase64(blob);
+              onProgress?.(100, 'Done');
+              telemetryService.track('panel_generated_cloud', { provider: 'muapi' });
+              return base64;
+            }
+          }
+        }
+
+        if (entry.status?.status_str === 'error') {
+          throw new Error('Cloud generation failed — check your Muapi credits');
+        }
+      }
+
+      throw new Error('Cloud generation timed out');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[CloudBridge] Cloud failed, falling back to local:', msg);
+      onProgress?.(5, 'Cloud unavailable — using local…');
+      return this.generateImageLocal(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
+    }
+  }
+
   /** Generate a clean front-facing character portrait for the identity system */
   async generateCharacterReference(
     description: string,
@@ -456,6 +594,45 @@ export class ComfyUIService {
     const { prompt_id } = await submitRes.json() as PromptResponse;
     onProgress?.(10, 'Queued...');
     return this.pollForCompletion(prompt_id, onProgress);
+  }
+
+  private async getUploadedImageData(filename: string): Promise<string | null> {
+    try {
+      const url = `${await getComfyBaseUrl()}/view?filename=${encodeURIComponent(filename)}&type=input&subfolder=`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await blobToBase64(blob);
+    } catch {
+      return null;
+    }
+  }
+
+  private async runCloudIPAdapter(
+    referenceFilename: string,
+    prompt: string,
+    falApiKey: string
+  ): Promise<string | null> {
+    const refData = await this.getUploadedImageData(referenceFilename);
+    if (!refData) return null;
+
+    const res = await fetch('https://fal.run/fal-ai/ipadapter-faceid', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${falApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        face_image_url: refData,
+        scale: 0.6,
+        num_inference_steps: 20,
+      }),
+    });
+
+    if (!res.ok) return null;
+    const result = await res.json() as { images?: { url: string }[] };
+    return result.images?.[0]?.url ?? null;
   }
 
   private async uploadImageToComfyUI(base64Data: string, filename: string): Promise<string> {

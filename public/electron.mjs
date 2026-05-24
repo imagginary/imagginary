@@ -1324,6 +1324,38 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// ── Phase 13 — Shared Studio deep link ──────────────────────────────────────
+app.setAsDefaultProtocolClient('imagginary');
+
+app.on('open-url', (_event, url) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname === '//join') {
+      const projectId = parsed.searchParams.get('project');
+      if (projectId && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('join-shared-project', { projectId });
+      }
+    }
+  } catch { /* ignore malformed URLs */ }
+});
+
+// Windows/Linux: deep link arrives as second-instance argv
+app.on('second-instance', (_event, argv) => {
+  const url = argv.find((arg) => arg.startsWith('imagginary://'));
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname === '//join') {
+        const projectId = parsed.searchParams.get('project');
+        if (projectId && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.focus();
+          mainWindow.webContents.send('join-shared-project', { projectId });
+        }
+      }
+    } catch { /* ignore */ }
+  }
+});
+
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
 app.on('before-quit', () => {
@@ -2865,6 +2897,13 @@ ipcMain.handle('clone-voice', async (event, params) => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+ipcMain.handle('read-file-as-base64', (_event, filePath) => {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return buf.toString('base64');
+  } catch { return null; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

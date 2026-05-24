@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap } from 'lucide-react';
+import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
 import { ServiceStatus } from '../types';
 
 interface TitleBarProps {
@@ -12,6 +12,7 @@ interface TitleBarProps {
   onExportMotionComic: () => void;
   onOpenScriptReader: () => void;
   onSetup: () => void;
+  onOpenSettings: () => void;
   onExportPDF: () => void;
   onExportXML: () => void;
   isSaving: boolean;
@@ -19,6 +20,8 @@ interface TitleBarProps {
   exportProgress: number | null;
   isStudio?: boolean;
   onActivateLicense?: () => void;
+  isSharedSession?: boolean;
+  onStartSharedSession?: () => void;
   isExportingMotionComic: boolean;
   motionComicProgress: number;
   hasMotionClips: boolean;
@@ -79,6 +82,7 @@ export default function TitleBar({
   onExportMotionComic,
   onOpenScriptReader,
   onSetup,
+  onOpenSettings,
   onExportPDF,
   onExportXML,
   isSaving,
@@ -89,6 +93,8 @@ export default function TitleBar({
   isExportingMotionComic,
   motionComicProgress,
   hasMotionClips,
+  isSharedSession = false,
+  onStartSharedSession,
 }: TitleBarProps) {
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -197,6 +203,31 @@ export default function TitleBar({
           >
             <HelpCircle className="w-3.5 h-3.5" />
           </button>
+
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+            title="Settings — API keys & cloud integrations"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+
+          {isStudio && (
+            <button
+              onClick={onStartSharedSession}
+              className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                isSharedSession
+                  ? 'text-green-400 hover:text-green-300 hover:bg-green-900/20'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+              }`}
+              title="Shared Studio — collaborate in real time"
+            >
+              <Users className="w-3.5 h-3.5" />
+              {isSharedSession && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+              )}
+            </button>
+          )}
 
           <div className="w-px h-4 bg-gray-700 mx-1" />
 

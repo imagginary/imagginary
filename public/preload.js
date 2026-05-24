@@ -126,6 +126,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateVoice: (params) => ipcRenderer.invoke('generate-voice', params),
   installCoquiTTS: () => ipcRenderer.invoke('install-coqui-tts'),
   cloneVoice: (params) => ipcRenderer.invoke('clone-voice', params),
+  readFileAsBase64: (filePath) => ipcRenderer.invoke('read-file-as-base64', filePath),
+  onJoinSharedProject: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('join-shared-project', handler);
+    return () => ipcRenderer.removeListener('join-shared-project', handler);
+  },
   onVoiceProgress: (cb) => {
     const handler = (_event, pct) => cb(pct);
     ipcRenderer.on('voice-progress', handler);

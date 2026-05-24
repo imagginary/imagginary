@@ -126,6 +126,9 @@ export interface Panel {
   // Phase 15 — Voice Layer
   voicePath?: string | null;        // absolute path to generated WAV file
   voiceCharacterId?: string | null; // which character is speaking
+  // Phase 15 Pt2 — Lip Sync
+  lipSyncPath?: string | null;      // URL or path to generated lip-sync video
+  lipSyncData?: string | null;      // base64 data URL for browser playback
   // Aspect ratio override — null means inherit from project.aspectRatioId
   aspectRatioId?: string | null;
   createdAt: number;
@@ -220,6 +223,41 @@ export interface VideoValidationResult {
   estimatedQuality: number;
   rejectionReason?: string;
 }
+
+// ── App Settings (BYOK cloud integrations) ────────────────────────────────────
+
+export interface AppSettings {
+  // Phase 15 Pt2 — Lip Sync
+  syncsoApiKey: string;
+  // Phase 9 — Turntable 3D model picker
+  turntable3dProvider: 'instantmesh' | 'meshy' | 'tripo' | '3daistudio';
+  meshyApiKey: string;
+  tripoApiKey: string;
+  threeDaiApiKey: string;
+  // Phase 9 — Character consistency (cloud IPAdapter)
+  falApiKey: string;
+  // Phase 10 — Cloud generation (Muapi)
+  cloudGenerationEnabled: boolean;
+  muapiApiKey: string;
+  muapiEndpoint: string;
+  // Phase 13 — Shared Studio (Supabase)
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  syncsoApiKey: '',
+  turntable3dProvider: 'instantmesh',
+  meshyApiKey: '',
+  tripoApiKey: '',
+  threeDaiApiKey: '',
+  falApiKey: '',
+  cloudGenerationEnabled: false,
+  muapiApiKey: '',
+  muapiEndpoint: 'https://api.muapi.io/v1/comfyui',
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+};
 
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────
 
