@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = {
@@ -59,6 +60,9 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './public/index.html',
       filename: 'index.html',
+    }),
+    new webpack.DefinePlugin({
+      'process.env.UMAMI_WEBSITE_ID': JSON.stringify(process.env.UMAMI_WEBSITE_ID ?? ''),
     }),
   ],
   devServer: {

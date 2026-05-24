@@ -14,6 +14,7 @@ import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
 import { licenseService } from './services/LicenseService';
+import { telemetryService } from './services/TelemetryService';
 import { ollamaService } from './services/OllamaService';
 import { comfyUIService } from './services/ComfyUIService';
 import { characterLibraryService } from './services/CharacterLibraryService';
@@ -189,6 +190,11 @@ export default function App() {
         (status.comfyui === 'started' || status.comfyui === 'external');
       setServicesAutoStarted(bothOk);
     });
+  }, []);
+
+  // ── Telemetry init ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    telemetryService.init();
   }, []);
 
   // ── License load ─────────────────────────────────────────────────────────────
@@ -523,7 +529,8 @@ export default function App() {
         effectiveAspectRatio,
         (prog, msg) => setProgress({ panelId, status: 'generating', progress: 15 + (prog * 0.85), message: msg }),
         characterIds,
-        project.style
+        project.style,
+        resolvedAngle || structuredPrompt.angle
       );
 
       let savedPath: string | null = null;
@@ -549,6 +556,7 @@ export default function App() {
       } else {
         updatePanel(panelId, { generatedImageData: imageData, generatedImagePath: savedPath });
       }
+      telemetryService.track('panel_generated', { style: project.style.id, hasCharacters: characterIds.length > 0 });
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
@@ -719,6 +727,7 @@ export default function App() {
     setExportProgress(0);
     try {
       const result = await animaticExporter.export(project.panels, (percent) => setExportProgress(percent));
+      if (result.success) telemetryService.track('animatic_exported', { panelCount: project.panels.length });
       if (!result.success && result.error) alert(result.error);
     } finally {
       setIsExporting(false);
@@ -870,6 +879,7 @@ export default function App() {
       }
 
       updatePanel(panelId, { motionClipData: base64Video, motionClipPath: clipPath });
+      telemetryService.track('motion_generated');
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Motion clip ready' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
@@ -993,6 +1003,7 @@ export default function App() {
       voicePath: wavPath,
       voiceCharacterId: characterId,
     });
+    telemetryService.track('voice_generated');
     setShowVoiceStudio(false);
   }
 
@@ -1045,10 +1056,12 @@ export default function App() {
 
   async function handleExportPDF() {
     await productionExporter.exportPDF(project.panels, project.title);
+    telemetryService.track('pdf_exported');
   }
 
   async function handleExportXML() {
     await productionExporter.exportFCPXML(project.panels, project.title);
+    telemetryService.track('fcpxml_exported');
   }
 
   useEffect(() => {
@@ -1263,7 +1276,10 @@ export default function App() {
       {showActivateLicense && (
         <ActivateLicense
           currentLicense={license}
-          onLicenseChange={() => setLicense(licenseService.getLicense())}
+          onLicenseChange={() => {
+            setLicense(licenseService.getLicense());
+            telemetryService.track('license_activated', { tier: licenseService.getTier() });
+          }}
           onClose={() => setShowActivateLicense(false)}
         />
       )}

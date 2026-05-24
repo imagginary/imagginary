@@ -1,6 +1,6 @@
 {
   "name": "imagginary",
-  "version": "1.0.9",
+  "version": "1.0.16",
   "description": "Imagginary — local-first AI storyboard generator for filmmakers",
   "main": "public/electron.mjs",
   "scripts": {

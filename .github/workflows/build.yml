@@ -71,6 +71,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
         run: npm run dist
 
       - name: Upload DMG to release
@@ -116,6 +117,7 @@ jobs:
       - name: Build NSIS installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
         run: npm run dist
 
       - name: Upload installer to release
@@ -156,6 +158,7 @@ jobs:
       - name: Build AppImage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
         run: npm run dist
 
       - name: Upload AppImage to release

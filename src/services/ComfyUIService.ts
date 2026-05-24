@@ -174,9 +174,12 @@ export class ComfyUIService {
     aspectRatio: AspectRatio,
     characterDescription: string | null = null,
     seedOverride?: number,
-    opts?: { promptSuffix?: string; negativePromptSuffix?: string; loraName?: string | null }
+    opts?: { promptSuffix?: string; negativePromptSuffix?: string; loraName?: string | null },
+    referenceImageFilename: string | null = null,
+    hasIPAdapter: boolean = false
   ): object {
     const checkpoint = this.defaultCheckpoint ?? 'v1-5-pruned-emaonly.ckpt';
+    const checkpointNode = '1';
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
     const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, opts?.promptSuffix);
 
@@ -190,10 +193,10 @@ export class ComfyUIService {
 
     // When a LoRA is active: insert node '8' (LoraLoader) between checkpoint and text/sampler.
     // Node '2'/'3' CLIP references and node '5' model reference are redirected through the LoRA.
-    const clipSource  = lora ? ['8', 1] : ['1', 1];
-    const modelSource = lora ? ['8', 0] : ['1', 0];
+    const clipSource  = lora ? ['8', 1] : [checkpointNode, 1];
+    const modelSource = lora ? ['8', 0] : [checkpointNode, 0];
 
-    return {
+    const workflow: Record<string, object> = {
       '1': {
         class_type: 'CheckpointLoaderSimple',
         inputs: { ckpt_name: checkpoint },
@@ -205,8 +208,8 @@ export class ComfyUIService {
             lora_name: lora,
             strength_model: 1.0,
             strength_clip: 1.0,
-            model: ['1', 0],
-            clip: ['1', 1],
+            model: [checkpointNode, 0],
+            clip: [checkpointNode, 1],
           },
         },
       } : {}),
@@ -241,13 +244,46 @@ export class ComfyUIService {
       },
       '6': {
         class_type: 'VAEDecode',
-        inputs: { samples: ['5', 0], vae: ['1', 2] },
+        inputs: { samples: ['5', 0], vae: [checkpointNode, 2] },
       },
       '7': {
         class_type: 'SaveImage',
         inputs: { filename_prefix: 'imagginary_panel', images: ['6', 0] },
       },
     };
+
+    // Phase 9 — IPAdapter character reference (graceful fallback if node not installed)
+    if (hasIPAdapter && referenceImageFilename) {
+      workflow['10'] = {
+        class_type: 'IPAdapterUnifiedLoader',
+        inputs: {
+          model: [checkpointNode, 0],
+          preset: 'PLUS (high strength)',
+        },
+      };
+      workflow['11'] = {
+        class_type: 'IPAdapterAdvanced',
+        inputs: {
+          model: [checkpointNode, 0],
+          ipadapter: ['10', 0],
+          image: ['12', 0],
+          weight: 0.6,
+          weight_type: 'linear',
+          combine_embeds: 'concat',
+          start_at: 0.0,
+          end_at: 0.9,
+          embeds_scaling: 'V only',
+        },
+      };
+      workflow['12'] = {
+        class_type: 'LoadImage',
+        inputs: { image: referenceImageFilename },
+      };
+      // Re-route KSampler to use IPAdapter output instead of raw model
+      (workflow['5'] as { inputs: Record<string, unknown> }).inputs.model = ['11', 0];
+    }
+
+    return workflow;
   }
 
   /** Workflow for clean character portrait — square, white bg, front-facing */
@@ -311,7 +347,8 @@ export class ComfyUIService {
     aspectRatio: AspectRatio,
     onProgress?: (progress: number, message: string) => void,
     characterIds: string[] = [],
-    style?: StyleProfile
+    style?: StyleProfile,
+    shotAngle: string = ''
   ): Promise<string> {
     if (!this.defaultCheckpoint) {
       await this.getAvailableCheckpoints();
@@ -329,6 +366,34 @@ export class ComfyUIService {
       }
     }
 
+    // Phase 9 — IPAdapter reference image selection
+    // Pick the best angle reference from the first character that has multiview data.
+    // Upload it to ComfyUI input so it's available if IPAdapter nodes are present.
+    let referenceImageFilename: string | null = null;
+
+    if (characterIds.length > 0 && shotAngle) {
+      for (const charId of characterIds) {
+        const ref = characterLibraryService.getBestAngleReference(charId, shotAngle);
+        if (ref) {
+          try {
+            const base64 = ref.replace(/^data:image\/[^;]+;base64,/, '');
+            const filename = `ipadapter_ref_${charId}_${Date.now()}.png`;
+            await this.uploadImageToComfyUI(base64, filename);
+            referenceImageFilename = filename;
+            onProgress?.(5, 'Reference image loaded…');
+          } catch {
+            // Non-fatal — fall back to prompt-only generation
+          }
+          break;
+        }
+      }
+    }
+
+    // Only wire IPAdapter if the node is installed in this user's ComfyUI
+    const hasIPAdapter = referenceImageFilename
+      ? await this.isNodeAvailable('IPAdapterUnifiedLoader')
+      : false;
+
     // Resolve LoRA filename — silently skips if not installed (expected for Pro placeholders)
     let resolvedLora: string | null = null;
     if (style?.loraName) {
@@ -339,7 +404,7 @@ export class ComfyUIService {
       promptSuffix:         style?.promptSuffix,
       negativePromptSuffix: style?.negativePrompt,
       loraName:             resolvedLora,
-    });
+    }, referenceImageFilename, hasIPAdapter);
 
     onProgress?.(5, 'Sending prompt to ComfyUI...');
 

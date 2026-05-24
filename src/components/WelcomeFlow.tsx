@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Film, RefreshCw, ChevronRight, ChevronLeft, Clapperboard } from 'lucide-react';
 import { ServiceStatus, StyleProfile } from '../types';
+import { telemetryService } from '../services/TelemetryService';
 import {
   STYLE_CLASSIC_STORYBOARD,
   STYLE_ANIMATION_KEYFRAME,
@@ -96,10 +97,26 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
 
   function handleComplete() {
     if (!projectType || !shotDescription.trim()) return;
+    if (!telemetryService.hasAnswered()) {
+      // Show consent step before finishing
+      setStep(4);
+      return;
+    }
     localStorage.setItem('imagginary_onboarded', '1');
     onComplete({
       title: projectTitle.trim() || 'Untitled Project',
       style: STYLE_BY_PROJECT_TYPE[projectType],
+      firstShot: shotDescription.trim(),
+    });
+  }
+
+  function handleConsentAndComplete(grant: boolean) {
+    if (grant) telemetryService.grant();
+    else telemetryService.deny();
+    localStorage.setItem('imagginary_onboarded', '1');
+    onComplete({
+      title: projectTitle.trim() || 'Untitled Project',
+      style: STYLE_BY_PROJECT_TYPE[projectType!],
       firstShot: shotDescription.trim(),
     });
   }
@@ -127,7 +144,7 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
           <p className="text-gray-500 text-xs">AI Storyboard Generator</p>
           {/* Step dots */}
           <div className="flex items-center gap-2 mt-5">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <span
                 key={s}
                 className={`rounded-full transition-all duration-300 ${
@@ -294,6 +311,36 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                   <Clapperboard className="w-4 h-4" />
                   Generate My First Panel
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 4 — Telemetry consent ── */}
+          {step === 4 && (
+            <div className="flex flex-col gap-5 flex-1">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-100">Help us improve Imagginary</h2>
+                <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                  We'd like to collect anonymous usage data — which features you use, how often you generate panels.
+                  No prompts, no images, no personal data. Ever.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 mt-auto">
+                <button
+                  onClick={() => handleConsentAndComplete(true)}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm font-semibold bg-imagginary-500 hover:bg-imagginary-400 text-black transition-colors"
+                >
+                  Yes, share anonymously
+                </button>
+                <button
+                  onClick={() => handleConsentAndComplete(false)}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+                >
+                  No thanks
+                </button>
+                <p className="text-xs text-gray-600 text-center mt-1">
+                  You can change this anytime in settings. We use Umami — open source, GDPR compliant.
+                </p>
               </div>
             </div>
           )}
