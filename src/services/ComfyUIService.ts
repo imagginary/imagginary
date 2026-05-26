@@ -412,6 +412,10 @@ export class ComfyUIService {
       ? await this.isNodeAvailable('IPAdapterUnifiedLoader')
       : false;
 
+    if (referenceImageFilename && !hasIPAdapter) {
+      console.log('[IPAdapter] Node not available — using prompt-only generation');
+    }
+
     // If IPAdapter not installed locally but Fal.ai key exists → use cloud
     if (!hasIPAdapter && referenceImageFilename && settingsService.getKey('falApiKey')) {
       try {
@@ -756,7 +760,10 @@ export class ComfyUIService {
       const res = await fetch(`${await getComfyBaseUrl()}/object_info/${nodeType}`, {
         signal: AbortSignal.timeout(3000),
       });
-      return res.ok;
+      if (!res.ok) return false;
+      // ComfyUI returns HTTP 200 with {} when the node is not installed — check for the key.
+      const data = await res.json() as Record<string, unknown>;
+      return nodeType in data;
     } catch {
       return false;
     }
