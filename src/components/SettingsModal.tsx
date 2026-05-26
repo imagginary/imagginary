@@ -234,6 +234,11 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                       </option>
                     ))}
                   </select>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    {provider === 'instantmesh'
+                      ? '6-angle multiview — requires InstantMesh running locally'
+                      : '3D mesh + thumbnail — best angle selected automatically per shot'}
+                  </p>
                 </div>
 
                 {/* API key — only for paid providers */}

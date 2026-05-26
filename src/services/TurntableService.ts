@@ -3,7 +3,7 @@ import { settingsService } from './SettingsService';
 class TurntableService {
   getProvider() { return settingsService.get().turntable3dProvider; }
 
-  async generateMultiView(imageBase64: string): Promise<Record<string, string> | null> {
+  async generateMultiView(imageBase64: string): Promise<{ glbUrl: string; thumbnailUrl: string } | null> {
     const provider = this.getProvider();
 
     if (provider === 'instantmesh') {
@@ -21,7 +21,7 @@ class TurntableService {
     return null;
   }
 
-  private async generateMeshy(imageBase64: string): Promise<Record<string, string> | null> {
+  private async generateMeshy(imageBase64: string): Promise<{ glbUrl: string; thumbnailUrl: string } | null> {
     const apiKey = settingsService.getKey('meshyApiKey');
     if (!apiKey) return null;
     try {
@@ -47,7 +47,7 @@ class TurntableService {
     } catch { return null; }
   }
 
-  private async generateTripo(imageBase64: string): Promise<Record<string, string> | null> {
+  private async generateTripo(imageBase64: string): Promise<{ glbUrl: string; thumbnailUrl: string } | null> {
     const apiKey = settingsService.getKey('tripoApiKey');
     if (!apiKey) return null;
     try {

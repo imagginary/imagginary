@@ -32,10 +32,23 @@ export class InstantMeshService {
     // If a cloud provider is selected, delegate to TurntableService
     const provider = settingsService.get().turntable3dProvider;
     if (provider !== 'instantmesh') {
-      // Cloud 3D providers (Meshy, Tripo) generate meshes, not multiview images —
-      // return null so the caller falls back to prompt-only character generation.
-      await turntableService.generateMultiView(imageBase64);
-      return null;
+      const cloudResult = await turntableService.generateMultiView(imageBase64);
+      if (!cloudResult) return null;
+
+      // Cloud providers return a mesh + thumbnail, not per-angle renders.
+      // Use the thumbnail for all angles as best-effort multiview.
+      const thumbnailUrl = cloudResult.thumbnailUrl || cloudResult.glbUrl;
+      if (!thumbnailUrl) return null;
+
+      const views: MultiViewPaths = {
+        front: thumbnailUrl,
+        frontLeft: thumbnailUrl,
+        left: thumbnailUrl,
+        back: thumbnailUrl,
+        right: thumbnailUrl,
+        frontRight: thumbnailUrl,
+      };
+      return { views };
     }
 
     const connected = await this.checkConnection();
