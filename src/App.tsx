@@ -456,7 +456,7 @@ export default function App() {
         stage: 'error',
         pct: 0,
         message: 'Mesh generation failed',
-        error: result.error ?? 'InstantMesh not available — make sure it is running on port 7860.',
+        error: result.error ?? 'InstantMesh not available — make sure it is running.',
       });
       return;
     }
@@ -522,7 +522,7 @@ export default function App() {
       setProgress({ panelId, status: 'generating', progress: 15, message: 'Sending to ComfyUI…' });
 
       if (serviceStatus.comfyui !== 'connected') {
-        setProgress({ panelId, status: 'error', progress: 0, message: 'ComfyUI offline', error: 'Start ComfyUI on port 8188.' });
+        setProgress({ panelId, status: 'error', progress: 0, message: 'ComfyUI offline', error: 'ComfyUI is not running — check your service URL in Settings → Advanced.' });
         return;
       }
 

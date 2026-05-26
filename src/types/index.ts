@@ -243,6 +243,10 @@ export interface AppSettings {
   // Phase 13 — Shared Studio (Supabase)
   supabaseUrl: string;
   supabaseAnonKey: string;
+  // Advanced — custom service URLs (leave blank for defaults)
+  ollamaUrl: string;
+  comfyuiUrl: string;
+  instantMeshUrl: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -257,6 +261,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   muapiEndpoint: 'https://api.muapi.io/v1/comfyui',
   supabaseUrl: '',
   supabaseAnonKey: '',
+  ollamaUrl: '',
+  comfyuiUrl: '',
+  instantMeshUrl: '',
 };
 
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────
@@ -270,6 +277,7 @@ export interface ScriptShot {
   mood: string;
   lighting: string;
   angle: string;
+  timeOfDay: string;            // extracted from scene heading (NIGHT/DAY/DAWN/DUSK)
   characterNames: string[];     // raw names extracted from script
   assignedCharacterIds: string[]; // matched against project.characters
 }

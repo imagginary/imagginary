@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, CheckCircle, ExternalLink } from 'lucide-react';
+import { X, Lock, CheckCircle, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { settingsService } from '../services/SettingsService';
 import { AppSettings } from '../types';
 
@@ -127,6 +127,23 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     return { meshy: s.meshyApiKey, tripo: s.tripoApiKey, '3daistudio': s.threeDaiApiKey };
   });
   const [providerKeySaved, setProviderKeySaved] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [serviceUrls, setServiceUrls] = useState({
+    ollamaUrl:      settings.ollamaUrl      || '',
+    comfyuiUrl:     settings.comfyuiUrl     || '',
+    instantMeshUrl: settings.instantMeshUrl || '',
+  });
+  const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
+
+  function handleServiceUrlsSave() {
+    settingsService.save({
+      ollamaUrl:      serviceUrls.ollamaUrl.trim(),
+      comfyuiUrl:     serviceUrls.comfyuiUrl.trim(),
+      instantMeshUrl: serviceUrls.instantMeshUrl.trim(),
+    });
+    setServiceUrlsSaved(true);
+    setTimeout(() => setServiceUrlsSaved(false), 2000);
+  }
 
   function handleCloudToggle(enabled: boolean) {
     setCloudEnabled(enabled);
@@ -452,6 +469,56 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               </>
             ) : (
               <ProGate />
+            )}
+          </div>
+
+          {/* ── Advanced — Service URLs ── */}
+          <div className="border-t border-gray-800" />
+          <div className="space-y-3">
+            <button
+              onClick={() => setAdvancedOpen((o) => !o)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors w-full text-left"
+            >
+              {advancedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              <span className="font-semibold uppercase tracking-wide">Advanced — Service URLs</span>
+            </button>
+
+            {advancedOpen && (
+              <div className="space-y-3">
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Only change these if you're running services on custom ports or remote hosts.
+                  Leave blank to use the defaults.
+                </p>
+
+                {(
+                  [
+                    { key: 'ollamaUrl',      label: 'Ollama URL',      placeholder: 'http://127.0.0.1:11434' },
+                    { key: 'comfyuiUrl',     label: 'ComfyUI URL',     placeholder: 'http://127.0.0.1:8188'  },
+                    { key: 'instantMeshUrl', label: 'InstantMesh URL', placeholder: 'http://127.0.0.1:7860'  },
+                  ] as const
+                ).map(({ key, label, placeholder }) => (
+                  <div key={key} className="space-y-1">
+                    <label className="text-xs text-gray-400">{label}</label>
+                    <input
+                      type="text"
+                      value={serviceUrls[key]}
+                      onChange={(e) => {
+                        setServiceUrls((prev) => ({ ...prev, [key]: e.target.value }));
+                        setServiceUrlsSaved(false);
+                      }}
+                      placeholder={placeholder}
+                      className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
+                    />
+                  </div>
+                ))}
+
+                <button
+                  onClick={handleServiceUrlsSave}
+                  className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
+                >
+                  {serviceUrlsSaved ? 'Saved ✓' : 'Save'}
+                </button>
+              </div>
             )}
           </div>
 

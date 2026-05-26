@@ -10,6 +10,7 @@
 import { PoseKeyframe } from '../data/PoseVocabulary';
 import { VideoValidationResult } from '../types';
 import { buildPoseControlNetWorkflow } from './PoseEngineService';
+import { getComfyUIUrl } from '../config/services';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,15 +28,19 @@ function getElectronAPI(): Record<string, (...args: unknown[]) => unknown> {
 // ── Main Service ─────────────────────────────────────────────────────────────
 
 class VideoTransferService {
-  private comfyPort: number | null = null;
+  private comfyBaseUrl: string | null = null;
 
-  private async getComfyPort(): Promise<number> {
-    if (this.comfyPort) return this.comfyPort;
+  private async getComfyBaseUrl(): Promise<string> {
+    if (this.comfyBaseUrl) return this.comfyBaseUrl;
     const api = getElectronAPI();
     if (api.getComfyUIProxyPort) {
-      this.comfyPort = (await api.getComfyUIProxyPort()) as number;
+      const port = (await api.getComfyUIProxyPort()) as number;
+      if (port) {
+        this.comfyBaseUrl = `http://127.0.0.1:${port}`;
+        return this.comfyBaseUrl;
+      }
     }
-    return this.comfyPort ?? 8188;
+    return getComfyUIUrl();
   }
 
   /**
@@ -178,8 +183,8 @@ class VideoTransferService {
     onProgress(20);
 
     // Queue in ComfyUI
-    const port = await this.getComfyPort();
-    const queueRes = await fetch(`http://127.0.0.1:${port}/prompt`, {
+    const baseUrl = await this.getComfyBaseUrl();
+    const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: workflow }),
@@ -194,13 +199,13 @@ class VideoTransferService {
     onProgress(25);
 
     // Poll for result
-    return await this.pollForVideo(prompt_id, port, onProgress);
+    return await this.pollForVideo(prompt_id, baseUrl, onProgress);
   }
 
   /** Poll /history until the prompt completes and return the video data URL. */
   private async pollForVideo(
     promptId: string,
-    port: number,
+    baseUrl: string,
     onProgress: (pct: number) => void
   ): Promise<string> {
     const POLL_INTERVAL = 2000;
@@ -211,7 +216,7 @@ class VideoTransferService {
     while (Date.now() - start < MAX_WAIT) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
-      const histRes = await fetch(`http://127.0.0.1:${port}/history/${promptId}`);
+      const histRes = await fetch(`${baseUrl}/history/${promptId}`);
       if (!histRes.ok) continue;
 
       const hist = (await histRes.json()) as Record<
@@ -238,7 +243,7 @@ class VideoTransferService {
 
       onProgress(93);
       const { filename, subfolder, type } = videoOutput;
-      const viewUrl = `http://127.0.0.1:${port}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
+      const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
 
       const videoRes = await fetch(viewUrl);
       if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.statusText}`);

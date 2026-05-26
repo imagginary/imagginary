@@ -16,6 +16,7 @@ import {
   SKELETON_CONNECTIONS,
   searchPoses,
 } from '../data/PoseVocabulary';
+import { getComfyUIUrl } from '../config/services';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -289,21 +290,25 @@ export function buildPoseControlNetWorkflow(params: {
 // ── Main Service ─────────────────────────────────────────────────────────────
 
 class PoseEngineService {
-  private comfyPort: number | null = null;
+  private comfyBaseUrl: string | null = null;
 
-  private async getComfyPort(): Promise<number> {
-    if (this.comfyPort) return this.comfyPort;
+  private async getComfyBaseUrl(): Promise<string> {
+    if (this.comfyBaseUrl) return this.comfyBaseUrl;
     if (window.electronAPI?.getComfyUIProxyPort) {
-      this.comfyPort = await window.electronAPI.getComfyUIProxyPort();
+      const port = await window.electronAPI.getComfyUIProxyPort();
+      if (port) {
+        this.comfyBaseUrl = `http://127.0.0.1:${port}`;
+        return this.comfyBaseUrl;
+      }
     }
-    return this.comfyPort ?? 8188;
+    return getComfyUIUrl();
   }
 
   /** Check whether the required ComfyUI nodes are available. */
   async checkPoseNodes(): Promise<{ available: boolean; missing: string[] }> {
     try {
-      const port = await this.getComfyPort();
-      const res = await fetch(`http://127.0.0.1:${port}/object_info`);
+      const baseUrl = await this.getComfyBaseUrl();
+      const res = await fetch(`${baseUrl}/object_info`);
       if (!res.ok) return { available: false, missing: ['ComfyUI not reachable'] };
       const info = await res.json() as Record<string, unknown>;
       const required = ['PoseKeyframeConditioningNode', 'VHS_VideoCombine', 'LoadImageBase64'];
@@ -370,8 +375,8 @@ class PoseEngineService {
     progress(20, 'Sending to ComfyUI…');
 
     // 4. Queue the prompt
-    const port = await this.getComfyPort();
-    const queueRes = await fetch(`http://127.0.0.1:${port}/prompt`, {
+    const baseUrl = await this.getComfyBaseUrl();
+    const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: workflow }),
@@ -386,7 +391,7 @@ class PoseEngineService {
     progress(25, 'Pose animation queued…');
 
     // 5. Poll for completion
-    const videoData = await this.pollForResult(prompt_id, port, progress);
+    const videoData = await this.pollForResult(prompt_id, baseUrl, progress);
 
     progress(100, 'Pose animation complete');
 
@@ -396,7 +401,7 @@ class PoseEngineService {
   /** Poll /history until the prompt is done and return the video data URL. */
   private async pollForResult(
     promptId: string,
-    port: number,
+    baseUrl: string,
     onProgress: (pct: number, msg: string) => void
   ): Promise<string> {
     const POLL_INTERVAL = 2000;
@@ -407,7 +412,7 @@ class PoseEngineService {
     while (Date.now() - start < MAX_WAIT) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
-      const histRes = await fetch(`http://127.0.0.1:${port}/history/${promptId}`);
+      const histRes = await fetch(`${baseUrl}/history/${promptId}`);
       if (!histRes.ok) continue;
       const hist = await histRes.json() as Record<string, { outputs?: Record<string, { videos?: { filename: string; subfolder: string; type: string }[] }> }>;
 
@@ -428,7 +433,7 @@ class PoseEngineService {
       // Fetch the video file
       onProgress(93, 'Downloading video…');
       const { filename, subfolder, type } = videoOutput;
-      const viewUrl = `http://127.0.0.1:${port}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
+      const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
 
       const videoRes = await fetch(viewUrl);
       if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.statusText}`);

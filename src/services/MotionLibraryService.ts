@@ -9,8 +9,7 @@
 import { MotionClip } from '../types';
 import { PoseKeyframe } from '../data/PoseVocabulary';
 import { expandSequence, buildPoseControlNetWorkflow, renderPoseToDataURL } from './PoseEngineService';
-
-const OLLAMA_BASE_URL = 'http://localhost:11434';
+import { getOllamaUrl, getComfyUIUrl } from '../config/services';
 
 // ── Starter library index (bundled — works without Pexels API key) ────────────
 
@@ -43,14 +42,18 @@ class MotionLibraryService {
   private allClips: MotionClip[] = [];
   private poseCache: Map<string, PoseKeyframe[]> = new Map();
   private loaded = false;
-  private comfyPort: number | null = null;
+  private comfyBaseUrl: string | null = null;
 
-  async getComfyPort(): Promise<number> {
-    if (this.comfyPort) return this.comfyPort;
+  async getComfyBaseUrl(): Promise<string> {
+    if (this.comfyBaseUrl) return this.comfyBaseUrl;
     if ((window as any).electronAPI?.getComfyUIProxyPort) {
-      this.comfyPort = await (window as any).electronAPI.getComfyUIProxyPort();
+      const port = await (window as any).electronAPI.getComfyUIProxyPort();
+      if (port) {
+        this.comfyBaseUrl = `http://127.0.0.1:${port}`;
+        return this.comfyBaseUrl;
+      }
     }
-    return this.comfyPort ?? 8188;
+    return getComfyUIUrl();
   }
 
   /** Load the library index (starter + any clips from resources/motion_library/). */
@@ -123,7 +126,7 @@ class MotionLibraryService {
       const clipList = this.allClips
         .map((c) => `id:${c.id} name:${c.name} tags:${c.tags.join(',')}`)
         .join('\n');
-      const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const res = await fetch(`${getOllamaUrl()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -211,8 +214,7 @@ class MotionLibraryService {
       prompt,
     });
 
-    const port = await this.getComfyPort();
-    const baseUrl = `http://localhost:${port}`;
+    const baseUrl = await this.getComfyBaseUrl();
 
     // Queue prompt
     const queueRes = await fetch(`${baseUrl}/prompt`, {

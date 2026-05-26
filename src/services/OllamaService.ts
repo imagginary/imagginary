@@ -1,7 +1,6 @@
 import { StructuredPrompt, ScriptShot } from '../types';
 import FILM_DICTIONARY, { lookupFilmTerm } from '../data/FilmLanguageDictionary';
-
-const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+import { getOllamaUrl } from '../config/services';
 const MODEL = 'qwen2.5:14b';
 const FALLBACK_MODELS = ['qwen2.5:1.5b', 'qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
 
@@ -46,7 +45,10 @@ Rules:
 3. Use cinematic language for prompt compatibility
 4. If a field is not specified, make a reasonable artistic choice
 5. The subject should describe what to draw, not the person's name
-6. Keep each field concise but descriptive (max 20 words per field)`;
+6. Keep each field concise but descriptive (max 20 words per field)
+7. timeOfDay: if the description contains an explicit time token from a scene heading
+   (NIGHT, DAY, DAWN, DUSK, MORNING, EVENING) use it directly — do NOT infer timeOfDay
+   from mood, weather, atmosphere, or tone. Only infer when no explicit token is present.`;
 
 export class OllamaService {
   private availableModel: string | null = null;
@@ -74,7 +76,7 @@ export class OllamaService {
 
     // Fallback: direct fetch for browser dev mode (no Electron)
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      const response = await fetch(`${getOllamaUrl()}/api/tags`, {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) {
@@ -92,7 +94,7 @@ export class OllamaService {
 
   private async discoverAvailableModel(): Promise<void> {
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      const response = await fetch(`${getOllamaUrl()}/api/tags`, {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) return;
@@ -112,7 +114,7 @@ export class OllamaService {
 
   async getAvailableModels(): Promise<string[]> {
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      const response = await fetch(`${getOllamaUrl()}/api/tags`, {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) return [];
@@ -133,7 +135,7 @@ export class OllamaService {
 Return only valid JSON with these fields: subject, background, mood, lighting, angle, shotType, timeOfDay, additionalDetails`;
 
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${getOllamaUrl()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,7 +146,7 @@ Return only valid JSON with these fields: subject, background, mood, lighting, a
           ],
           stream: false,
           options: {
-            temperature: 0.3,
+            temperature: 0.3, // Balanced — creative but consistent (shot descriptions)
             top_p: 0.9,
           },
         }),
@@ -199,15 +201,44 @@ For each shot return a JSON array with this exact structure:
     "mood": "one of: ${moods}",
     "lighting": "one of: ${lighting}",
     "angle": "one of: ${angles}",
+    "timeOfDay": "time token from the scene heading — see rule below",
     "characterNames": ["any character names spoken or present in this shot"]
   }
 ]
+
+RULE 1 — timeOfDay (scene heading takes absolute priority):
+Scene headings follow the format: INT./EXT. LOCATION - TIME
+Read the TIME token at the end of the heading and map it directly:
+  NIGHT or NIGHT-CONTINUOUS → "night"
+  DAY or DAY-CONTINUOUS     → "day"
+  DAWN                      → "dawn"
+  DUSK                      → "dusk"
+  MORNING                   → "morning"
+  EVENING                   → "dusk"
+Use the heading value directly. Do NOT override it with mood, weather, or tone from the
+scene body. All shots within the same scene share the same timeOfDay unless a new scene
+heading with a different TIME token appears. If no scene heading is present, infer from
+explicit time language only — never from mood, atmosphere, or lighting description.
+
+RULE 2 — character count (only what the script states):
+Subject and shotDescription must reflect only the characters explicitly named or described
+in the action lines for that beat. Do NOT add, imply, or invent additional people.
+If the action line describes one person acting alone, the shot contains one person.
+If two characters are named, the shot contains those two characters — no more.
+Never write "they", "the group", "the crowd", or any plural that is not in the script.
+
+RULE 3 — mood (genre-appropriate default):
+Choose mood based on the scene's genre context, not on surface emotional tone of dialogue.
+For detective, crime, noir, thriller, interrogation, or investigation scenes, default to
+"tense" or "dramatic". Only assign "intimate", "romantic", or "tender" if the dialogue or
+action line explicitly describes that emotional register — never infer intimacy from two
+characters being in the same room or from a close-up shot type.
 
 Accept any format: standard screenplay (INT./EXT.), Fountain, or plain prose story description.
 Return only the JSON array. No explanation, no markdown, no preamble.`;
 
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${getOllamaUrl()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,7 +248,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
             { role: 'user', content: scriptText },
           ],
           stream: false,
-          options: { temperature: 0.3, top_p: 0.9 },
+          options: { temperature: 0.3, top_p: 0.9 }, // Balanced — creative but consistent (shot descriptions)
         }),
         signal: AbortSignal.timeout(120000), // 2 min — full scene parse
       });
@@ -246,6 +277,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
       return parsed.map((shot, i) => ({
         order:               shot.order ?? i + 1,
         shotDescription:     shot.shotDescription ?? fallbackText.slice(0, 200),
+        timeOfDay:           shot.timeOfDay ?? 'day',
         shotType:            shot.shotType ?? 'medium shot',
         subject:             shot.subject ?? 'scene',
         background:          shot.background ?? 'environment',
@@ -261,6 +293,15 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
   }
 
   private screenplayFallback(text: string): ScriptShot[] {
+    // Best-effort: scan the raw text for a scene heading time token
+    const headingMatch = text.match(/\b(INT\.|EXT\.)[^\n]*[-–]\s*(NIGHT|DAY|DAWN|DUSK|MORNING|EVENING)/i);
+    const headingToken = headingMatch?.[2]?.toLowerCase() ?? null;
+    const timeOfDay = headingToken === 'night' ? 'night'
+      : headingToken === 'dawn'    ? 'dawn'
+      : headingToken === 'dusk' || headingToken === 'evening' ? 'dusk'
+      : headingToken === 'morning' ? 'morning'
+      : 'day';
+
     return [{
       order: 1,
       shotDescription: text.slice(0, 500),
@@ -270,6 +311,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
       mood: 'dramatic',
       lighting: 'natural light',
       angle: 'eye level',
+      timeOfDay,
       characterNames: [],
       assignedCharacterIds: [],
     }];
@@ -289,7 +331,7 @@ Example: ["Kane", "Sarah", "The Detective"]
 If no characters are identifiable return an empty array [].`;
 
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${getOllamaUrl()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -299,7 +341,7 @@ If no characters are identifiable return an empty array [].`;
             { role: 'user', content: scriptText },
           ],
           stream: false,
-          options: { temperature: 0.1, top_p: 0.9 },
+          options: { temperature: 0.1, top_p: 0.9 }, // Low temperature — deterministic structured output (JSON parsing)
         }),
         signal: AbortSignal.timeout(30000),
       });
@@ -328,7 +370,7 @@ Return only the prompt string, no explanation. Max 50 words.
 Keep it cinematic and specific.`;
 
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${getOllamaUrl()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -338,7 +380,7 @@ Keep it cinematic and specific.`;
             { role: 'user', content: description },
           ],
           stream: false,
-          options: { temperature: 0.4, top_p: 0.9 },
+          options: { temperature: 0.4, top_p: 0.9 }, // Slightly creative — varied output for style suggestions
         }),
         signal: AbortSignal.timeout(30000),
       });
@@ -395,8 +437,7 @@ Keep it cinematic and specific.`;
 
     if (lower.includes('night') || lower.includes('midnight')) timeOfDay = 'night';
     else if (lower.includes('dawn') || lower.includes('sunrise')) timeOfDay = 'dawn';
-    else if (lower.includes('golden') || lower.includes('sunset')) timeOfDay = 'golden-hour';
-    else if (lower.includes('rain') || lower.includes('storm')) timeOfDay = 'night';
+    else if (lower.includes('dusk') || lower.includes('golden') || lower.includes('sunset')) timeOfDay = 'golden-hour';
 
     return {
       subject: description.slice(0, 60),

@@ -3,6 +3,7 @@ import { AspectRatio } from '../data/AspectRatios';
 import { characterLibraryService } from './CharacterLibraryService';
 import { settingsService } from './SettingsService';
 import { telemetryService } from './TelemetryService';
+import { getComfyUIUrl } from '../config/services';
 
 // In packaged Electron the renderer runs from file:// (null origin) and ComfyUI rejects
 // those requests with 403. The main process runs a transparent local HTTP proxy that
@@ -20,8 +21,8 @@ async function getComfyBaseUrl(): Promise<string> {
       }
     } catch { /* fall through to direct URL */ }
   }
-  resolvedBaseUrl = 'http://127.0.0.1:8188';
-  return resolvedBaseUrl;
+  // Direct dev-mode / custom URL — read from settings, do not cache
+  return getComfyUIUrl();
 }
 
 const STYLE_SUFFIX_BW =
@@ -305,7 +306,8 @@ export class ComfyUIService {
       '5': {
         class_type: 'KSampler',
         inputs: {
-          seed, steps: 25, cfg: 7.5,
+          // Tuned for DreamShaper 8 — do not change without testing
+          seed, steps: 20, cfg: 7,
           sampler_name: 'euler', scheduler: 'normal', denoise: 1.0,
           model: ['1', 0], positive: ['2', 0], negative: ['3', 0], latent_image: ['4', 0],
         },

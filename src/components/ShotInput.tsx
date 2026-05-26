@@ -100,7 +100,7 @@ export default function ShotInput({
       {comfyOffline && !ollamaOffline && (
         <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-imagginary-950/30 border border-imagginary-800/30 rounded text-xs text-imagginary-500">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          ComfyUI offline — prompts will be parsed but images queued until ComfyUI starts on port 8188.
+          ComfyUI offline — prompts will be parsed but images queued until ComfyUI is running.
         </div>
       )}
 

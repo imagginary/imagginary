@@ -289,8 +289,7 @@ export default function TurntableViewer({
 
               {/* InstantMesh availability note */}
               <p className="text-[10px] text-gray-700 text-center">
-                Requires InstantMesh running on <span className="font-mono">localhost:7860</span>
-                {' '}with GPU for mesh generation.
+                Requires InstantMesh running locally with GPU for mesh generation.
               </p>
             </>
           )}

@@ -135,12 +135,12 @@ export default function TitleBar({
             <ConnectionDot status={serviceStatus.comfyui} />
             <span>ComfyUI</span>
             {serviceStatus.comfyui === 'disconnected' && (
-              <span className="text-red-400 text-[10px]">— start on :8188</span>
+              <span className="text-red-400 text-[10px]">— not running</span>
             )}
           </div>
           <div
             className="flex items-center gap-1.5 text-gray-400"
-            title={serviceStatus.instantmesh === 'disconnected' ? 'Character multi-view disabled — start InstantMesh on :7860' : 'InstantMesh ready'}
+            title={serviceStatus.instantmesh === 'disconnected' ? 'Character multi-view disabled — InstantMesh not running' : 'InstantMesh ready'}
           >
             <ConnectionDot status={serviceStatus.instantmesh} />
             <span>InstantMesh</span>

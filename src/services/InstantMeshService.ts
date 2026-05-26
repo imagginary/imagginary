@@ -1,8 +1,8 @@
 import { MultiViewPaths, MeshResult } from '../types';
 import { settingsService } from './SettingsService';
 import { turntableService } from './TurntableService';
+import { getInstantMeshUrl } from '../config/services';
 
-const INSTANTMESH_BASE_URL = 'http://127.0.0.1:7860';
 const TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 export interface MultiViewResult {
@@ -12,13 +12,13 @@ export interface MultiViewResult {
 export class InstantMeshService {
   async checkConnection(): Promise<boolean> {
     try {
-      const res = await fetch(`${INSTANTMESH_BASE_URL}/info`, {
+      const res = await fetch(`${getInstantMeshUrl()}/info`, {
         signal: AbortSignal.timeout(3000),
       });
       return res.ok;
     } catch {
       try {
-        const res = await fetch(INSTANTMESH_BASE_URL, {
+        const res = await fetch(getInstantMeshUrl(), {
           signal: AbortSignal.timeout(3000),
         });
         return res.ok;
@@ -58,13 +58,13 @@ export class InstantMeshService {
       // Strip data URL prefix if present
       const base64Data = imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
 
-      const res = await fetch(`${INSTANTMESH_BASE_URL}/api/multiview`, {
+      const res = await fetch(`${getInstantMeshUrl()}/api/multiview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: base64Data,
           sample_steps: 20,
-          seed: 42,
+          seed: Math.floor(Math.random() * 2 ** 32),
           remove_background: true,
         }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -106,7 +106,7 @@ export class InstantMeshService {
 
   /**
    * Generate a 3D mesh (OBJ + GLB) and turntable video from a character portrait.
-   * Delegates file I/O to the main process via IPC — requires InstantMesh on port 7860.
+   * Delegates file I/O to the main process via IPC — requires InstantMesh running locally.
    * GPU required on the InstantMesh server side.
    */
   async generate3DMesh(characterId: string, portraitImagePath: string): Promise<MeshResult | null> {
@@ -143,7 +143,7 @@ export class InstantMeshService {
     if (!connected) return null;
 
     try {
-      const res = await fetch(`${INSTANTMESH_BASE_URL}/api/generate_turntable`, {
+      const res = await fetch(`${getInstantMeshUrl()}/api/generate_turntable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ obj_path: objPath }),
