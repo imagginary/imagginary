@@ -721,9 +721,7 @@ export default function App() {
   }
 
   function handleNewProject() {
-    const title = window.prompt('Project title:', 'Untitled Project');
-    if (title === null) return;
-    const proj = createEmptyProject(title || 'Untitled Project');
+    const proj = createEmptyProject('Untitled Project');
     const firstPanel = createEmptyPanel(0);
     setProject({ ...proj, panels: [firstPanel] });
     setActivePanelId(firstPanel.id);
@@ -1167,6 +1165,7 @@ export default function App() {
         projectTitle={project.title}
         serviceStatus={serviceStatus}
         onNewProject={handleNewProject}
+        onRenameProject={(title) => setProject((prev) => ({ ...prev, title, updatedAt: Date.now() }))}
         onSaveProject={handleSave}
         onLoadProject={handleLoad}
         onGenerateAnimatic={handleGenerateAnimatic}

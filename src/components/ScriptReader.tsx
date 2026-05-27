@@ -37,6 +37,7 @@ export default function ScriptReader({
   const [shots, setShots] = useState<ScriptShot[]>([]);
   const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
   const cancelledRef = useRef(false);
 
   // ── Parsing ──────────────────────────────────────────────────────────────────
@@ -124,9 +125,14 @@ export default function ScriptReader({
 
   function handleCancel() {
     if (readerState === 'generating') {
-      if (!window.confirm('Generation is in progress. Close the Script Reader? (Panels will continue generating in the background.)')) return;
-      cancelledRef.current = true;
+      setConfirmClose(true);
+      return;
     }
+    onClose();
+  }
+
+  function confirmAndClose() {
+    cancelledRef.current = true;
     onClose();
   }
 
@@ -152,6 +158,26 @@ export default function ScriptReader({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Inline close confirmation — shown instead of window.confirm() */}
+        {confirmClose && (
+          <div className="flex items-center gap-3 px-5 py-3 bg-yellow-950/60 border-b border-yellow-800/40 text-xs text-yellow-200 shrink-0">
+            <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0" />
+            <span className="flex-1">Generation is in progress. Close? Panels will continue generating in the background.</span>
+            <button
+              onClick={confirmAndClose}
+              className="px-2.5 py-1 rounded bg-yellow-600 hover:bg-yellow-500 text-black font-semibold transition-colors"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => setConfirmClose(false)}
+              className="px-2.5 py-1 rounded hover:bg-gray-700 text-gray-300 transition-colors"
+            >
+              Keep open
+            </button>
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4">

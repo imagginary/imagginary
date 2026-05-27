@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
 import { ServiceStatus } from '../types';
 
@@ -6,6 +6,7 @@ interface TitleBarProps {
   projectTitle: string;
   serviceStatus: ServiceStatus;
   onNewProject: () => void;
+  onRenameProject?: (title: string) => void;
   onSaveProject: () => void;
   onLoadProject: () => void;
   onGenerateAnimatic: () => void;
@@ -76,6 +77,7 @@ export default function TitleBar({
   projectTitle,
   serviceStatus,
   onNewProject,
+  onRenameProject,
   onSaveProject,
   onLoadProject,
   onGenerateAnimatic,
@@ -97,6 +99,22 @@ export default function TitleBar({
   onStartSharedSession,
 }: TitleBarProps) {
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  function startTitleEdit() {
+    if (!onRenameProject) return;
+    setTitleDraft(projectTitle);
+    setEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.select(), 0);
+  }
+
+  function commitTitleEdit() {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim() || 'Untitled Project';
+    if (trimmed !== projectTitle) onRenameProject?.(trimmed);
+  }
 
   function handleExportPDF() {
     if (!isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
@@ -119,7 +137,28 @@ export default function TitleBar({
           <Film className="w-4 h-4 text-imagginary-400" />
           <span className="text-xs font-semibold text-imagginary-400 tracking-widest uppercase">Imagginary</span>
           <span className="text-gray-600 text-xs">|</span>
-          <span className="text-sm text-gray-200 font-medium truncate max-w-[240px]">{projectTitle}</span>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitleEdit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTitleEdit();
+                if (e.key === 'Escape') setEditingTitle(false);
+              }}
+              className="text-sm text-gray-200 font-medium bg-gray-800 border border-imagginary-500/50 rounded px-1.5 py-0.5 outline-none max-w-[240px] min-w-[120px]"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            />
+          ) : (
+            <span
+              className={`text-sm text-gray-200 font-medium truncate max-w-[240px] ${onRenameProject ? 'cursor-pointer hover:text-white' : ''}`}
+              onClick={startTitleEdit}
+              title={onRenameProject ? 'Click to rename project' : undefined}
+            >
+              {projectTitle}
+            </span>
+          )}
         </div>
 
         {/* Center — service status */}
