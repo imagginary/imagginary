@@ -16,7 +16,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -35,6 +36,9 @@ jobs:
           Expand-Archive "$env:TEMP\ffmpeg-win.zip" -DestinationPath "$env:TEMP\ffmpeg-win"
           $ffmpegExe = Get-ChildItem -Recurse "$env:TEMP\ffmpeg-win" -Filter ffmpeg.exe | Select-Object -First 1
           Copy-Item $ffmpegExe.FullName "resources\bin\ffmpeg-win.exe"
+
+      - name: Write runtime config
+        run: node scripts/write-config.js
 
       - name: Build and package
         run: npm run dist -- --publish never
@@ -57,7 +61,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -94,6 +99,9 @@ jobs:
         env:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
 
+      - name: Write runtime config
+        run: node scripts/write-config.js
+
       - name: Build and package
         env:
           APPLE_API_KEY: ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
@@ -126,7 +134,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -140,6 +149,9 @@ jobs:
           tar -xf /tmp/ffmpeg-linux.tar.xz -C /tmp/
           cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffmpeg resources/bin/ffmpeg-linux
           chmod +x resources/bin/ffmpeg-linux
+
+      - name: Write runtime config
+        run: node scripts/write-config.js
 
       - name: Build and package
         run: npm run dist -- --publish never
@@ -163,7 +175,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
