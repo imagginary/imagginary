@@ -307,8 +307,8 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              When IPAdapter is not installed locally, Fal.ai runs it in the cloud to lock character
-              appearance across panels. ~$0.02 per panel.
+              Powers two Pro features: Character Consistency (IPAdapter) and Director's Eye
+              inpainting (FLUX.1 Fill). ~$0.02–0.05 per use.
             </p>
             {isPro ? (
               <>

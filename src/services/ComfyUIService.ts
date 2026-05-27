@@ -3,6 +3,7 @@ import { AspectRatio } from '../data/AspectRatios';
 import { characterLibraryService } from './CharacterLibraryService';
 import { settingsService } from './SettingsService';
 import { telemetryService } from './TelemetryService';
+import { licenseService } from './LicenseService';
 import { getComfyUIUrl } from '../config/services';
 
 // In packaged Electron the renderer runs from file:// (null origin) and ComfyUI rejects
@@ -38,6 +39,13 @@ const NEGATIVE_PROMPT =
 
 const CHARACTER_NEGATIVE_PROMPT =
   'background, environment, scenery, multiple characters, side view, back view, occluded, cropped, partial, blurry, low quality, watermark, text';
+
+// ── Inpainting tuning — adjust here if quality needs improvement ──────────────
+const INPAINT_STEPS = 28;           // Higher than panel gen for better blending
+const INPAINT_DENOISE = 0.85;       // High enough to regenerate large regions cleanly
+const INPAINT_MASK_GROW = 6;        // Pixels to expand mask for softer edges
+const INPAINT_NEGATIVE_SUFFIX =
+  ', seam, border, edge artifact, blurry transition, mismatched lighting, inconsistent style';
 
 function getStyleSuffix(prompt: StructuredPrompt): string {
   const searchText = [
@@ -678,23 +686,23 @@ export class ComfyUIService {
     return {
       '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpoint } },
       '2': { class_type: 'CLIPTextEncode', inputs: { text: positive, clip: ['1', 1] } },
-      '3': { class_type: 'CLIPTextEncode', inputs: { text: NEGATIVE_PROMPT, clip: ['1', 1] } },
+      '3': { class_type: 'CLIPTextEncode', inputs: { text: NEGATIVE_PROMPT + INPAINT_NEGATIVE_SUFFIX, clip: ['1', 1] } },
       '4': { class_type: 'LoadImage', inputs: { image: imageName } },
       '5': { class_type: 'LoadImage', inputs: { image: maskName } },
       '6': { class_type: 'ImageToMask', inputs: { image: ['5', 0], channel: 'red' } },
       '7': {
         class_type: 'VAEEncodeForInpaint',
-        inputs: { pixels: ['4', 0], vae: ['1', 2], mask: ['6', 0], grow_mask_by: 6 },
+        inputs: { pixels: ['4', 0], vae: ['1', 2], mask: ['6', 0], grow_mask_by: INPAINT_MASK_GROW },
       },
       '8': {
         class_type: 'KSampler',
         inputs: {
           seed,
-          steps: 20,
+          steps: INPAINT_STEPS,
           cfg: 7,
           sampler_name: 'euler',
           scheduler: 'normal',
-          denoise: 0.85,
+          denoise: INPAINT_DENOISE,
           model: ['1', 0],
           positive: ['2', 0],
           negative: ['3', 0],
@@ -713,6 +721,21 @@ export class ComfyUIService {
     onProgress?: (progress: number, message: string) => void,
     characterIds: string[] = []
   ): Promise<string> {
+    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available
+    if (licenseService.isPro()) {
+      const falApiKey = settingsService.getKey('falApiKey');
+      if (falApiKey) {
+        // Strip data URL prefix — inpaintWithFluxFill expects raw base64
+        const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+        const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
+        const result = await this.inpaintWithFluxFill(rawImage, rawMask, editDescription, falApiKey, onProgress);
+        if (result) return result;
+        // null means Fal.ai failed — fall through to local DreamShaper
+        onProgress?.(0, 'Cloud inpainting failed — using local model…');
+      }
+    }
+
+    // Community fallback — DreamShaper with tuning improvements
     if (!this.defaultCheckpoint) {
       await this.getAvailableCheckpoints();
     }
@@ -753,6 +776,62 @@ export class ComfyUIService {
     const { prompt_id } = await submitRes.json() as PromptResponse;
     onProgress?.(15, 'Queued — waiting for inpainting...');
     return this.pollForCompletion(prompt_id, onProgress);
+  }
+
+  private async inpaintWithFluxFill(
+    imageBase64: string,
+    maskBase64: string,
+    prompt: string,
+    falApiKey: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string | null> {
+    try {
+      onProgress?.(10, 'Sending to FLUX.1 Fill…');
+
+      const res = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image/inpainting', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${falApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          image_url: `data:image/png;base64,${imageBase64}`,
+          mask_url:  `data:image/png;base64,${maskBase64}`,
+          num_inference_steps: INPAINT_STEPS,
+          strength: INPAINT_DENOISE,
+          guidance_scale: 3.5,
+          output_format: 'png',
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn('[FluxFill] API error:', res.status, '— falling back to local');
+        return null; // triggers community fallback
+      }
+
+      onProgress?.(80, 'Processing result…');
+      const data = await res.json() as { images?: { url: string }[] };
+      const imageUrl = data.images?.[0]?.url;
+      if (!imageUrl) return null;
+
+      // Download the result image
+      const imgRes = await fetch(imageUrl);
+      const blob = await imgRes.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+
+      onProgress?.(100, 'Done');
+      telemetryService.track('inpaint_flux_fill');
+      return `data:image/png;base64,${base64}`;
+
+    } catch (err) {
+      console.warn('[FluxFill] Error — falling back to local:', err);
+      return null; // triggers community fallback
+    }
   }
 
   // ── Motion Layer (Phase 6 — Wan 2.2) ──────────────────────────────────────

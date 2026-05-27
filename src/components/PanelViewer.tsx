@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles, Upload, Mic } from 'lucide-react';
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
+import { settingsService } from '../services/SettingsService';
 
 interface PanelViewerProps {
   panel: Panel | null;
@@ -789,6 +790,13 @@ export default function PanelViewer({
             Apply Edit
           </button>
         </div>
+      )}
+
+      {/* Pro nudge — shown in edit mode when Fal.ai key is missing */}
+      {editMode && isPro && !settingsService.getKey('falApiKey') && (
+        <p className="text-[10px] text-gray-600 px-6 pb-1">
+          Add a Fal.ai key in Settings for best-quality inpainting (FLUX.1 Fill).
+        </p>
       )}
 
       {/* Animate panel — expands below toolbar when animateMode is active */}
