@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, CheckCircle, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { settingsService } from '../services/SettingsService';
 import { AppSettings } from '../types';
+import CreditUsageBar from './CreditUsageBar';
 
 interface Props {
   isPro: boolean;
@@ -212,16 +213,19 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              Animate your storyboard panels with AI lip sync. Get a free API key at sync.so.
+              Powers lip sync animation. Pro includes 30 clips per month. Add your own key for usage beyond your monthly allowance.
             </p>
             {isPro ? (
-              <KeyInput
-                label="API Key"
-                keyName="syncsoApiKey"
-                placeholder="sk-sync-xxxxxxxx"
-                link="https://sync.so"
-                linkLabel="Get API key"
-              />
+              <>
+                <KeyInput
+                  label="API Key"
+                  keyName="syncsoApiKey"
+                  placeholder="sk-sync-xxxxxxxx"
+                  link="https://sync.so"
+                  linkLabel="Get API key"
+                />
+                <CreditUsageBar type="lipSyncClips" label="Lip sync clips" />
+              </>
             ) : (
               <ProGate />
             )}
@@ -307,8 +311,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              Powers two Pro features: Character Consistency (IPAdapter) and Director's Eye
-              inpainting (FLUX.1 Fill). ~$0.02–0.05 per use.
+              Powers Director's Eye AI inpainting (FLUX.1 Fill) and character face consistency (IPAdapter). Pro includes 60 inpaints and 200 character panels per month. Add your own key for usage beyond your monthly allowance.
             </p>
             {isPro ? (
               <>
@@ -319,6 +322,10 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                   link="https://fal.ai"
                   linkLabel="Get API key"
                 />
+                <div className="space-y-2">
+                  <CreditUsageBar type="inpaints" label="Director's Eye inpaints" />
+                  <CreditUsageBar type="characterPanels" label="Character-consistent panels" />
+                </div>
                 <p className="text-[10px] text-gray-700">
                   If IPAdapter is installed locally in ComfyUI, it will be used automatically — no API key needed.
                 </p>

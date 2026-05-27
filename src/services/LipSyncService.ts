@@ -1,8 +1,10 @@
 import { settingsService } from './SettingsService';
+import { licenseService } from './LicenseService';
 
 export interface LipSyncResult {
-  videoUrl: string;   // URL to download the output video
-  videoData: string | null; // base64 if fetchable
+  videoUrl?: string;
+  videoData?: string | null;
+  error?: string;
 }
 
 class LipSyncService {
@@ -15,6 +17,10 @@ class LipSyncService {
     audioPath: string,      // absolute path to WAV file
     onProgress?: (pct: number, msg: string) => void
   ): Promise<LipSyncResult | null> {
+    if (!licenseService.canUse('lipSyncClips')) {
+      return { error: 'monthly_limit_reached' };
+    }
+
     const apiKey = settingsService.getKey('syncsoApiKey');
     if (!apiKey) return null;
 
@@ -63,6 +69,7 @@ class LipSyncService {
         onProgress?.(pct, `Processing… ${status.status}`);
         if (status.status === 'completed') {
           onProgress?.(95, 'Finalising…');
+          licenseService.incrementUsage('lipSyncClips');
           return { videoUrl: status.outputUrl ?? '', videoData: null };
         }
         if (status.status === 'failed') return null;

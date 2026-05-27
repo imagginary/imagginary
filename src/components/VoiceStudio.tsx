@@ -290,7 +290,7 @@ export default function VoiceStudio({
       (pct, message) => setLipSyncProgress({ pct, message })
     );
     setIsGeneratingLipSync(false);
-    if (result) onLipSyncComplete(result.videoUrl);
+    if (result?.videoUrl) onLipSyncComplete(result.videoUrl);
   }
 
   const handleRegenerateLipSync = handleGenerateLipSync;

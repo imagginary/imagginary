@@ -3,6 +3,7 @@ import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, 
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 import { settingsService } from '../services/SettingsService';
+import { licenseService } from '../services/LicenseService';
 
 interface PanelViewerProps {
   panel: Panel | null;
@@ -17,6 +18,7 @@ interface PanelViewerProps {
   onOpenMotionLibrary?: () => void;
   onOpenVideoTransfer?: () => void;
   onOpenVoiceStudio?: () => void;
+  onOpenSettings?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -65,6 +67,7 @@ export default function PanelViewer({
   onOpenMotionLibrary,
   onOpenVideoTransfer,
   onOpenVoiceStudio,
+  onOpenSettings,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -279,6 +282,13 @@ export default function PanelViewer({
   const compareRevision = compareRevisionId
     ? revisions.find((r) => r.id === compareRevisionId) ?? null
     : null;
+
+  const inpaintsExhausted = isPro && !licenseService.canUse('inpaints');
+  const creditUsage = licenseService.getUsage();
+  const daysUntilReset = Math.max(
+    0,
+    Math.ceil((creditUsage.periodStart + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
+  );
 
   const canEdit = !!panel?.generatedImageData && !isGenerating;
   const canUndo = (panel?.editHistory?.length ?? 0) > 0 && !isGenerating;
@@ -792,8 +802,15 @@ export default function PanelViewer({
         </div>
       )}
 
-      {/* Pro nudge — shown in edit mode when Fal.ai key is missing */}
-      {editMode && isPro && !settingsService.getKey('falApiKey') && (
+      {/* Edit mode nudges — credit exhaustion takes priority over missing-key hint */}
+      {editMode && inpaintsExhausted && (
+        <p className="text-[10px] text-amber-500 px-6 pb-1">
+          Monthly inpaint credits used.{' '}
+          <button onClick={onOpenSettings} className="underline ml-1">Add your own Fal.ai key</button>
+          {' '}to continue, or resets in {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''}.
+        </p>
+      )}
+      {editMode && isPro && !inpaintsExhausted && !settingsService.getKey('falApiKey') && (
         <p className="text-[10px] text-gray-600 px-6 pb-1">
           Add a Fal.ai key in Settings for best-quality inpainting (FLUX.1 Fill).
         </p>

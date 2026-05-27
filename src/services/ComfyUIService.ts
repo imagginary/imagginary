@@ -426,18 +426,20 @@ export class ComfyUIService {
       console.log('[IPAdapter] Node not available — using prompt-only generation');
     }
 
-    // If IPAdapter not installed locally but Fal.ai key exists → use cloud
-    if (!hasIPAdapter && referenceImageFilename && settingsService.getKey('falApiKey')) {
-      try {
-        const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
-        const falResult = await this.runCloudIPAdapter(
-          referenceImageFilename,
-          positivePrompt,
-          settingsService.getKey('falApiKey')
-        );
-        if (falResult) return falResult;
-      } catch {
-        // Fall through to local generation without IPAdapter
+    // If IPAdapter not installed locally but Fal.ai key exists → use cloud (if credits remain)
+    if (!hasIPAdapter && referenceImageFilename) {
+      const falApiKey = settingsService.getKey('falApiKey');
+      if (falApiKey && licenseService.canUse('characterPanels')) {
+        try {
+          const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
+          const falResult = await this.runCloudIPAdapter(referenceImageFilename, positivePrompt, falApiKey);
+          if (falResult) {
+            licenseService.incrementUsage('characterPanels');
+            return falResult;
+          }
+        } catch {
+          // Fall through to local generation without IPAdapter
+        }
       }
     }
 
@@ -721,17 +723,23 @@ export class ComfyUIService {
     onProgress?: (progress: number, message: string) => void,
     characterIds: string[] = []
   ): Promise<string> {
-    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available
+    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available and credits remain
     if (licenseService.isPro()) {
       const falApiKey = settingsService.getKey('falApiKey');
       if (falApiKey) {
-        // Strip data URL prefix — inpaintWithFluxFill expects raw base64
-        const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
-        const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
-        const result = await this.inpaintWithFluxFill(rawImage, rawMask, editDescription, falApiKey, onProgress);
-        if (result) return result;
-        // null means Fal.ai failed — fall through to local DreamShaper
-        onProgress?.(0, 'Cloud inpainting failed — using local model…');
+        if (!licenseService.canUse('inpaints')) {
+          onProgress?.(0, 'Monthly inpaint credits used — using local generation');
+        } else {
+          const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+          const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
+          const result = await this.inpaintWithFluxFill(rawImage, rawMask, editDescription, falApiKey, onProgress);
+          if (result) {
+            licenseService.incrementUsage('inpaints');
+            return result;
+          }
+          // null means Fal.ai failed — fall through to local DreamShaper
+          onProgress?.(0, 'Cloud inpainting failed — using local model…');
+        }
       }
     }
 
