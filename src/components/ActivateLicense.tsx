@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import { X, Loader2, CheckCircle, AlertCircle, Star, Zap, ExternalLink } from 'lucide-react';
 import { License } from '../types';
-import { licenseService } from '../services/LicenseService';
+import { licenseService, CreditUsage } from '../services/LicenseService';
 
 interface ActivateLicenseProps {
   currentLicense: License | null;
@@ -72,11 +72,13 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
             <p className="text-xl font-bold text-gray-100">$19<span className="text-sm font-normal text-gray-500">/mo</span></p>
           </div>
           <ul className="space-y-1 text-[11px] text-gray-400">
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Motion generation</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Voice synthesis</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Pose engine</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />8 library voices</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Revision history</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />60 Director's Eye AI inpaints/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />200 character-consistent panels/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />30 lip sync clips/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Style Vault Pro styles</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Pose Engine + Motion Library</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Voice Layer</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />PDF + FCPXML export</li>
           </ul>
           <button
             onClick={() => licenseService.openCheckout('pro')}
@@ -98,10 +100,13 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
           </div>
           <ul className="space-y-1 text-[11px] text-gray-400">
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Everything in Pro</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />PDF storyboard export</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Premiere Pro XML</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />300 Director's Eye inpaints/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />1,000 character-consistent panels/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />150 lip sync clips/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Shared Studio collaboration</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Custom voice cloning</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Priority support</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Broadcast resolution (1536×864)</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Brand LoRA training</li>
           </ul>
           <button
             onClick={() => licenseService.openCheckout('studio')}
@@ -177,6 +182,17 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
   const isExpired = license.expiresAt !== null && Date.now() > license.expiresAt;
   const tier = license.tier === 'studio' ? 'studio' : 'pro';
 
+  const remaining = {
+    inpaints:        licenseService.getRemainingCredits('inpaints'),
+    characterPanels: licenseService.getRemainingCredits('characterPanels'),
+    lipSyncClips:    licenseService.getRemainingCredits('lipSyncClips'),
+  };
+  const usage: CreditUsage = licenseService.getUsage();
+  const daysUntilReset = Math.max(
+    0,
+    Math.ceil((usage.periodStart + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
+  );
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex flex-col items-center text-center gap-3 py-4">
@@ -193,6 +209,13 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
               : `Renews ${new Date(license.expiresAt).toLocaleDateString()}`}
           </p>
         )}
+      </div>
+
+      <div className="text-xs text-gray-400 space-y-1 border-t border-gray-800 pt-3">
+        <p>Director's Eye: {remaining.inpaints === Infinity ? 'Unlimited' : `${remaining.inpaints} inpaints remaining`}</p>
+        <p>Character panels: {remaining.characterPanels === Infinity ? 'Unlimited' : `${remaining.characterPanels} remaining`}</p>
+        <p>Lip sync: {remaining.lipSyncClips === Infinity ? 'Unlimited' : `${remaining.lipSyncClips} clips remaining`}</p>
+        <p className="text-gray-600">Resets in {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''}</p>
       </div>
 
       <div className="space-y-2">
