@@ -311,14 +311,14 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              Powers Director's Eye AI inpainting (FLUX.1 Fill) and character face consistency (IPAdapter). Pro includes 60 inpaints and 200 character panels per month. Add your own key for usage beyond your monthly allowance.
+              Pro and Studio plans include monthly credits powered by our shared Fal.ai integration — no key needed. Add your own key below to use additional credits beyond your monthly allowance.
             </p>
             {isPro ? (
               <>
                 <KeyInput
-                  label="API Key"
+                  label="Your Fal.ai key (optional)"
                   keyName="falApiKey"
-                  placeholder="key-xxxxxxxx"
+                  placeholder="Optional — paste your own key for additional usage"
                   link="https://fal.ai"
                   linkLabel="Get API key"
                 />

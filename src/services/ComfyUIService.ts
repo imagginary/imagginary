@@ -426,9 +426,10 @@ export class ComfyUIService {
       console.log('[IPAdapter] Node not available — using prompt-only generation');
     }
 
-    // If IPAdapter not installed locally but Fal.ai key exists → use cloud (if credits remain)
+    // If IPAdapter not installed locally but Fal.ai key exists → use cloud (if credits remain).
+    // BYOK key takes priority over the shared key baked in at build time.
     if (!hasIPAdapter && referenceImageFilename) {
-      const falApiKey = settingsService.getKey('falApiKey');
+      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
       if (falApiKey && licenseService.canUse('characterPanels')) {
         try {
           const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
@@ -723,9 +724,10 @@ export class ComfyUIService {
     onProgress?: (progress: number, message: string) => void,
     characterIds: string[] = []
   ): Promise<string> {
-    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available and credits remain
+    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available and credits remain.
+    // BYOK key takes priority over the shared key baked in at build time.
     if (licenseService.isPro()) {
-      const falApiKey = settingsService.getKey('falApiKey');
+      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
       if (falApiKey) {
         if (!licenseService.canUse('inpaints')) {
           onProgress?.(0, 'Monthly inpaint credits used — using local generation');

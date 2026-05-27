@@ -72,6 +72,7 @@ jobs:
           CSC_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
+          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
         run: npm run dist
 
       - name: Upload DMG to release
@@ -118,6 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
+          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
         run: npm run dist
 
       - name: Upload installer to release
@@ -159,6 +161,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
+          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
         run: npm run dist
 
       - name: Upload AppImage to release

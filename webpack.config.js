@@ -63,6 +63,7 @@ module.exports = {
     }),
     new webpack.DefinePlugin({
       'process.env.UMAMI_WEBSITE_ID': JSON.stringify(process.env.UMAMI_WEBSITE_ID ?? ''),
+      'process.env.FAL_API_KEY':      JSON.stringify(process.env.FAL_API_KEY ?? ''),
     }),
   ],
   devServer: {
