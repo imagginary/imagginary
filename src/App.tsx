@@ -120,6 +120,8 @@ interface ElectronAPI {
   openFolder: (path: string) => void;
   exportPDF: (base64Data: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
   exportFCPXML: (xmlString: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
+  downloadModels: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
+  onDownloadModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
   // Phase 9 — 3D Mesh / Turntable
   generate3DMesh: (params: { characterId: string; portraitImagePath: string }) => Promise<{
     success: boolean;
@@ -184,6 +186,10 @@ export default function App() {
   const [license, setLicense] = useState<License | null>(null);
   const [showActivateLicense, setShowActivateLicense] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Model recovery banner
+  const [modelMissing, setModelMissing] = useState(false);
+  const [modelDownloading, setModelDownloading] = useState(false);
+  const [modelDownloadPct, setModelDownloadPct] = useState(0);
   // Phase 13 — Shared Studio
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [sessionUsers, setSessionUsers] = useState<Array<{ userId: string; userName: string }>>([]);
@@ -244,6 +250,14 @@ export default function App() {
     const interval = setInterval(checkServices, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // ── Model health check — show recovery banner if ComfyUI has no checkpoints ──
+  useEffect(() => {
+    if (serviceStatus.comfyui !== 'connected') return;
+    comfyUIService.getAvailableCheckpoints().then((checkpoints) => {
+      setModelMissing(checkpoints.length === 0);
+    }).catch(() => { /* Can't determine — leave banner hidden */ });
+  }, [serviceStatus.comfyui]);
 
   // ── Auto-save ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -572,6 +586,16 @@ export default function App() {
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
+      // Detect model-not-found errors and surface the recovery banner
+      if (
+        error instanceof Error &&
+        (error.message.includes('model file not found') ||
+          error.message.includes('ckpt_name') ||
+          error.message.includes('v1-5-pruned-emaonly'))
+      ) {
+        setModelMissing(true);
+      }
+
       const isOllamaError =
         error instanceof Error &&
         (error.name === 'TimeoutError' ||
@@ -1283,6 +1307,42 @@ export default function App() {
 
         {/* Center */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          {modelMissing && (
+            <div className="mx-3 mt-2 shrink-0 bg-amber-900/30 border border-amber-700 rounded-lg p-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-amber-300">
+                {modelDownloading
+                  ? `Downloading storyboard model… ${modelDownloadPct}%`
+                  : 'Storyboard model not found. Download required to generate panels.'}
+              </p>
+              {!modelDownloading && (
+                <button
+                  onClick={async () => {
+                    if (!window.electronAPI) return;
+                    setModelDownloading(true);
+                    setModelDownloadPct(0);
+                    const cleanup = window.electronAPI.onDownloadModelProgress((data) => {
+                      setModelDownloadPct(data.pct);
+                    });
+                    const result = await window.electronAPI.downloadModels();
+                    cleanup();
+                    setModelDownloading(false);
+                    if (result.success) setModelMissing(false);
+                  }}
+                  className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded shrink-0"
+                >
+                  Download (2GB)
+                </button>
+              )}
+              {modelDownloading && (
+                <div className="w-32 bg-amber-900 rounded-full h-1.5 shrink-0">
+                  <div
+                    className="bg-amber-400 h-1.5 rounded-full transition-all"
+                    style={{ width: `${modelDownloadPct}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <PanelViewer
             panel={activePanel}
             progress={progress}

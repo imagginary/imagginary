@@ -243,6 +243,8 @@ export interface AppSettings {
   // Phase 13 — Shared Studio (Supabase)
   supabaseUrl: string;
   supabaseAnonKey: string;
+  // Active checkpoint override (empty = auto-pick by preference ladder)
+  activeCheckpoint: string;
   // Advanced — custom service URLs (leave blank for defaults)
   ollamaUrl: string;
   comfyuiUrl: string;
@@ -261,6 +263,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   muapiEndpoint: 'https://api.muapi.io/v1/comfyui',
   supabaseUrl: '',
   supabaseAnonKey: '',
+  activeCheckpoint: '',
   ollamaUrl: '',
   comfyuiUrl: '',
   instantMeshUrl: '',

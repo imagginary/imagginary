@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Lock, CheckCircle, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import { settingsService } from '../services/SettingsService';
+import { comfyUIService } from '../services/ComfyUIService';
 import { AppSettings } from '../types';
 import CreditUsageBar from './CreditUsageBar';
 
@@ -113,6 +114,9 @@ function KeyInput({
 
 export default function SettingsModal({ isPro, onClose }: Props) {
   const settings = settingsService.get();
+  const [availableCheckpoints, setAvailableCheckpoints] = useState<string[]>([]);
+  const [activeCheckpoint, setActiveCheckpoint] = useState(settings.activeCheckpoint ?? '');
+  const [checkpointSaved, setCheckpointSaved] = useState(false);
   const [provider, setProvider] = useState<Provider>(settings.turntable3dProvider);
   const [cloudEnabled, setCloudEnabled] = useState(settings.cloudGenerationEnabled);
   const [muapiKey, setMuapiKey] = useState(settings.muapiApiKey);
@@ -135,6 +139,16 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     instantMeshUrl: settings.instantMeshUrl || '',
   });
   const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
+
+  useEffect(() => {
+    comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
+  }, []);
+
+  function handleCheckpointSave() {
+    settingsService.save({ activeCheckpoint: activeCheckpoint.trim() });
+    setCheckpointSaved(true);
+    setTimeout(() => setCheckpointSaved(false), 2000);
+  }
 
   function handleServiceUrlsSave() {
     settingsService.save({
@@ -205,6 +219,43 @@ export default function SettingsModal({ isPro, onClose }: Props) {
         </div>
 
         <div className="px-5 py-5 space-y-6">
+
+          {/* ── Active Model ── */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Active Model</p>
+            {availableCheckpoints.length > 0 ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-400">Model</label>
+                  <select
+                    value={activeCheckpoint}
+                    onChange={(e) => { setActiveCheckpoint(e.target.value); setCheckpointSaved(false); }}
+                    className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 outline-none transition-colors"
+                  >
+                    <option value="">Auto (recommended)</option>
+                    {availableCheckpoints.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Changing the model changes the visual style of all generated panels.
+                </p>
+                <button
+                  onClick={handleCheckpointSave}
+                  className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
+                >
+                  {checkpointSaved ? 'Saved ✓' : 'Save'}
+                </button>
+              </>
+            ) : (
+              <p className="text-[11px] text-gray-500">
+                ComfyUI not connected — start ComfyUI to manage models.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-gray-800" />
 
           {/* ── Section 1: Lip Sync ── */}
           <div className="space-y-3">

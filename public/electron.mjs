@@ -908,29 +908,43 @@ async function startComfyUI(loadingWin) {
 
 // ── Model download ───────────────────────────────────────────────────────────
 
-const MODEL_URL = 'https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors';
-const MODEL_FILENAME = 'dreamshaper_8.safetensors';
+const MODEL_FILENAME = 'deliberate_v3.safetensors';
+const MODEL_URL = 'https://huggingface.co/XpucT/Deliberate/resolve/main/Deliberate_v3.safetensors';
+const LEGACY_MODEL_FILENAME = 'dreamshaper_8.safetensors';
 
 function getModelPath(comfyPath) {
   const base = comfyPath || path.join(os.homedir(), 'ComfyUI');
   return path.join(base, 'models', 'checkpoints', MODEL_FILENAME);
 }
 
+function getLegacyModelPath(comfyPath) {
+  const base = comfyPath || path.join(os.homedir(), 'ComfyUI');
+  return path.join(base, 'models', 'checkpoints', LEGACY_MODEL_FILENAME);
+}
+
 async function checkAndDownloadModel(loadingWin, comfyPath) {
   const modelPath = getModelPath(comfyPath);
-  sendLoadingUpdate(loadingWin, 'Checking for DreamShaper 8 model…', 71);
+  const legacyPath = getLegacyModelPath(comfyPath);
+  const checkpointsDir = path.dirname(modelPath);
+  sendLoadingUpdate(loadingWin, 'Checking for storyboard model…', 71);
 
   if (fs.existsSync(modelPath)) {
-    console.log('[Model] DreamShaper 8 already present at', modelPath);
+    console.log('[Model] Deliberate v3 already present at', modelPath);
     serviceLaunchStatus.modelPresent = true;
     return true;
   }
 
-  console.log('[Model] DreamShaper 8 not found — downloading to', modelPath);
-  sendLoadingUpdate(loadingWin, 'Downloading DreamShaper 8 (~2GB, first launch only)…', 72);
+  // Existing DreamShaper users keep working — no re-download needed
+  if (fs.existsSync(legacyPath)) {
+    console.log('[Model] DreamShaper 8 found — using existing model');
+    serviceLaunchStatus.modelPresent = true;
+    return true;
+  }
 
-  const modelsDir = path.dirname(modelPath);
-  fs.mkdirSync(modelsDir, { recursive: true });
+  console.log('[Model] No model found — downloading Deliberate v3 to', modelPath);
+  sendLoadingUpdate(loadingWin, 'Downloading storyboard model (~2GB, first launch only)…', 72);
+
+  fs.mkdirSync(checkpointsDir, { recursive: true });
 
   try {
     await streamDownload(MODEL_URL, modelPath, (downloaded, total) => {
@@ -943,7 +957,7 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
     return true;
   } catch (err) {
     console.error('[Model] Download failed:', err.message);
-    // Non-fatal — user can download manually; app still opens
+    // Non-fatal — recovery banner in app allows manual retry
     return false;
   }
 }
@@ -1050,14 +1064,17 @@ async function startBundledServices(loadingWin) {
     mainWindow.webContents.send('comfyui-connected');
   }
 
-  // 4. DreamShaper model download on first launch
-  if (comfyOk && isFirstLaunch()) {
-    await checkAndDownloadModel(loadingWin, comfyPath);
-    markLaunched();
+  // 4. Model download on first launch — markLaunched only after model is confirmed present
+  if (isFirstLaunch()) {
+    if (comfyOk) {
+      await checkAndDownloadModel(loadingWin, comfyPath);
+      markLaunched();
+    }
+    // If comfyOk is false, don't mark launched — retry next time ComfyUI comes up
   } else {
-    const modelPath = getModelPath(comfyPath);
-    serviceLaunchStatus.modelPresent = fs.existsSync(modelPath);
-    if (!comfyOk) markLaunched();
+    const deliberatePath = getModelPath(comfyPath);
+    const dreamshaperPath = getLegacyModelPath(comfyPath);
+    serviceLaunchStatus.modelPresent = fs.existsSync(deliberatePath) || fs.existsSync(dreamshaperPath);
   }
 
   sendLoadingUpdate(loadingWin, 'Opening Imagginary…', 100);
@@ -1406,12 +1423,13 @@ ipcMain.handle('get-comfyui-proxy-port', () => {
   return comfyuiProxyPort;
 });
 
-// Model download — called from renderer (e.g. WelcomeFlow "Download" button)
+// Model download — called from renderer recovery banner or WelcomeFlow
 ipcMain.handle('download-models', async (event) => {
   const comfyPath = await findComfyUIPath();
   const modelPath = getModelPath(comfyPath);
+  const legacyPath = getLegacyModelPath(comfyPath);
 
-  if (fs.existsSync(modelPath)) {
+  if (fs.existsSync(modelPath) || fs.existsSync(legacyPath)) {
     return { success: true, cached: true };
   }
 
@@ -1421,11 +1439,13 @@ ipcMain.handle('download-models', async (event) => {
 
     await streamDownload(MODEL_URL, modelPath, (downloaded, total) => {
       const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-      // Send progress to the renderer window that invoked us
       try { event.sender.send('download-model-progress', { pct, downloaded, total }); } catch { /* ignore */ }
     });
 
     serviceLaunchStatus.modelPresent = true;
+    // Mark launched after successful recovery download so the first-launch path
+    // doesn't re-run on the next startup.
+    if (isFirstLaunch()) markLaunched();
     return { success: true, cached: false };
   } catch (err) {
     return { success: false, error: err.message };

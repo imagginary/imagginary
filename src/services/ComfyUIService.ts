@@ -134,12 +134,20 @@ export class ComfyUIService {
       };
       const checkpoints = data.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? [];
 
-      if (checkpoints.length > 0 && !this.defaultCheckpoint) {
-        // Prefer DreamShaper for storyboard style, fall back to other SD 1.5-based models
-        const preferred =
-          checkpoints.find((c) => /dreamshaper/i.test(c)) ??
-          checkpoints.find((c) => /v1-5|stable-diffusion|sd15|realism|artistic/i.test(c));
-        this.defaultCheckpoint = preferred ?? checkpoints[0];
+      if (checkpoints.length > 0) {
+        const settings = settingsService.get();
+        const userChoice = settings.activeCheckpoint
+          ? checkpoints.find((c) => c === settings.activeCheckpoint) ?? null
+          : null;
+        // Re-evaluate whenever user has a preference, otherwise cache after first pick
+        if (!this.defaultCheckpoint || userChoice) {
+          const preferred =
+            userChoice ??
+            checkpoints.find((c) => /deliberate/i.test(c)) ??
+            checkpoints.find((c) => /dreamshaper/i.test(c)) ??
+            checkpoints.find((c) => /v1-5|stable-diffusion|sd15|realism|artistic/i.test(c));
+          this.defaultCheckpoint = preferred ?? checkpoints[0];
+        }
       }
 
       return checkpoints;
