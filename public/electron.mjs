@@ -908,9 +908,9 @@ async function startComfyUI(loadingWin) {
 
 // ── Model download ───────────────────────────────────────────────────────────
 
-const MODEL_FILENAME = 'deliberate_v3.safetensors';
-const MODEL_URL = 'https://huggingface.co/XpucT/Deliberate/resolve/main/Deliberate_v3.safetensors';
-const LEGACY_MODEL_FILENAME = 'dreamshaper_8.safetensors';
+const MODEL_FILENAME = 'dreamshaper_8.safetensors';
+const MODEL_URL = 'https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors?download=true';
+const LEGACY_MODEL_FILENAME = 'deliberate_v3.safetensors';
 
 function getModelPath(comfyPath) {
   const base = comfyPath || path.join(os.homedir(), 'ComfyUI');
@@ -929,19 +929,19 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
   sendLoadingUpdate(loadingWin, 'Checking for storyboard model…', 71);
 
   if (fs.existsSync(modelPath)) {
-    console.log('[Model] Deliberate v3 already present at', modelPath);
+    console.log('[Model] DreamShaper 8 already present at', modelPath);
     serviceLaunchStatus.modelPresent = true;
     return true;
   }
 
-  // Existing DreamShaper users keep working — no re-download needed
+  // Existing Deliberate v3 users keep working — no re-download needed
   if (fs.existsSync(legacyPath)) {
-    console.log('[Model] DreamShaper 8 found — using existing model');
+    console.log('[Model] Deliberate v3 found — using existing model');
     serviceLaunchStatus.modelPresent = true;
     return true;
   }
 
-  console.log('[Model] No model found — downloading Deliberate v3 to', modelPath);
+  console.log('[Model] No model found — downloading DreamShaper 8 to', modelPath);
   sendLoadingUpdate(loadingWin, 'Downloading storyboard model (~2GB, first launch only)…', 72);
 
   fs.mkdirSync(checkpointsDir, { recursive: true });
@@ -953,6 +953,18 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
       const totalMb = total > 0 ? Math.round(total / 1024 / 1024) : '?';
       sendLoadingUpdate(loadingWin, `Downloading model… ${mb}MB / ${totalMb}MB (${pct}%)`, 72 + Math.round(pct * 0.23));
     });
+
+    // Validate — an HTML error page starts with '<' (0x3C); a safetensors file never does
+    const fd = fs.openSync(modelPath, 'r');
+    const firstByte = Buffer.alloc(1);
+    fs.readSync(fd, firstByte, 0, 1, 0);
+    fs.closeSync(fd);
+    if (firstByte[0] === 0x3c) {
+      fs.unlinkSync(modelPath);
+      console.error('[Model] Downloaded file is an HTML page — removing corrupt file');
+      return false;
+    }
+
     serviceLaunchStatus.modelPresent = true;
     return true;
   } catch (err) {
@@ -960,6 +972,35 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
     // Non-fatal — recovery banner in app allows manual retry
     return false;
   }
+}
+
+/**
+ * Remove any .safetensors files whose first byte is '<' (0x3C) — these are
+ * HTML error pages saved during a failed HuggingFace redirect download.
+ * Returns the number of valid models that survive.
+ */
+function cleanupCorruptModels(checkpointsDir) {
+  if (!fs.existsSync(checkpointsDir)) return 0;
+  const files = fs.readdirSync(checkpointsDir).filter((f) => f.endsWith('.safetensors'));
+  let validCount = 0;
+  for (const file of files) {
+    const filePath = path.join(checkpointsDir, file);
+    try {
+      const fd = fs.openSync(filePath, 'r');
+      const buf = Buffer.alloc(1);
+      fs.readSync(fd, buf, 0, 1, 0);
+      fs.closeSync(fd);
+      if (buf[0] === 0x3c) {
+        fs.unlinkSync(filePath);
+        console.log('[Model] Removed corrupt model (HTML page):', file);
+      } else {
+        validCount++;
+      }
+    } catch (e) {
+      console.warn('[Model] Could not inspect', file, e.message);
+    }
+  }
+  return validCount;
 }
 
 /** Stream an HTTPS download with redirect following and progress callbacks. */
@@ -1064,6 +1105,19 @@ async function startBundledServices(loadingWin) {
     mainWindow.webContents.send('comfyui-connected');
   }
 
+  // 3b. Remove any corrupt (HTML) model files left over from a bad download
+  if (comfyPath) {
+    const checkpointsDir = path.join(comfyPath, 'models', 'checkpoints');
+    const validModels = cleanupCorruptModels(checkpointsDir);
+    // Fix 6: if cleanup wiped all models, reset the first-launch flag so the
+    // correct model gets re-downloaded on next startup
+    if (validModels === 0 && !isFirstLaunch()) {
+      const flagPath = path.join(app.getPath('userData'), '.imagginary-initialized');
+      try { fs.unlinkSync(flagPath); } catch { /* already gone */ }
+      console.log('[Model] All models were corrupt — reset first-launch flag for re-download');
+    }
+  }
+
   // 4. Model download on first launch — markLaunched only after model is confirmed present
   if (isFirstLaunch()) {
     if (comfyOk) {
@@ -1072,9 +1126,9 @@ async function startBundledServices(loadingWin) {
     }
     // If comfyOk is false, don't mark launched — retry next time ComfyUI comes up
   } else {
-    const deliberatePath = getModelPath(comfyPath);
-    const dreamshaperPath = getLegacyModelPath(comfyPath);
-    serviceLaunchStatus.modelPresent = fs.existsSync(deliberatePath) || fs.existsSync(dreamshaperPath);
+    const primaryPath = getModelPath(comfyPath);
+    const legacyPath = getLegacyModelPath(comfyPath);
+    serviceLaunchStatus.modelPresent = fs.existsSync(primaryPath) || fs.existsSync(legacyPath);
   }
 
   sendLoadingUpdate(loadingWin, 'Opening Imagginary…', 100);

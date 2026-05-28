@@ -35,7 +35,7 @@ const STYLE_SUFFIX_COLOR =
 const COLOR_KEYWORDS = /\b(neon|vibrant|golden|orange|blue|purple|pink|colorful|colour|color|warm tones|cool tones|warm light|cool light|teal|amber|red|green|yellow|cyan|magenta)\b/i;
 
 const NEGATIVE_PROMPT =
-  'color photograph, photorealistic, 3d render, blurry, low quality, watermark, text, signature, deformed, ugly, extra limbs, anime, cartoon style, oil painting';
+  'bad quality, worst quality, low quality, normal quality, lowres, low resolution, blurry, watermark, text, signature, (nsfw:1.5), nude, naked, explicit, adult content';
 
 const CHARACTER_NEGATIVE_PROMPT =
   'background, environment, scenery, multiple characters, side view, back view, occluded, cropped, partial, blurry, low quality, watermark, text';
@@ -143,8 +143,8 @@ export class ComfyUIService {
         if (!this.defaultCheckpoint || userChoice) {
           const preferred =
             userChoice ??
-            checkpoints.find((c) => /deliberate/i.test(c)) ??
             checkpoints.find((c) => /dreamshaper/i.test(c)) ??
+            checkpoints.find((c) => /deliberate/i.test(c)) ??
             checkpoints.find((c) => /v1-5|stable-diffusion|sd15|realism|artistic/i.test(c));
           this.defaultCheckpoint = preferred ?? checkpoints[0];
         }
