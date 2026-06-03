@@ -249,6 +249,8 @@ export interface AppSettings {
   ollamaUrl: string;
   comfyuiUrl: string;
   instantMeshUrl: string;
+  // Advanced — Ollama model override (empty = use default qwen2.5:14b)
+  ollamaModel: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -267,6 +269,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ollamaUrl: '',
   comfyuiUrl: '',
   instantMeshUrl: '',
+  ollamaModel: '',
 };
 
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────

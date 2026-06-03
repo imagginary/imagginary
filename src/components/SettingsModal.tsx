@@ -141,6 +141,8 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     instantMeshUrl: settings.instantMeshUrl || '',
   });
   const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
+  const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '');
+  const [ollamaModelSaved, setOllamaModelSaved] = useState(false);
 
   useEffect(() => {
     comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
@@ -680,6 +682,30 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                 >
                   {serviceUrlsSaved ? 'Saved ✓' : 'Save'}
                 </button>
+
+                <div className="border-t border-gray-800/60 pt-3 space-y-2">
+                  <label className="text-xs text-gray-400">Ollama Model</label>
+                  <input
+                    type="text"
+                    value={ollamaModel}
+                    onChange={(e) => { setOllamaModel(e.target.value); setOllamaModelSaved(false); }}
+                    placeholder="qwen2.5:14b"
+                    className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
+                  />
+                  <p className="text-[11px] text-gray-500">
+                    Default: qwen2.5:14b. Change only if you have a different model installed.
+                  </p>
+                  <button
+                    onClick={() => {
+                      settingsService.save({ ollamaModel: ollamaModel.trim() });
+                      setOllamaModelSaved(true);
+                      setTimeout(() => setOllamaModelSaved(false), 2000);
+                    }}
+                    className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
+                  >
+                    {ollamaModelSaved ? 'Saved ✓' : 'Save'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

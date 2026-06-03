@@ -1,10 +1,53 @@
 import { StructuredPrompt, ScriptShot } from '../types';
 import FILM_DICTIONARY, { lookupFilmTerm } from '../data/FilmLanguageDictionary';
 import { getOllamaUrl } from '../config/services';
-const MODEL = 'qwen2.5:14b';
+import { settingsService } from './SettingsService';
+
 const FALLBACK_MODELS = ['qwen2.5:1.5b', 'qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
 
-// Build a compact film dictionary context for the prompt
+// Ollama inference temperature settings — tuned per use case
+const TEMP_STRUCTURED = 0.1;  // Deterministic structured JSON output (character names, classification)
+const TEMP_BALANCED   = 0.3;  // Balanced — creative but consistent (shot and screenplay parsing)
+const TEMP_CREATIVE   = 0.4;  // Slightly creative — varied output (motion prompt refinement)
+
+// ── Parsing rules — shared across parseShot and parseScreenplay ───────────────
+
+const RULE_TIME_OF_DAY = `CRITICAL RULE — TIME OF DAY:
+Before doing anything else, scan the input for a Fountain scene heading (a line starting with INT. or EXT.).
+If found, extract the time token at the end of the heading (NIGHT, DAY, DAWN, DUSK, MORNING, EVENING, MIDDAY, AFTERNOON, CONTINUOUS, LATER).
+Use that token directly as timeOfDay — do NOT override it with mood, lighting, atmosphere, or context.
+If no scene heading exists, then infer timeOfDay from context.
+Examples:
+  "INT. DETECTIVE'S OFFICE — NIGHT" → timeOfDay: "night"
+  "EXT. CITY STREET — DAWN" → timeOfDay: "dawn"
+  "INT. KITCHEN — DAY" → timeOfDay: "day"`;
+
+const RULE_CHARACTER_COUNT = `CRITICAL RULE — CHARACTERS:
+Only include characters explicitly named or described in the action line.
+Do not add characters that are not mentioned.
+If the action describes one person acting alone, the subject must describe one person only.
+If the script says "Detective Kane sits at his desk" — subject is "Detective Kane alone at desk", not "two detectives".`;
+
+const RULE_MOOD_GENRE = `RULE — MOOD:
+Read the full scene context before assigning mood.
+If the scene heading or content indicates crime/thriller/detective/murder — default mood to "tense", "dramatic", or "noir" unless dialogue explicitly indicates otherwise.
+Do not assign "intimate" or "romantic" to crime scenes unless romance is explicitly described.`;
+
+// ── Static system prompts for lightweight tasks ───────────────────────────────
+
+const EXTRACT_CHARACTERS_PROMPT =
+`You are a screenplay analyst. Extract character names from script text.
+Return ONLY a JSON array of character name strings. No explanation, no markdown.
+Example: ["KANE", "DETECTIVE", "WOMAN"]`;
+
+const REFINE_MOTION_PROMPT =
+`You are a cinematographer describing camera motion and subject movement.
+Refine the given motion description into a precise, technical prompt for AI video generation.
+Focus on: camera movement direction, speed, subject action, atmospheric elements.
+Return only the refined prompt text, no explanation.`;
+
+// ── Shot-parsing system prompt (built once at module load) ────────────────────
+
 function buildDictionaryContext(): string {
   const shotTypes = FILM_DICTIONARY.filter((t) => t.category === 'shot-type')
     .map((t) => `${t.term} (${t.aliases.slice(0, 2).join(', ')}): ${t.promptTranslation}`)
@@ -28,6 +71,12 @@ You parse shot descriptions written by filmmakers and extract structured visual 
 You know the complete film language vocabulary including shot types, camera angles, lighting setups, and cinematic moods.
 
 ${buildDictionaryContext()}
+
+${RULE_TIME_OF_DAY}
+
+${RULE_CHARACTER_COUNT}
+
+${RULE_MOOD_GENRE}
 
 Your task is to analyze a shot description and return a JSON object with these exact fields:
 - subject: the main character(s) or subject matter in the shot
@@ -53,6 +102,11 @@ Rules:
 export class OllamaService {
   private availableModel: string | null = null;
   private isConnected = false;
+
+  /** Returns the model to use: user setting → discovered installed model → hardcoded default. */
+  private getModel(): string {
+    return settingsService.getKey('ollamaModel') || this.availableModel || 'qwen2.5:14b';
+  }
 
   async checkConnection(): Promise<boolean> {
     // In packaged Electron, renderer fetch() is blocked by CSP from file:// origin.
@@ -101,9 +155,12 @@ export class OllamaService {
       const data = await response.json() as { models: Array<{ name: string }> };
       const installed = data.models?.map((m) => m.name) ?? [];
       // Exact match only — prefix matching caused qwen2.5:7b to satisfy qwen2.5:14b
-      const found = installed.find((name) =>
-        [MODEL, ...FALLBACK_MODELS].includes(name)
-      ) ?? null;
+      // User preference is checked first, then qwen2.5:14b default, then fallbacks
+      const userPref = settingsService.getKey('ollamaModel');
+      const priorityList = userPref
+        ? [userPref, 'qwen2.5:14b', ...FALLBACK_MODELS]
+        : ['qwen2.5:14b', ...FALLBACK_MODELS];
+      const found = installed.find((name) => priorityList.includes(name)) ?? null;
       this.availableModel = found;
       console.log('[OllamaService] Installed models:', installed.join(', ') || '(none)');
       console.log('[OllamaService] Using model:', this.availableModel ?? '(none found)');
@@ -126,13 +183,16 @@ export class OllamaService {
   }
 
   async parseShot(description: string): Promise<StructuredPrompt> {
-    const model = this.availableModel ?? FALLBACK_MODELS[0];
+    const model = this.getModel();
 
-    const userPrompt = `Parse this shot description and return structured JSON:
+    const userPrompt =
+`Parse this shot description and return structured JSON.
+REMEMBER: If you see INT./EXT. followed by a time token (NIGHT/DAY/DAWN etc), use that exact time — never override it.
+Only include characters explicitly mentioned. Match mood to genre.
 
-"${description}"
+${description}
 
-Return only valid JSON with these fields: subject, background, mood, lighting, angle, shotType, timeOfDay, additionalDetails`;
+Return ONLY valid JSON, no explanation, no markdown:`;
 
     try {
       const response = await fetch(`${getOllamaUrl()}/api/chat`, {
@@ -145,10 +205,7 @@ Return only valid JSON with these fields: subject, background, mood, lighting, a
             { role: 'user', content: userPrompt },
           ],
           stream: false,
-          options: {
-            temperature: 0.3, // Balanced — creative but consistent (shot descriptions)
-            top_p: 0.9,
-          },
+          options: { temperature: TEMP_BALANCED, top_p: 0.9 },
         }),
         signal: AbortSignal.timeout(60000),
       });
@@ -177,7 +234,7 @@ Return only valid JSON with these fields: subject, background, mood, lighting, a
    * Term lists are derived dynamically from FILM_DICTIONARY — never hardcoded.
    */
   async parseScreenplay(scriptText: string): Promise<ScriptShot[]> {
-    const model = this.availableModel ?? FALLBACK_MODELS[0];
+    const model = this.getModel();
 
     const shotTypes = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'shot-type').map((t) => t.term))].join(', ');
     const angles    = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'camera-angle').map((t) => t.term))].join(', ');
@@ -206,33 +263,11 @@ For each shot return a JSON array with this exact structure:
   }
 ]
 
-RULE 1 — timeOfDay (scene heading takes absolute priority):
-Scene headings follow the format: INT./EXT. LOCATION - TIME
-Read the TIME token at the end of the heading and map it directly:
-  NIGHT or NIGHT-CONTINUOUS → "night"
-  DAY or DAY-CONTINUOUS     → "day"
-  DAWN                      → "dawn"
-  DUSK                      → "dusk"
-  MORNING                   → "morning"
-  EVENING                   → "dusk"
-Use the heading value directly. Do NOT override it with mood, weather, or tone from the
-scene body. All shots within the same scene share the same timeOfDay unless a new scene
-heading with a different TIME token appears. If no scene heading is present, infer from
-explicit time language only — never from mood, atmosphere, or lighting description.
+${RULE_TIME_OF_DAY}
 
-RULE 2 — character count (only what the script states):
-Subject and shotDescription must reflect only the characters explicitly named or described
-in the action lines for that beat. Do NOT add, imply, or invent additional people.
-If the action line describes one person acting alone, the shot contains one person.
-If two characters are named, the shot contains those two characters — no more.
-Never write "they", "the group", "the crowd", or any plural that is not in the script.
+${RULE_CHARACTER_COUNT}
 
-RULE 3 — mood (genre-appropriate default):
-Choose mood based on the scene's genre context, not on surface emotional tone of dialogue.
-For detective, crime, noir, thriller, interrogation, or investigation scenes, default to
-"tense" or "dramatic". Only assign "intimate", "romantic", or "tender" if the dialogue or
-action line explicitly describes that emotional register — never infer intimacy from two
-characters being in the same room or from a close-up shot type.
+${RULE_MOOD_GENRE}
 
 Accept any format: standard screenplay (INT./EXT.), Fountain, or plain prose story description.
 Return only the JSON array. No explanation, no markdown, no preamble.`;
@@ -248,7 +283,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
             { role: 'user', content: scriptText },
           ],
           stream: false,
-          options: { temperature: 0.3, top_p: 0.9 }, // Balanced — creative but consistent (shot descriptions)
+          options: { temperature: TEMP_BALANCED, top_p: 0.9 },
         }),
         signal: AbortSignal.timeout(120000), // 2 min — full scene parse
       });
@@ -322,13 +357,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
    * Lightweight second pass — more reliable than relying on per-shot extraction.
    */
   async extractCharacterNames(scriptText: string): Promise<string[]> {
-    const model = this.availableModel ?? FALLBACK_MODELS[0];
-
-    const systemPrompt =
-`Extract all character names from this script excerpt.
-Return a JSON array of strings containing only the character names, nothing else.
-Example: ["Kane", "Sarah", "The Detective"]
-If no characters are identifiable return an empty array [].`;
+    const model = this.getModel();
 
     try {
       const response = await fetch(`${getOllamaUrl()}/api/chat`, {
@@ -337,11 +366,11 @@ If no characters are identifiable return an empty array [].`;
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: EXTRACT_CHARACTERS_PROMPT },
             { role: 'user', content: scriptText },
           ],
           stream: false,
-          options: { temperature: 0.1, top_p: 0.9 }, // Low temperature — deterministic structured output (JSON parsing)
+          options: { temperature: TEMP_STRUCTURED, top_p: 0.9 },
         }),
         signal: AbortSignal.timeout(30000),
       });
@@ -361,13 +390,7 @@ If no characters are identifiable return an empty array [].`;
   }
 
   async refineMotionPrompt(description: string): Promise<string> {
-    const model = this.availableModel ?? FALLBACK_MODELS[0];
-
-    const systemPrompt = `You are a video motion prompt engineer for Wan 2.2 image-to-video.
-Convert the user's motion description into a concise Wan 2.2 compatible prompt.
-Focus on: camera movement, subject action, environmental effects, lighting changes.
-Return only the prompt string, no explanation. Max 50 words.
-Keep it cinematic and specific.`;
+    const model = this.getModel();
 
     try {
       const response = await fetch(`${getOllamaUrl()}/api/chat`, {
@@ -376,11 +399,11 @@ Keep it cinematic and specific.`;
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: REFINE_MOTION_PROMPT },
             { role: 'user', content: description },
           ],
           stream: false,
-          options: { temperature: 0.4, top_p: 0.9 }, // Slightly creative — varied output for style suggestions
+          options: { temperature: TEMP_CREATIVE, top_p: 0.9 },
         }),
         signal: AbortSignal.timeout(30000),
       });
