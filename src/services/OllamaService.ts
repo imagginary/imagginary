@@ -79,7 +79,11 @@ ${RULE_CHARACTER_COUNT}
 ${RULE_MOOD_GENRE}
 
 Your task is to analyze a shot description and return a JSON object with these exact fields:
-- subject: the main character(s) or subject matter in the shot
+- subject: the main character(s) AND their primary action in the shot. Include what they are doing, not just who they are. Examples:
+  "husband stabbing wife with knife" not "husband"
+  "detective examining crime scene" not "detective"
+  "two men fighting, one punching the other" not "two men"
+  "woman running through dark alley" not "woman"
 - background: the setting and environment
 - mood: the emotional atmosphere (one or two descriptive words)
 - lighting: describe the lighting setup
@@ -93,7 +97,7 @@ Rules:
 2. Be specific and descriptive - these will become image generation prompts
 3. Use cinematic language for prompt compatibility
 4. If a field is not specified, make a reasonable artistic choice
-5. The subject should describe what to draw, not the person's name
+5. The subject must include both WHO is in the shot AND WHAT they are doing. A subject with no action is incomplete. "man" is wrong. "man aiming gun at another man" is correct.
 6. Keep each field concise but descriptive (max 20 words per field)
 7. timeOfDay: if the description contains an explicit time token from a scene heading
    (NIGHT, DAY, DAWN, DUSK, MORNING, EVENING) use it directly — do NOT infer timeOfDay
@@ -253,7 +257,7 @@ For each shot return a JSON array with this exact structure:
     "order": 1,
     "shotDescription": "complete natural language shot description for storyboard generation",
     "shotType": "one of: ${shotTypes}",
-    "subject": "what or who is in focus",
+    "subject": "who is in the shot and what they are doing",
     "background": "setting and environment",
     "mood": "one of: ${moods}",
     "lighting": "one of: ${lighting}",

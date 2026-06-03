@@ -33,6 +33,11 @@ const STYLE_SUFFIX_COLOR =
   'cinematic color grading, professional storyboard art, highly detailed, cinematic composition, film storyboard panel';
 
 const COLOR_KEYWORDS = /\b(neon|vibrant|golden|orange|blue|purple|pink|colorful|colour|color|warm tones|cool tones|warm light|cool light|teal|amber|red|green|yellow|cyan|magenta)\b/i;
+// Action/violence keywords — additionalDetails containing these get boosted weight in the prompt
+const ACTION_KEYWORDS = /stab|knife|gun|shoot|fight|punch|blood|attack|chase|struggle|weapon|kill|murder|strangle|explosion|wound|threat/i;
+
+// SDXL model detection — used for resolution, sampler, and CFG settings
+const SDXL_MODEL = /realvisxl|xl|sdxl/i;
 
 function getNegativePrompt(checkpoint: string): string {
   if (/realvisxl|absolutereality/i.test(checkpoint)) {
@@ -216,7 +221,7 @@ export class ComfyUIService {
     const lora = opts?.loraName ?? null;
 
     // SDXL detection — adjusts sampler settings and negative prompt
-    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const isSDXL     = SDXL_MODEL.test(checkpoint);
     const kSteps     = isSDXL ? 25 : 20;
     const kCfg       = isSDXL ? 5  : 7;
     const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
@@ -321,7 +326,7 @@ export class ComfyUIService {
   buildCharacterWorkflow(description: string, seedOverride?: number): object {
     const checkpoint = this.defaultCheckpoint ?? 'v1-5-pruned-emaonly.ckpt';
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
-    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const isSDXL     = SDXL_MODEL.test(checkpoint);
     const kSteps     = isSDXL ? 25 : 20;
     const kCfg       = isSDXL ? 5  : 7;
     const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
@@ -358,14 +363,21 @@ export class ComfyUIService {
     // Use vault-supplied suffix when available; fall back to keyword-detection heuristic
     const styleSuffix = stylePromptSuffix ?? getStyleSuffix(prompt);
 
+    // additionalDetails — boost weight when it contains action or violence keywords
+    const detailsEntry = prompt.additionalDetails
+      ? ACTION_KEYWORDS.test(prompt.additionalDetails)
+        ? `(${prompt.additionalDetails}:1.2)`
+        : prompt.additionalDetails
+      : null;
+
     const rest = [
       prompt.shotType,
+      detailsEntry,
       prompt.background,
       `${prompt.lighting} lighting`,
       `${prompt.angle} angle`,
       prompt.mood,
-      prompt.timeOfDay !== 'day' ? prompt.timeOfDay : '',
-      prompt.additionalDetails ?? '',
+      prompt.timeOfDay !== 'day' ? prompt.timeOfDay : null,
       styleSuffix,
     ].filter(Boolean).join(', ');
 
@@ -707,7 +719,7 @@ export class ComfyUIService {
   ): object {
     const checkpoint = this.defaultCheckpoint ?? 'v1-5-pruned-emaonly.ckpt';
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
-    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const isSDXL     = SDXL_MODEL.test(checkpoint);
     const kCfg       = isSDXL ? 5  : 7;
     const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
     const kScheduler = isSDXL ? 'karras'   : 'normal';
