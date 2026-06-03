@@ -34,8 +34,12 @@ const STYLE_SUFFIX_COLOR =
 
 const COLOR_KEYWORDS = /\b(neon|vibrant|golden|orange|blue|purple|pink|colorful|colour|color|warm tones|cool tones|warm light|cool light|teal|amber|red|green|yellow|cyan|magenta)\b/i;
 
-const NEGATIVE_PROMPT =
-  'bad quality, worst quality, low quality, normal quality, lowres, low resolution, blurry, watermark, text, signature, (nsfw:1.5), nude, naked, explicit, adult content';
+function getNegativePrompt(checkpoint: string): string {
+  if (/realvisxl|absolutereality/i.test(checkpoint)) {
+    return 'blurry, low quality, watermark, deformed, extra limbs, text, cartoon, anime, painting';
+  }
+  return 'blurry, low quality, watermark, deformed, extra limbs, text, photorealistic, 3d render';
+}
 
 const CHARACTER_NEGATIVE_PROMPT =
   'background, environment, scenery, multiple characters, side view, back view, occluded, cropped, partial, blurry, low quality, watermark, text';
@@ -143,8 +147,9 @@ export class ComfyUIService {
         if (!this.defaultCheckpoint || userChoice) {
           const preferred =
             userChoice ??
+            (licenseService.isPro() ? checkpoints.find((c) => /realvisxl/i.test(c)) : undefined) ??
+            (licenseService.isPro() ? checkpoints.find((c) => /absolutereality/i.test(c)) : undefined) ??
             checkpoints.find((c) => /dreamshaper/i.test(c)) ??
-            checkpoints.find((c) => /deliberate/i.test(c)) ??
             checkpoints.find((c) => /v1-5|stable-diffusion|sd15|realism|artistic/i.test(c));
           this.defaultCheckpoint = preferred ?? checkpoints[0];
         }
@@ -202,13 +207,20 @@ export class ComfyUIService {
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
     const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, opts?.promptSuffix);
 
-    // Build negative prompt: base + style-specific terms
+    // Build negative prompt: base (model-aware) + style-specific terms
     const styleNegative = opts?.negativePromptSuffix ?? '';
-    const fullNegative = [NEGATIVE_PROMPT, styleNegative]
+    const fullNegative = [getNegativePrompt(checkpoint), styleNegative]
       .filter((s) => s.trim().length > 0)
       .join(', ');
 
     const lora = opts?.loraName ?? null;
+
+    // SDXL detection — adjusts sampler settings and negative prompt
+    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const kSteps     = isSDXL ? 25 : 20;
+    const kCfg       = isSDXL ? 5  : 7;
+    const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
+    const kScheduler = isSDXL ? 'karras'   : 'normal';
 
     // When a LoRA is active: insert node '8' (LoraLoader) between checkpoint and text/sampler.
     // Node '2'/'3' CLIP references and node '5' model reference are redirected through the LoRA.
@@ -249,10 +261,10 @@ export class ComfyUIService {
         class_type: 'KSampler',
         inputs: {
           seed,
-          steps: 20,
-          cfg: 7,
-          sampler_name: 'euler',
-          scheduler: 'normal',
+          steps: kSteps,
+          cfg: kCfg,
+          sampler_name: kSampler,
+          scheduler: kScheduler,
           denoise: 1.0,
           add_noise: 'enable',
           model: modelSource,
@@ -309,6 +321,12 @@ export class ComfyUIService {
   buildCharacterWorkflow(description: string, seedOverride?: number): object {
     const checkpoint = this.defaultCheckpoint ?? 'v1-5-pruned-emaonly.ckpt';
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
+    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const kSteps     = isSDXL ? 25 : 20;
+    const kCfg       = isSDXL ? 5  : 7;
+    const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
+    const kScheduler = isSDXL ? 'karras'   : 'normal';
+    const imgSize    = isSDXL ? 1024 : 512;
 
     const positive = `(${description}:1.4), full body portrait, front facing, ` +
       `neutral white background, character reference sheet, clear flat lighting, ` +
@@ -318,13 +336,12 @@ export class ComfyUIService {
       '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpoint } },
       '2': { class_type: 'CLIPTextEncode', inputs: { text: positive, clip: ['1', 1] } },
       '3': { class_type: 'CLIPTextEncode', inputs: { text: CHARACTER_NEGATIVE_PROMPT, clip: ['1', 1] } },
-      '4': { class_type: 'EmptyLatentImage', inputs: { width: 512, height: 512, batch_size: 1 } },
+      '4': { class_type: 'EmptyLatentImage', inputs: { width: imgSize, height: imgSize, batch_size: 1 } },
       '5': {
         class_type: 'KSampler',
         inputs: {
-          // Tuned for DreamShaper 8 — do not change without testing
-          seed, steps: 20, cfg: 7,
-          sampler_name: 'euler', scheduler: 'normal', denoise: 1.0,
+          seed, steps: kSteps, cfg: kCfg,
+          sampler_name: kSampler, scheduler: kScheduler, denoise: 1.0,
           model: ['1', 0], positive: ['2', 0], negative: ['3', 0], latent_image: ['4', 0],
         },
       },
@@ -690,6 +707,10 @@ export class ComfyUIService {
   ): object {
     const checkpoint = this.defaultCheckpoint ?? 'v1-5-pruned-emaonly.ckpt';
     const seed = seedOverride ?? Math.floor(Math.random() * 2 ** 31);
+    const isSDXL     = /realvisxl|xl|sdxl/i.test(checkpoint);
+    const kCfg       = isSDXL ? 5  : 7;
+    const kSampler   = isSDXL ? 'dpmpp_2m' : 'euler';
+    const kScheduler = isSDXL ? 'karras'   : 'normal';
     const positive = characterDescription
       ? `(solo, ${characterDescription}:1.2), (${editDescription}:1.4), ${STYLE_SUFFIX_BW}`
       : `(${editDescription}:1.4), ${STYLE_SUFFIX_BW}`;
@@ -697,7 +718,7 @@ export class ComfyUIService {
     return {
       '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: checkpoint } },
       '2': { class_type: 'CLIPTextEncode', inputs: { text: positive, clip: ['1', 1] } },
-      '3': { class_type: 'CLIPTextEncode', inputs: { text: NEGATIVE_PROMPT + INPAINT_NEGATIVE_SUFFIX, clip: ['1', 1] } },
+      '3': { class_type: 'CLIPTextEncode', inputs: { text: getNegativePrompt(checkpoint) + INPAINT_NEGATIVE_SUFFIX, clip: ['1', 1] } },
       '4': { class_type: 'LoadImage', inputs: { image: imageName } },
       '5': { class_type: 'LoadImage', inputs: { image: maskName } },
       '6': { class_type: 'ImageToMask', inputs: { image: ['5', 0], channel: 'red' } },
@@ -710,9 +731,9 @@ export class ComfyUIService {
         inputs: {
           seed,
           steps: INPAINT_STEPS,
-          cfg: 7,
-          sampler_name: 'euler',
-          scheduler: 'normal',
+          cfg: kCfg,
+          sampler_name: kSampler,
+          scheduler: kScheduler,
           denoise: INPAINT_DENOISE,
           model: ['1', 0],
           positive: ['2', 0],

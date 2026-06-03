@@ -122,6 +122,8 @@ interface ElectronAPI {
   exportFCPXML: (xmlString: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
   downloadModels: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
   onDownloadModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
+  downloadProModel: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
+  onProModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
   // Phase 9 — 3D Mesh / Turntable
   generate3DMesh: (params: { characterId: string; portraitImagePath: string }) => Promise<{
     success: boolean;
@@ -190,6 +192,10 @@ export default function App() {
   const [modelMissing, setModelMissing] = useState(false);
   const [modelDownloading, setModelDownloading] = useState(false);
   const [modelDownloadPct, setModelDownloadPct] = useState(0);
+  // Pro model upgrade banner
+  const [proModelInstalled, setProModelInstalled] = useState(false);
+  const [proModelDownloading, setProModelDownloading] = useState(false);
+  const [proModelPct, setProModelPct] = useState(0);
   // Phase 13 — Shared Studio
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [sessionUsers, setSessionUsers] = useState<Array<{ userId: string; userName: string }>>([]);
@@ -256,6 +262,7 @@ export default function App() {
     if (serviceStatus.comfyui !== 'connected') return;
     comfyUIService.getAvailableCheckpoints().then((checkpoints) => {
       setModelMissing(checkpoints.length === 0);
+      setProModelInstalled(checkpoints.some((c) => /realvisxl/i.test(c)));
     }).catch(() => { /* Can't determine — leave banner hidden */ });
   }, [serviceStatus.comfyui]);
 
@@ -1339,6 +1346,42 @@ export default function App() {
                     className="bg-amber-400 h-1.5 rounded-full transition-all"
                     style={{ width: `${modelDownloadPct}%` }}
                   />
+                </div>
+              )}
+            </div>
+          )}
+          {licenseService.isPro() && !proModelInstalled && !modelMissing && (
+            <div className="mx-3 mt-2 shrink-0 bg-amber-900/30 border border-amber-700 rounded-lg p-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-amber-300">
+                ✨ Pro model available — RealVisXL V4.0 gives significantly better panel quality
+              </p>
+              {!proModelDownloading ? (
+                <button
+                  onClick={async () => {
+                    if (!window.electronAPI) return;
+                    setProModelDownloading(true);
+                    setProModelPct(0);
+                    const cleanup = window.electronAPI.onProModelProgress((data) => {
+                      setProModelPct(data.pct);
+                    });
+                    const result = await window.electronAPI.downloadProModel();
+                    cleanup();
+                    setProModelDownloading(false);
+                    if (result.success) setProModelInstalled(true);
+                  }}
+                  className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded shrink-0"
+                >
+                  Download (6.5GB)
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="w-32 bg-amber-900 rounded-full h-1.5">
+                    <div
+                      className="bg-amber-400 h-1.5 rounded-full transition-all"
+                      style={{ width: `${proModelPct}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-amber-400">{proModelPct}%</span>
                 </div>
               )}
             </div>

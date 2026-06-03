@@ -912,6 +912,11 @@ const MODEL_FILENAME = 'dreamshaper_8.safetensors';
 const MODEL_URL = 'https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors?download=true';
 const LEGACY_MODEL_FILENAME = 'deliberate_v3.safetensors';
 
+const PRO_MODEL_FILENAME = 'realvisxl_v4.safetensors';
+const PRO_MODEL_URL = 'https://huggingface.co/SG161222/RealVisXL_V4.0/resolve/main/RealVisXL_V4.0.safetensors?download=true';
+const OPTIONAL_MODEL_FILENAME = 'absolutereality.safetensors';
+const OPTIONAL_MODEL_URL = 'https://civitai.com/api/download/models/132760?type=Model&format=SafeTensor';
+
 function getModelPath(comfyPath) {
   const base = comfyPath || path.join(os.homedir(), 'ComfyUI');
   return path.join(base, 'models', 'checkpoints', MODEL_FILENAME);
@@ -1500,6 +1505,41 @@ ipcMain.handle('download-models', async (event) => {
     // Mark launched after successful recovery download so the first-launch path
     // doesn't re-run on the next startup.
     if (isFirstLaunch()) markLaunched();
+    return { success: true, cached: false };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('download-pro-model', async (event) => {
+  const comfyPath = await findComfyUIPath();
+  const base = comfyPath || path.join(os.homedir(), 'ComfyUI');
+  const proModelPath = path.join(base, 'models', 'checkpoints', PRO_MODEL_FILENAME);
+
+  if (fs.existsSync(proModelPath)) {
+    return { success: true, cached: true };
+  }
+
+  try {
+    const modelsDir = path.dirname(proModelPath);
+    fs.mkdirSync(modelsDir, { recursive: true });
+
+    await streamDownload(PRO_MODEL_URL, proModelPath, (downloaded, total) => {
+      const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+      try { event.sender.send('pro-model-progress', { pct, downloaded, total }); } catch { /* ignore */ }
+    });
+
+    // Validate — an HTML error page starts with '<' (0x3C); a safetensors file never does
+    const fd = fs.openSync(proModelPath, 'r');
+    const firstByte = Buffer.alloc(1);
+    fs.readSync(fd, firstByte, 0, 1, 0);
+    fs.closeSync(fd);
+    if (firstByte[0] === 0x3c) {
+      fs.unlinkSync(proModelPath);
+      console.error('[ProModel] Downloaded file is an HTML page — removing corrupt file');
+      return { success: false, error: 'Download returned an HTML page — check the URL' };
+    }
+
     return { success: true, cached: false };
   } catch (err) {
     return { success: false, error: err.message };

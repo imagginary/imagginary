@@ -117,6 +117,8 @@ export default function SettingsModal({ isPro, onClose }: Props) {
   const [availableCheckpoints, setAvailableCheckpoints] = useState<string[]>([]);
   const [activeCheckpoint, setActiveCheckpoint] = useState(settings.activeCheckpoint ?? '');
   const [checkpointSaved, setCheckpointSaved] = useState(false);
+  const [proModelDownloading, setProModelDownloading] = useState(false);
+  const [proModelPct, setProModelPct] = useState(0);
   const [provider, setProvider] = useState<Provider>(settings.turntable3dProvider);
   const [cloudEnabled, setCloudEnabled] = useState(settings.cloudGenerationEnabled);
   const [muapiKey, setMuapiKey] = useState(settings.muapiApiKey);
@@ -148,6 +150,21 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     settingsService.save({ activeCheckpoint: activeCheckpoint.trim() });
     setCheckpointSaved(true);
     setTimeout(() => setCheckpointSaved(false), 2000);
+  }
+
+  async function handleDownloadProModel() {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    setProModelDownloading(true);
+    setProModelPct(0);
+    const cleanup = api.onProModelProgress((data: { pct: number }) => {
+      setProModelPct(data.pct);
+    });
+    await api.downloadProModel();
+    cleanup();
+    setProModelDownloading(false);
+    // Refresh checkpoint list so the new model appears in the dropdown
+    comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
   }
 
   function handleServiceUrlsSave() {
@@ -223,10 +240,97 @@ export default function SettingsModal({ isPro, onClose }: Props) {
           {/* ── Active Model ── */}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Active Model</p>
+
+            {/* Model cards */}
+            {(() => {
+              const dreamshaperInstalled   = availableCheckpoints.some((c) => /dreamshaper/i.test(c));
+              const absoluteRealityInstalled = availableCheckpoints.some((c) => /absolutereality/i.test(c));
+              const realvisxlInstalled     = availableCheckpoints.some((c) => /realvisxl/i.test(c));
+              return (
+                <div className="space-y-2">
+                  {/* Community default — DreamShaper 8 */}
+                  <div className="border border-gray-800 rounded-lg p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-200">DreamShaper 8</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">2GB · Artistic storyboard style</p>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 shrink-0">COMMUNITY</span>
+                    </div>
+                    {dreamshaperInstalled ? (
+                      <p className="text-[11px] text-emerald-400">✓ Already installed</p>
+                    ) : (
+                      <p className="text-[11px] text-gray-500">Not installed — use the setup banner to download.</p>
+                    )}
+                  </div>
+
+                  {/* Pro — AbsoluteReality */}
+                  <div className={`border rounded-lg p-3 space-y-2 ${isPro ? 'border-gray-800' : 'border-gray-800/40 opacity-60'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-200">AbsoluteReality</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">2GB · Photorealistic, all genres</p>
+                      </div>
+                      <ProBadge />
+                    </div>
+                    {!isPro ? (
+                      <p className="text-[11px] text-amber-500/70">Pro or Studio required</p>
+                    ) : absoluteRealityInstalled ? (
+                      <p className="text-[11px] text-emerald-400">✓ Already installed</p>
+                    ) : (
+                      <button
+                        onClick={() => (window as any).electronAPI?.openExternal('https://civitai.com/models/81458/absolutereality')}
+                        className="text-[11px] text-amber-400 hover:text-amber-300 underline"
+                      >
+                        Download on CivitAI (2GB) ↗
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Pro — RealVisXL V4.0 */}
+                  <div className={`border rounded-lg p-3 space-y-2 ${isPro ? 'border-amber-800/40' : 'border-gray-800/40 opacity-60'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-200">
+                          RealVisXL V4.0{' '}
+                          <span className="text-amber-400 text-[10px]">★ Recommended for Pro</span>
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">6.5GB · Best quality, cinematic realism</p>
+                      </div>
+                      <ProBadge />
+                    </div>
+                    {!isPro ? (
+                      <p className="text-[11px] text-amber-500/70">Pro or Studio required</p>
+                    ) : realvisxlInstalled ? (
+                      <p className="text-[11px] text-emerald-400">✓ Already installed</p>
+                    ) : proModelDownloading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-gray-800 rounded-full h-1.5">
+                          <div
+                            className="bg-amber-400 h-1.5 rounded-full transition-all"
+                            style={{ width: `${proModelPct}%` }}
+                          />
+                        </div>
+                        <span className="text-[11px] text-amber-400">{proModelPct}%</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleDownloadProModel}
+                        className="text-[11px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded"
+                      >
+                        Download (6.5GB)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Active model selector — only installed models */}
             {availableCheckpoints.length > 0 ? (
               <>
                 <div className="space-y-1.5">
-                  <label className="text-xs text-gray-400">Model</label>
+                  <label className="text-xs text-gray-400">Active model</label>
                   <select
                     value={activeCheckpoint}
                     onChange={(e) => { setActiveCheckpoint(e.target.value); setCheckpointSaved(false); }}

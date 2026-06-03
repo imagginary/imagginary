@@ -72,6 +72,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Return a cleanup function
     return () => ipcRenderer.removeListener('download-model-progress', handler);
   },
+  // Pro model (RealVisXL V4.0) download
+  downloadProModel: () => ipcRenderer.invoke('download-pro-model'),
+  onProModelProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('pro-model-progress', handler);
+    return () => ipcRenderer.removeListener('pro-model-progress', handler);
+  },
 
   // Service health checks — proxied through main process to bypass renderer CSP/CORS
   checkOllama: () => ipcRenderer.invoke('check-ollama'),
