@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw, Download, Zap } from 'lucide-react';
-import { Panel, Character } from '../types';
+import { Panel, Character, StructuredPrompt } from '../types';
 import { FILM_DICTIONARY } from '../data/FilmLanguageDictionary';
 import { ASPECT_RATIOS, DEFAULT_ASPECT_RATIO_ID, getAspectRatio } from '../data/AspectRatios';
 
@@ -9,6 +9,7 @@ interface RightSidebarProps {
   characters: Character[];
   projectAspectRatioId?: string;
   onUpdatePanel: (updates: Partial<Panel>) => void;
+  onUpdateStructuredPrompt?: (panelId: string, updates: Partial<StructuredPrompt>) => void;
   onGenerate: () => void;
   onRegenerate: () => void;
   onExportPanel: () => void;
@@ -65,6 +66,7 @@ export default function RightSidebar({
   characters,
   projectAspectRatioId,
   onUpdatePanel,
+  onUpdateStructuredPrompt,
   onGenerate,
   onRegenerate,
   onExportPanel,
@@ -201,19 +203,29 @@ export default function RightSidebar({
         />
       </Section>
 
-      {/* LLM Parsed Prompt */}
+      {/* LLM Parsed Prompt — inline editable */}
       {panel.structuredPrompt && (
-        <Section title="Parsed Prompt">
+        <Section title="PARSED PROMPT">
           <div className="space-y-1.5 text-[10px]">
             {Object.entries(panel.structuredPrompt)
               .filter(([, v]) => v)
               .map(([key, value]) => (
-                <div key={key} className="flex gap-2">
-                  <span className="text-gray-600 w-20 shrink-0 capitalize">{key}:</span>
-                  <span className="text-gray-400 break-words">{String(value)}</span>
+                <div key={key} className="flex gap-2 items-start group">
+                  <span className="text-gray-600 w-20 shrink-0 capitalize pt-px">{key}:</span>
+                  <input
+                    className="text-gray-400 bg-transparent border-b border-transparent
+                               group-hover:border-gray-700 focus:border-gray-500
+                               focus:outline-none flex-1 min-w-0
+                               text-[10px] font-mono"
+                    value={String(value)}
+                    onChange={(e) =>
+                      onUpdateStructuredPrompt?.(panel.id, { [key]: e.target.value })
+                    }
+                  />
                 </div>
               ))}
           </div>
+          <p className="text-[9px] text-gray-700 mt-2">Click any value to edit before generating</p>
         </Section>
       )}
 

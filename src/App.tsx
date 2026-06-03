@@ -40,6 +40,7 @@ import {
   MeshGenerationProgress,
   StyleProfile,
   License,
+  StructuredPrompt,
 } from './types';
 import {
   STYLE_CLASSIC_STORYBOARD,
@@ -530,8 +531,14 @@ export default function App() {
       ].filter(Boolean).join('. ');
       const fullDescription = constraints ? `${constraints}. ${description}` : description;
 
-      const structuredPrompt = await ollamaService.parseShot(fullDescription);
-      // Preserve user's pre-set constraints — fall back to Ollama's parse only if unset
+      // Re-parse only when shot description has changed or no structured prompt exists yet.
+      // Preserves any manual edits to structuredPrompt fields when regenerating unchanged shots.
+      const needsReparse = !panel?.structuredPrompt || panel.shotDescription !== description;
+      const structuredPrompt: StructuredPrompt = needsReparse
+        ? await ollamaService.parseShot(fullDescription)
+        : panel!.structuredPrompt!;
+
+      // Preserve user's pre-set constraints — fall back to parsed values only if unset
       updatePanel(panelId, {
         shotDescription: description,
         structuredPrompt,
@@ -673,6 +680,14 @@ export default function App() {
   function handleRegenerate() {
     if (!activePanelId || !activePanel) return;
     generate(activePanelId, shotInput || activePanel.shotDescription);
+  }
+
+  function handleUpdateStructuredPrompt(panelId: string, updates: Partial<StructuredPrompt>) {
+    const panel = project.panels.find((p) => p.id === panelId);
+    if (!panel?.structuredPrompt) return;
+    updatePanel(panelId, {
+      structuredPrompt: { ...panel.structuredPrompt, ...updates },
+    });
   }
 
   // ── Project persistence ──────────────────────────────────────────────────────
@@ -1422,6 +1437,7 @@ export default function App() {
             characters={project.characters}
             projectAspectRatioId={project.aspectRatioId}
             onUpdatePanel={(updates) => activePanelId && updatePanel(activePanelId, updates)}
+            onUpdateStructuredPrompt={handleUpdateStructuredPrompt}
             onGenerate={handleRegenerate}
             onRegenerate={handleRegenerate}
             onExportPanel={handleExportPanel}
