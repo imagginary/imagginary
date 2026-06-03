@@ -706,6 +706,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                     {ollamaModelSaved ? 'Saved ✓' : 'Save'}
                   </button>
                 </div>
+
               </div>
             )}
           </div>
