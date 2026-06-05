@@ -1,19 +1,23 @@
-import { License, LicenseTier } from '../types';
+import { License, LicenseTier, CreditBalance } from '../types';
 
-export interface CreditUsage {
-  inpaints: number;
-  characterPanels: number;
-  lipSyncClips: number;
-  periodStart: number; // timestamp of billing cycle start
-}
+const BALANCE_KEY = 'imagginary_credit_balance';
+const VALIDATION_INTERVAL = 24 * 60 * 60 * 1000;
+const BILLING_CYCLE = 30 * 24 * 60 * 60 * 1000;
 
-const CREDIT_LIMITS = {
-  pro:       { inpaints: 60,  characterPanels: 200,  lipSyncClips: 30  },
-  studio:    { inpaints: 300, characterPanels: 1000, lipSyncClips: 150 },
-  community: { inpaints: 0,   characterPanels: 0,    lipSyncClips: 0   },
+export const CREDIT_POOLS: Record<LicenseTier, number> = {
+  pro:       532,
+  studio:    2239,
+  community: 0,
 };
 
-const USAGE_KEY = 'imagginary_credit_usage';
+export const CREDIT_COSTS = {
+  panelCloud:      2,
+  inpaint:         3,
+  characterPanel:  2,
+  motionClip:     14,
+  lipSync:        16,
+  turntable:       2,
+};
 
 class LicenseService {
   private license: License | null = null;
@@ -24,10 +28,131 @@ class LicenseService {
     this.loaded = true;
     try {
       const stored = await (window as any).electronAPI.getLicense();
-      if (stored) this.license = stored as License;
+      if (stored) {
+        this.license = stored as License;
+        this.checkAndAddMonthlyCredits();
+        this.maybeRevalidate();
+      }
     } catch {
       this.license = null;
     }
+  }
+
+  private checkAndAddMonthlyCredits(): void {
+    if (!this.license || this.getTier() === 'community') return;
+    const balance = this.getBalance();
+    const now = Date.now();
+    if (now - balance.lastCreditedAt >= BILLING_CYCLE) {
+      const allocation = CREDIT_POOLS[this.getTier()] ?? 0;
+      const newBalance: CreditBalance = {
+        subscriptionCredits: balance.subscriptionCredits + allocation,
+        topUpCredits: balance.topUpCredits,
+        lastCreditedAt: now,
+        tier: this.getTier(),
+      };
+      localStorage.setItem(BALANCE_KEY, JSON.stringify(newBalance));
+      console.log(`[Credits] Added ${allocation} subscription credits. Total: ${newBalance.subscriptionCredits + newBalance.topUpCredits}`);
+    }
+  }
+
+  private maybeRevalidate(): void {
+    if (!this.license) return;
+    const lastValidated = this.license.lastValidatedAt ?? 0;
+    if (Date.now() - lastValidated < VALIDATION_INTERVAL) return;
+
+    setTimeout(async () => {
+      try {
+        const result = await (window as any).electronAPI.validateLicense(this.license!.key);
+        if (result.valid) {
+          const updated: License = {
+            ...this.license!,
+            lastValidatedAt: Date.now(),
+            tier: result.tier,
+          };
+          this.license = updated;
+          await (window as any).electronAPI.saveLicense(updated);
+          this.checkAndAddMonthlyCredits();
+        } else {
+          console.log('[License] Re-validation failed:', result.error, '— downgrading to Community on next launch');
+          await (window as any).electronAPI.clearLicense();
+        }
+      } catch {
+        console.log('[License] Re-validation network error — will retry tomorrow');
+      }
+    }, 2000);
+  }
+
+  getBalance(): CreditBalance {
+    try {
+      const raw = localStorage.getItem(BALANCE_KEY);
+      if (!raw) return this.initBalance();
+      const balance: CreditBalance = JSON.parse(raw);
+      if (balance.tier !== this.getTier() && this.getTier() !== 'community') {
+        const updated = { ...balance, tier: this.getTier() };
+        localStorage.setItem(BALANCE_KEY, JSON.stringify(updated));
+        return updated;
+      }
+      return balance;
+    } catch {
+      return this.initBalance();
+    }
+  }
+
+  private initBalance(): CreditBalance {
+    const tier = this.getTier();
+    const initial: CreditBalance = {
+      subscriptionCredits: CREDIT_POOLS[tier] ?? 0,
+      topUpCredits: 0,
+      lastCreditedAt: Date.now(),
+      tier,
+    };
+    localStorage.setItem(BALANCE_KEY, JSON.stringify(initial));
+    return initial;
+  }
+
+  hasCredits(cost: number): boolean {
+    if (this.getTier() === 'community') return false;
+    const balance = this.getBalance();
+    return (balance.subscriptionCredits + balance.topUpCredits) >= cost;
+  }
+
+  spendCredits(cost: number): void {
+    const balance = this.getBalance();
+    let remaining = cost;
+    if (balance.topUpCredits > 0) {
+      const fromTopUp = Math.min(balance.topUpCredits, remaining);
+      balance.topUpCredits -= fromTopUp;
+      remaining -= fromTopUp;
+    }
+    if (remaining > 0) {
+      balance.subscriptionCredits = Math.max(0, balance.subscriptionCredits - remaining);
+    }
+    localStorage.setItem(BALANCE_KEY, JSON.stringify(balance));
+  }
+
+  addTopUpCredits(amount: number): void {
+    const balance = this.getBalance();
+    balance.topUpCredits += amount;
+    localStorage.setItem(BALANCE_KEY, JSON.stringify(balance));
+  }
+
+  getRemainingCredits(): number {
+    const balance = this.getBalance();
+    return balance.subscriptionCredits + balance.topUpCredits;
+  }
+
+  getSubscriptionCredits(): number {
+    return this.getBalance().subscriptionCredits;
+  }
+
+  getTopUpCredits(): number {
+    return this.getBalance().topUpCredits;
+  }
+
+  getDaysUntilNextCredit(): number {
+    const balance = this.getBalance();
+    const nextCredit = balance.lastCreditedAt + BILLING_CYCLE;
+    return Math.max(0, Math.ceil((nextCredit - Date.now()) / (24 * 60 * 60 * 1000)));
   }
 
   async validate(key: string): Promise<{ valid: boolean; error?: string }> {
@@ -42,7 +167,11 @@ class LicenseService {
           email: result.email,
           activatedAt: Date.now(),
           expiresAt: result.expiresAt ?? null,
+          lastValidatedAt: Date.now(),
+          lastCreditedAt: Date.now(),
         };
+        localStorage.removeItem(BALANCE_KEY);
+        this.initBalance();
       }
       return result;
     } catch (err: any) {
@@ -50,13 +179,18 @@ class LicenseService {
     }
   }
 
-  openCheckout(tier: 'pro' | 'studio'): void {
+  async deactivate(): Promise<void> {
+    this.license = null;
+    localStorage.removeItem(BALANCE_KEY);
+    await (window as any).electronAPI.clearLicense();
+  }
+
+  openCheckout(tier: 'pro' | 'studio' | 'pro_annual' | 'studio_annual'): void {
     (window as any).electronAPI.openCheckout(tier);
   }
 
-  async deactivate(): Promise<void> {
-    this.license = null;
-    await (window as any).electronAPI.clearLicense();
+  openCustomerPortal(): void {
+    (window as any).electronAPI.openCustomerPortal();
   }
 
   getTier(): LicenseTier { return this.license?.tier ?? 'community'; }
@@ -64,53 +198,7 @@ class LicenseService {
   isStudio(): boolean { return this.getTier() === 'studio'; }
   getLicense(): License | null { return this.license; }
   getEmail(): string | null { return this.license?.email ?? null; }
-
-  getUsage(): CreditUsage {
-    try {
-      const raw = localStorage.getItem(USAGE_KEY);
-      if (!raw) return this.resetUsage();
-      const usage: CreditUsage = JSON.parse(raw);
-      if (Date.now() - usage.periodStart > 30 * 24 * 60 * 60 * 1000) {
-        return this.resetUsage();
-      }
-      return usage;
-    } catch { return this.resetUsage(); }
-  }
-
-  resetUsage(): CreditUsage {
-    const usage: CreditUsage = {
-      inpaints: 0,
-      characterPanels: 0,
-      lipSyncClips: 0,
-      periodStart: Date.now(),
-    };
-    localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
-    return usage;
-  }
-
-  incrementUsage(type: keyof Omit<CreditUsage, 'periodStart'>, amount = 1): void {
-    const usage = this.getUsage();
-    usage[type] += amount;
-    localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
-  }
-
-  canUse(type: keyof Omit<CreditUsage, 'periodStart'>): boolean {
-    const tier = this.getTier();
-    const limits = CREDIT_LIMITS[tier];
-    const usage = this.getUsage();
-    return usage[type] < limits[type];
-  }
-
-  getRemainingCredits(type: keyof Omit<CreditUsage, 'periodStart'>): number {
-    const tier = this.getTier();
-    const limits = CREDIT_LIMITS[tier];
-    const usage = this.getUsage();
-    return Math.max(0, limits[type] - usage[type]);
-  }
-
-  getLimit(type: keyof Omit<CreditUsage, 'periodStart'>): number {
-    return CREDIT_LIMITS[this.getTier()][type];
-  }
+  getTotalCredits(): number { return CREDIT_POOLS[this.getTier()] ?? 0; }
 }
 
 export const licenseService = new LicenseService();

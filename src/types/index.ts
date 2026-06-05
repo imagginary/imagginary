@@ -11,6 +11,15 @@ export interface License {
   email: string;
   activatedAt: number;
   expiresAt: number | null;
+  lastValidatedAt: number;
+  lastCreditedAt: number;
+}
+
+export interface CreditBalance {
+  subscriptionCredits: number;
+  topUpCredits: number;
+  lastCreditedAt: number;
+  tier: LicenseTier;
 }
 export type CameraAngle = string;
 export type Mood = string;
@@ -236,10 +245,6 @@ export interface AppSettings {
   threeDaiApiKey: string;
   // Phase 9 — Character consistency (cloud IPAdapter)
   falApiKey: string;
-  // Phase 10 — Cloud generation (Muapi)
-  cloudGenerationEnabled: boolean;
-  muapiApiKey: string;
-  muapiEndpoint: string;
   // Phase 13 — Shared Studio (Supabase)
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -251,6 +256,8 @@ export interface AppSettings {
   instantMeshUrl: string;
   // Advanced — Ollama model override (empty = use default qwen2.5:14b)
   ollamaModel: string;
+  // Pro/Studio — DeepSeek cloud parsing (BYOK, essentially free at $0.001/parse)
+  deepseekApiKey: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -260,9 +267,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   tripoApiKey: '',
   threeDaiApiKey: '',
   falApiKey: '',
-  cloudGenerationEnabled: false,
-  muapiApiKey: '',
-  muapiEndpoint: 'https://api.muapi.io/v1/comfyui',
   supabaseUrl: '',
   supabaseAnonKey: '',
   activeCheckpoint: '',
@@ -270,6 +274,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   comfyuiUrl: '',
   instantMeshUrl: '',
   ollamaModel: '',
+  deepseekApiKey: '',
 };
 
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────

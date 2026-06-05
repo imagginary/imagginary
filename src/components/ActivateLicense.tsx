@@ -1,22 +1,14 @@
-/**
- * ActivateLicense — modal for Pro/Studio license activation.
- *
- * State A (community): pricing buttons → Dodo checkout, plus key input to activate.
- * State B (activated): shows tier, email, deactivate option.
- */
-
 import React, { useState, useCallback } from 'react';
 import { X, Loader2, CheckCircle, AlertCircle, Star, Zap, ExternalLink } from 'lucide-react';
 import { License } from '../types';
-import { licenseService, CreditUsage } from '../services/LicenseService';
+import { licenseService, CREDIT_POOLS } from '../services/LicenseService';
+import CreditUsageBar from './CreditUsageBar';
 
 interface ActivateLicenseProps {
   currentLicense: License | null;
   onLicenseChange: () => void;
   onClose: () => void;
 }
-
-// ── Tier badge ────────────────────────────────────────────────────────────────
 
 function TierBadge({ tier }: { tier: 'pro' | 'studio' }) {
   return tier === 'studio' ? (
@@ -30,12 +22,11 @@ function TierBadge({ tier }: { tier: 'pro' | 'studio' }) {
   );
 }
 
-// ── State A — not activated ───────────────────────────────────────────────────
-
 function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => void; onClose: () => void }) {
   const [key, setKey] = useState('');
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
 
   const handleActivate = useCallback(async () => {
     setError(null);
@@ -52,12 +43,38 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
 
   return (
     <div className="p-6 space-y-5">
-      {/* Heading */}
       <div>
         <p className="text-base font-bold text-gray-100">Unlock Pro Features</p>
         <p className="text-xs text-gray-500 mt-1">
           Motion generation, voice synthesis, pose engine, revision history, and more.
         </p>
+      </div>
+
+      {/* Billing cycle toggle */}
+      <div className="flex items-center gap-3 justify-center">
+        <button
+          onClick={() => setBillingCycle('monthly')}
+          className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+            billingCycle === 'monthly'
+              ? 'bg-imagginary-500 text-black font-medium'
+              : 'text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Monthly
+        </button>
+        <button
+          onClick={() => setBillingCycle('annual')}
+          className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+            billingCycle === 'annual'
+              ? 'bg-imagginary-500 text-black font-medium'
+              : 'text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Annual
+          <span className="ml-1.5 text-xs bg-green-900/60 text-green-400 px-1.5 py-0.5 rounded">
+            Save 17%
+          </span>
+        </button>
       </div>
 
       {/* Pricing cards */}
@@ -69,19 +86,30 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
               <Zap className="w-3.5 h-3.5 text-imagginary-400" />
               <span className="text-xs font-bold text-imagginary-300 uppercase tracking-wide">Pro</span>
             </div>
-            <p className="text-xl font-bold text-gray-100">$19<span className="text-sm font-normal text-gray-500">/mo</span></p>
+            {billingCycle === 'monthly' ? (
+              <p className="text-xl font-bold text-gray-100">
+                $19<span className="text-sm font-normal text-gray-500">/mo</span>
+              </p>
+            ) : (
+              <div>
+                <p className="text-xl font-bold text-gray-100">
+                  $15.83<span className="text-sm font-normal text-gray-500">/mo</span>
+                </p>
+                <p className="text-xs text-gray-600 mt-0.5">billed $190/yr</p>
+              </div>
+            )}
           </div>
           <ul className="space-y-1 text-[11px] text-gray-400">
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />60 Director's Eye AI inpaints/month</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />200 character-consistent panels/month</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />30 lip sync clips/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />532 credits/month ($5.32 value)</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Director's Eye inpainting</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Character-consistent panels</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Lip sync + motion clips</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Style Vault Pro styles</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Pose Engine + Motion Library</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Voice Layer</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />Pose Engine + Voice Layer</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />PDF + FCPXML export</li>
           </ul>
           <button
-            onClick={() => licenseService.openCheckout('pro')}
+            onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'pro_annual' : 'pro')}
             className="mt-auto flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors"
           >
             <ExternalLink className="w-3 h-3" />
@@ -96,20 +124,29 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
               <Star className="w-3.5 h-3.5 text-violet-400" />
               <span className="text-xs font-bold text-violet-300 uppercase tracking-wide">Studio</span>
             </div>
-            <p className="text-xl font-bold text-gray-100">$79<span className="text-sm font-normal text-gray-500">/mo</span></p>
+            {billingCycle === 'monthly' ? (
+              <p className="text-xl font-bold text-gray-100">
+                $79<span className="text-sm font-normal text-gray-500">/mo</span>
+              </p>
+            ) : (
+              <div>
+                <p className="text-xl font-bold text-gray-100">
+                  $65.83<span className="text-sm font-normal text-gray-500">/mo</span>
+                </p>
+                <p className="text-xs text-gray-600 mt-0.5">billed $790/yr</p>
+              </div>
+            )}
           </div>
           <ul className="space-y-1 text-[11px] text-gray-400">
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Everything in Pro</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />300 Director's Eye inpaints/month</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />1,000 character-consistent panels/month</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />150 lip sync clips/month</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />2,239 credits/month ($22.39 value)</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Shared Studio collaboration</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Custom voice cloning</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Broadcast resolution (1536×864)</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Brand LoRA training</li>
           </ul>
           <button
-            onClick={() => licenseService.openCheckout('studio')}
+            onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'studio_annual' : 'studio')}
             className="mt-auto flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-violet-700 hover:bg-violet-600 text-white transition-colors"
           >
             <ExternalLink className="w-3 h-3" />
@@ -163,14 +200,23 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
   );
 }
 
-// ── State B — activated ───────────────────────────────────────────────────────
-
 function ActivatedView({ license, onLicenseChange, onClose }: {
   license: License;
   onLicenseChange: () => void;
   onClose: () => void;
 }) {
   const [deactivating, setDeactivating] = useState(false);
+  const [showTopup, setShowTopup] = useState(false);
+  const [topupCode, setTopupCode] = useState('');
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [topupResult, setTopupResult] = useState<string | null>(null);
+
+  const tier = license.tier === 'studio' ? 'studio' : 'pro';
+  const balance = licenseService.getBalance();
+  const subCredits = balance.subscriptionCredits;
+  const topUpCredits = balance.topUpCredits;
+  const daysUntilNext = licenseService.getDaysUntilNextCredit();
+  const monthlyPool = CREDIT_POOLS[tier];
 
   const handleDeactivate = useCallback(async () => {
     setDeactivating(true);
@@ -179,19 +225,20 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
     onClose();
   }, [onLicenseChange, onClose]);
 
-  const isExpired = license.expiresAt !== null && Date.now() > license.expiresAt;
-  const tier = license.tier === 'studio' ? 'studio' : 'pro';
-
-  const remaining = {
-    inpaints:        licenseService.getRemainingCredits('inpaints'),
-    characterPanels: licenseService.getRemainingCredits('characterPanels'),
-    lipSyncClips:    licenseService.getRemainingCredits('lipSyncClips'),
-  };
-  const usage: CreditUsage = licenseService.getUsage();
-  const daysUntilReset = Math.max(
-    0,
-    Math.ceil((usage.periodStart + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
-  );
+  const handleRedeemTopup = useCallback(async () => {
+    setTopupLoading(true);
+    setTopupResult(null);
+    const result = await (window as any).electronAPI.validateTopup(topupCode.trim());
+    if (result.valid) {
+      licenseService.addTopUpCredits(result.credits);
+      setTopupResult(`✓ ${result.credits} credits added to your account`);
+      setTopupCode('');
+      onLicenseChange();
+    } else {
+      setTopupResult(`✗ ${result.error}`);
+    }
+    setTopupLoading(false);
+  }, [topupCode, onLicenseChange]);
 
   return (
     <div className="p-6 space-y-5">
@@ -202,29 +249,61 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           <TierBadge tier={tier} />
         </div>
         <p className="text-xs text-gray-500">{license.email}</p>
-        {license.expiresAt && (
-          <p className={`text-[10px] ${isExpired ? 'text-red-400' : 'text-gray-600'}`}>
-            {isExpired
-              ? 'Expired — renew to continue using Pro features'
-              : `Renews ${new Date(license.expiresAt).toLocaleDateString()}`}
-          </p>
-        )}
       </div>
 
-      <div className="text-xs text-gray-400 space-y-1 border-t border-gray-800 pt-3">
-        <p>Director's Eye: {remaining.inpaints === Infinity ? 'Unlimited' : `${remaining.inpaints} inpaints remaining`}</p>
-        <p>Character panels: {remaining.characterPanels === Infinity ? 'Unlimited' : `${remaining.characterPanels} remaining`}</p>
-        <p>Lip sync: {remaining.lipSyncClips === Infinity ? 'Unlimited' : `${remaining.lipSyncClips} clips remaining`}</p>
-        <p className="text-gray-600">Resets in {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''}</p>
+      {/* Credit balance */}
+      <div className="border-t border-gray-800 pt-3 space-y-3">
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px]">
+            <span className="text-gray-400">
+              {subCredits} subscription{topUpCredits > 0 ? ` + ${topUpCredits} top-up = ${subCredits + topUpCredits}` : ''} credits
+            </span>
+            <span className="text-gray-600">+{monthlyPool} in {daysUntilNext}d</span>
+          </div>
+          <CreditUsageBar showCosts={false} />
+        </div>
+
+        {/* Top-up redemption */}
+        <div>
+          <button
+            onClick={() => setShowTopup(!showTopup)}
+            className="text-xs text-gray-600 hover:text-gray-400 underline"
+          >
+            {showTopup ? 'Hide' : 'Redeem top-up code'}
+          </button>
+
+          {showTopup && (
+            <div className="space-y-2 pt-2">
+              <input
+                value={topupCode}
+                onChange={(e) => setTopupCode(e.target.value)}
+                placeholder="Paste your top-up code"
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-gray-500"
+              />
+              <button
+                onClick={handleRedeemTopup}
+                disabled={!topupCode.trim() || topupLoading}
+                className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs rounded transition-colors disabled:opacity-50"
+              >
+                {topupLoading ? 'Validating…' : 'Redeem'}
+              </button>
+              {topupResult && (
+                <p className={`text-[10px] ${topupResult.startsWith('✓') ? 'text-green-500' : 'text-red-400'}`}>
+                  {topupResult}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
         <button
-          onClick={() => licenseService.openCheckout(tier)}
+          onClick={() => licenseService.openCustomerPortal()}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors"
         >
           <ExternalLink className="w-3.5 h-3.5" />
-          Manage Subscription
+          Manage Subscription →
         </button>
 
         <button
@@ -233,14 +312,12 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium text-gray-600 hover:text-red-400 disabled:opacity-40 transition-colors"
         >
           {deactivating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-          {deactivating ? 'Deactivating…' : 'Deactivate license on this machine'}
+          {deactivating ? 'Deactivating…' : 'Deactivate on this machine'}
         </button>
       </div>
     </div>
   );
 }
-
-// ── Main modal shell ──────────────────────────────────────────────────────────
 
 export default function ActivateLicense({ currentLicense, onLicenseChange, onClose }: ActivateLicenseProps) {
   const isActivated = currentLicense !== null;
@@ -254,7 +331,6 @@ export default function ActivateLicense({ currentLicense, onLicenseChange, onClo
         className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800">
           <div className="flex items-center gap-2">
             {isActivated && currentLicense.tier !== 'community' ? (

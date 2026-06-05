@@ -3,7 +3,7 @@ import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, 
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 import { settingsService } from '../services/SettingsService';
-import { licenseService } from '../services/LicenseService';
+import { licenseService, CREDIT_COSTS } from '../services/LicenseService';
 
 interface PanelViewerProps {
   panel: Panel | null;
@@ -283,12 +283,8 @@ export default function PanelViewer({
     ? revisions.find((r) => r.id === compareRevisionId) ?? null
     : null;
 
-  const inpaintsExhausted = isPro && !licenseService.canUse('inpaints');
-  const creditUsage = licenseService.getUsage();
-  const daysUntilReset = Math.max(
-    0,
-    Math.ceil((creditUsage.periodStart + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))
-  );
+  const inpaintsExhausted = isPro && !licenseService.hasCredits(CREDIT_COSTS.inpaint);
+  const daysUntilReset = licenseService.getDaysUntilNextCredit();
 
   const canEdit = !!panel?.generatedImageData && !isGenerating;
   const canUndo = (panel?.editHistory?.length ?? 0) > 0 && !isGenerating;
@@ -805,9 +801,9 @@ export default function PanelViewer({
       {/* Edit mode nudges — credit exhaustion takes priority over missing-key hint */}
       {editMode && inpaintsExhausted && (
         <p className="text-[10px] text-amber-500 px-6 pb-1">
-          Monthly inpaint credits used.{' '}
+          {`Insufficient credits (need ${CREDIT_COSTS.inpaint}, have ${licenseService.getRemainingCredits()}).`}{' '}
           <button onClick={onOpenSettings} className="underline ml-1">Add your own Fal.ai key</button>
-          {' '}to continue, or resets in {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''}.
+          {' '}to continue, or {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''} until next credit allocation.
         </p>
       )}
       {editMode && isPro && !inpaintsExhausted && !settingsService.getKey('falApiKey') && (

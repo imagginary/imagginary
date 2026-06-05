@@ -80,6 +80,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('pro-model-progress', handler);
   },
 
+  // AbsoluteReality model download
+  downloadAbsoluteReality: () => ipcRenderer.invoke('download-absolute-reality'),
+  onAbsoluteRealityProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('absolute-reality-progress', handler);
+    return () => ipcRenderer.removeListener('absolute-reality-progress', handler);
+  },
+
   // Service health checks — proxied through main process to bypass renderer CSP/CORS
   checkOllama: () => ipcRenderer.invoke('check-ollama'),
   checkComfyUI: () => ipcRenderer.invoke('check-comfyui'),
@@ -125,6 +133,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveLicense: (license) => ipcRenderer.invoke('save-license', license),
   clearLicense: () => ipcRenderer.invoke('clear-license'),
   openCheckout: (tier) => ipcRenderer.invoke('open-checkout', tier),
+  openCustomerPortal: () => ipcRenderer.invoke('open-customer-portal'),
+  validateTopup: (code) => ipcRenderer.invoke('validate-topup', code),
 
   // Phase 15 — Voice Layer (Coqui TTS)
   checkCoquiTTS: () => ipcRenderer.invoke('check-coqui-tts'),

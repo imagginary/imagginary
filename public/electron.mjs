@@ -1546,6 +1546,47 @@ ipcMain.handle('download-pro-model', async (event) => {
   }
 });
 
+ipcMain.handle('download-absolute-reality', async (event) => {
+  const comfyBase = await findComfyUIPath();
+  const base = comfyBase || path.join(os.homedir(), 'ComfyUI');
+  const modelPath = path.join(base, 'models', 'checkpoints', OPTIONAL_MODEL_FILENAME);
+
+  // Return immediately if valid file already exists
+  if (fs.existsSync(modelPath)) {
+    try {
+      const buf = Buffer.alloc(1);
+      const fd = fs.openSync(modelPath, 'r');
+      fs.readSync(fd, buf, 0, 1, 0);
+      fs.closeSync(fd);
+      if (buf[0] !== 0x3c) return { success: true, cached: true };
+      fs.unlinkSync(modelPath); // corrupt file — re-download
+    } catch { /* proceed with download */ }
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(modelPath), { recursive: true });
+
+    await streamDownload(OPTIONAL_MODEL_URL, modelPath, (downloaded, total) => {
+      const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+      try { event.sender.send('absolute-reality-progress', { pct, downloaded, total }); } catch { /* ignore */ }
+    });
+
+    // Validate — reject HTML error pages
+    const buf = Buffer.alloc(1);
+    const fd = fs.openSync(modelPath, 'r');
+    fs.readSync(fd, buf, 0, 1, 0);
+    fs.closeSync(fd);
+    if (buf[0] === 0x3c) {
+      fs.unlinkSync(modelPath);
+      return { success: false, error: 'Download returned HTML — try again or download manually from CivitAI' };
+    }
+
+    return { success: true, cached: false };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // Project persistence
 ipcMain.handle('save-project', async (_event, projectData, filePath) => {
   try {
@@ -2649,8 +2690,10 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 const DODO_API_KEY   = _cfg('DODO_API_KEY');
 const DODO_API_BASE  = _cfg('DODO_API_BASE') || 'https://api.dodopayments.com';
 const CHECKOUT_URLS  = {
-  pro:    _cfg('DODO_PRO_CHECKOUT_URL')    || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
-  studio: _cfg('DODO_STUDIO_CHECKOUT_URL') || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
+  pro:           _cfg('DODO_PRO_CHECKOUT_URL')           || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
+  studio:        _cfg('DODO_STUDIO_CHECKOUT_URL')        || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
+  pro_annual:    _cfg('DODO_PRO_ANNUAL_CHECKOUT_URL')    || '',
+  studio_annual: _cfg('DODO_STUDIO_ANNUAL_CHECKOUT_URL') || '',
 };
 
 function getLicensePath() {
@@ -2738,7 +2781,33 @@ ipcMain.handle('clear-license', () => {
 
 ipcMain.handle('open-checkout', (_event, tier) => {
   const url = CHECKOUT_URLS[tier] ?? CHECKOUT_URLS.pro;
-  shell.openExternal(url);
+  if (url) shell.openExternal(url);
+});
+
+ipcMain.handle('open-customer-portal', () => {
+  shell.openExternal('https://app.dodopayments.com/customer-portal');
+});
+
+ipcMain.handle('validate-topup', async (_event, code) => {
+  if (!code || !DODO_API_KEY) return { valid: false, error: 'Invalid code.' };
+  try {
+    const res = await fetch(
+      `${DODO_API_BASE}/licenses/${encodeURIComponent(code.trim())}/validate`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${DODO_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+    if (!res.ok) return { valid: false, error: 'Invalid top-up code.' };
+    const data = await res.json();
+    if (data.status !== 'active') return { valid: false, error: 'Top-up code already used.' };
+    const credits = parseInt(data.metadata?.credits ?? '0');
+    if (!credits) return { valid: false, error: 'Invalid top-up code.' };
+    return { valid: true, credits };
+  } catch {
+    return { valid: false, error: 'Could not validate code. Check your connection.' };
+  }
 });
 
 // ── Phase 15 — Voice Layer (Coqui TTS) ───────────────────────────────────────
