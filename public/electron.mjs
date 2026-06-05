@@ -2788,6 +2788,17 @@ ipcMain.handle('open-customer-portal', () => {
   shell.openExternal('https://app.dodopayments.com/customer-portal');
 });
 
+const TOPUP_URLS = {
+  starter:  _cfg('DODO_STARTER_CREDITS_URL')  || '',
+  standard: _cfg('DODO_STANDARD_CREDITS_URL') || '',
+  power:    _cfg('DODO_POWER_CREDITS_URL')    || '',
+};
+
+ipcMain.handle('open-topup-checkout', (_event, pack) => {
+  const url = TOPUP_URLS[pack];
+  if (url) shell.openExternal(url);
+});
+
 ipcMain.handle('validate-topup', async (_event, code) => {
   if (!code || !DODO_API_KEY) return { valid: false, error: 'Invalid code.' };
   try {

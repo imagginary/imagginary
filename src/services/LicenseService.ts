@@ -193,6 +193,10 @@ class LicenseService {
     (window as any).electronAPI.openCustomerPortal();
   }
 
+  openTopupCheckout(pack: 'starter' | 'standard' | 'power'): void {
+    (window as any).electronAPI.openTopupCheckout(pack);
+  }
+
   getTier(): LicenseTier { return this.license?.tier ?? 'community'; }
   isPro(): boolean { const t = this.getTier(); return t === 'pro' || t === 'studio'; }
   isStudio(): boolean { return this.getTier() === 'studio'; }

@@ -263,6 +263,29 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           <CreditUsageBar showCosts={false} />
         </div>
 
+        {/* Buy more credits */}
+        <div className="space-y-2 pt-3 border-t border-gray-800">
+          <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Buy more credits</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { pack: 'starter'  as const, credits: 300,  price: '$2.99' },
+              { pack: 'standard' as const, credits: 800,  price: '$6.99' },
+              { pack: 'power'    as const, credits: 2000, price: '$15.99' },
+            ].map(({ pack, credits, price }) => (
+              <button
+                key={pack}
+                onClick={() => licenseService.openTopupCheckout(pack)}
+                className="flex flex-col items-center gap-1 py-2.5 px-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 rounded-lg transition-colors"
+              >
+                <span className="text-xs font-medium text-gray-200">{credits}</span>
+                <span className="text-[9px] text-gray-500">credits</span>
+                <span className="text-[10px] text-amber-400 font-medium">{price}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[9px] text-gray-700">Credits never expire. After purchase, redeem with the code Dodo emails you.</p>
+        </div>
+
         {/* Top-up redemption */}
         <div>
           <button

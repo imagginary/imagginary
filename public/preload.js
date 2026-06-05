@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openCheckout: (tier) => ipcRenderer.invoke('open-checkout', tier),
   openCustomerPortal: () => ipcRenderer.invoke('open-customer-portal'),
   validateTopup: (code) => ipcRenderer.invoke('validate-topup', code),
+  openTopupCheckout: (pack) => ipcRenderer.invoke('open-topup-checkout', pack),
 
   // Phase 15 — Voice Layer (Coqui TTS)
   checkCoquiTTS: () => ipcRenderer.invoke('check-coqui-tts'),

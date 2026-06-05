@@ -62,8 +62,11 @@ module.exports = {
       filename: 'index.html',
     }),
     new webpack.DefinePlugin({
-      'process.env.UMAMI_WEBSITE_ID': JSON.stringify(process.env.UMAMI_WEBSITE_ID ?? ''),
-      'process.env.FAL_API_KEY':      JSON.stringify(process.env.FAL_API_KEY ?? ''),
+      'process.env.UMAMI_WEBSITE_ID':       JSON.stringify(process.env.UMAMI_WEBSITE_ID       ?? ''),
+      'process.env.FAL_API_KEY':            JSON.stringify(process.env.FAL_API_KEY            ?? ''),
+      'process.env.DODO_STARTER_CREDITS_URL':  JSON.stringify(process.env.DODO_STARTER_CREDITS_URL  ?? ''),
+      'process.env.DODO_STANDARD_CREDITS_URL': JSON.stringify(process.env.DODO_STANDARD_CREDITS_URL ?? ''),
+      'process.env.DODO_POWER_CREDITS_URL':    JSON.stringify(process.env.DODO_POWER_CREDITS_URL    ?? ''),
     }),
   ],
   devServer: {

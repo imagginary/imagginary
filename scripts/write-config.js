@@ -13,10 +13,15 @@ const fs   = require('fs');
 const path = require('path');
 
 const cfg = {
-  DODO_API_KEY:              process.env.DODO_API_KEY              || '',
-  DODO_API_BASE:             process.env.DODO_API_BASE             || 'https://api.dodopayments.com',
-  DODO_PRO_CHECKOUT_URL:     process.env.DODO_PRO_CHECKOUT_URL     || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
-  DODO_STUDIO_CHECKOUT_URL:  process.env.DODO_STUDIO_CHECKOUT_URL  || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
+  DODO_API_KEY:                 process.env.DODO_API_KEY                 || '',
+  DODO_API_BASE:                process.env.DODO_API_BASE                || 'https://api.dodopayments.com',
+  DODO_PRO_CHECKOUT_URL:        process.env.DODO_PRO_CHECKOUT_URL        || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
+  DODO_STUDIO_CHECKOUT_URL:     process.env.DODO_STUDIO_CHECKOUT_URL     || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
+  DODO_PRO_ANNUAL_CHECKOUT_URL:     process.env.DODO_PRO_ANNUAL_CHECKOUT_URL     || '',
+  DODO_STUDIO_ANNUAL_CHECKOUT_URL:  process.env.DODO_STUDIO_ANNUAL_CHECKOUT_URL  || '',
+  DODO_STARTER_CREDITS_URL:     process.env.DODO_STARTER_CREDITS_URL     || '',
+  DODO_STANDARD_CREDITS_URL:    process.env.DODO_STANDARD_CREDITS_URL    || '',
+  DODO_POWER_CREDITS_URL:       process.env.DODO_POWER_CREDITS_URL       || '',
 };
 
 const outPath = path.join(__dirname, '..', 'resources', 'config.json');
