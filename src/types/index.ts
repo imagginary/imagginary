@@ -72,7 +72,7 @@ export interface Character {
   // Original generated reference (front-facing portrait from ComfyUI)
   referenceImagePath: string | null;
   referenceImageData: string | null; // base64 for display
-  // InstantMesh 6-view output — null until generated
+  // Multi-view output — null until generated
   multiViewPaths: MultiViewPaths | null;
   multiViewData: MultiViewPaths | null; // base64 versions for display
   multiViewStatus: MultiViewStatus;
@@ -173,7 +173,6 @@ export type ConnectionStatus = 'checking' | 'connected' | 'disconnected' | 'erro
 export interface ServiceStatus {
   comfyui: ConnectionStatus;
   ollama: ConnectionStatus;
-  instantmesh: ConnectionStatus;
 }
 
 export interface GenerationProgress {
@@ -239,7 +238,7 @@ export interface AppSettings {
   // Phase 15 Pt2 — Lip Sync
   syncsoApiKey: string;
   // Phase 9 — Turntable 3D model picker
-  turntable3dProvider: 'instantmesh' | 'meshy' | 'tripo' | '3daistudio';
+  turntable3dProvider: 'meshy' | 'tripo' | '3daistudio';
   meshyApiKey: string;
   tripoApiKey: string;
   threeDaiApiKey: string;
@@ -253,7 +252,6 @@ export interface AppSettings {
   // Advanced — custom service URLs (leave blank for defaults)
   ollamaUrl: string;
   comfyuiUrl: string;
-  instantMeshUrl: string;
   // Advanced — Ollama model override (empty = use default qwen2.5:14b)
   ollamaModel: string;
   // Pro/Studio — DeepSeek cloud parsing (BYOK, essentially free at $0.001/parse)
@@ -262,7 +260,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   syncsoApiKey: '',
-  turntable3dProvider: 'instantmesh',
+  turntable3dProvider: 'meshy',
   meshyApiKey: '',
   tripoApiKey: '',
   threeDaiApiKey: '',
@@ -272,7 +270,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeCheckpoint: '',
   ollamaUrl: '',
   comfyuiUrl: '',
-  instantMeshUrl: '',
   ollamaModel: '',
   deepseekApiKey: '',
 };

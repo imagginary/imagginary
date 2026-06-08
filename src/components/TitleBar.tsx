@@ -177,16 +177,6 @@ export default function TitleBar({
               <span className="text-red-400 text-[10px]">— not running</span>
             )}
           </div>
-          <div
-            className="flex items-center gap-1.5 text-gray-400"
-            title={serviceStatus.instantmesh === 'disconnected' ? 'Character multi-view disabled — InstantMesh not running' : 'InstantMesh ready'}
-          >
-            <ConnectionDot status={serviceStatus.instantmesh} />
-            <span>InstantMesh</span>
-            {serviceStatus.instantmesh === 'disconnected' && (
-              <span className="text-gray-600 text-[10px]">— optional</span>
-            )}
-          </div>
         </div>
 
         {/* Right — actions */}

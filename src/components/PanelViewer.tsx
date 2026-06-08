@@ -686,7 +686,7 @@ export default function PanelViewer({
               }`}
               title={
                 comfyuiConnected && !hasClip
-                  ? 'Requires Wan 2.2 — see docs/INSTANTMESH_SETUP.md for setup guide'
+                  ? 'Requires Wan 2.2 — see README for setup guide'
                   : hasClip
                     ? 'View or regenerate motion clip'
                     : 'Generate a motion clip from this panel'

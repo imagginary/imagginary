@@ -3,7 +3,7 @@ import { AspectRatio } from '../data/AspectRatios';
 import { characterLibraryService } from './CharacterLibraryService';
 import { settingsService } from './SettingsService';
 import { telemetryService } from './TelemetryService';
-import { licenseService } from './LicenseService';
+import { licenseService, CREDIT_COSTS } from './LicenseService';
 import { getComfyUIUrl } from '../config/services';
 
 // In packaged Electron the renderer runs from file:// (null origin) and ComfyUI rejects
@@ -399,10 +399,20 @@ export class ComfyUIService {
     style?: StyleProfile,
     shotAngle: string = ''
   ): Promise<string> {
-    // Phase 10 — Cloud Bridge: route to Muapi if enabled
-    const settings = settingsService.get();
-    if (settings.cloudGenerationEnabled && settings.muapiApiKey) {
-      return this.generateImageCloud(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
+    // Pro/Studio: automatically route to FLUX.1 Schnell via Fal.ai when key + credits available.
+    // No manual toggle — cloud routing is transparent and always falls back to local on failure.
+    if (licenseService.isPro()) {
+      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
+      if (falApiKey && licenseService.hasCredits(CREDIT_COSTS.panelCloud)) {
+        const result = await this.generateWithFluxSchnell(prompt, aspectRatio, falApiKey, onProgress);
+        if (result) {
+          licenseService.spendCredits(CREDIT_COSTS.panelCloud);
+          telemetryService.track('panel_generated_cloud', { provider: 'flux_schnell' });
+          return result;
+        }
+        // Flux failed — fall through to local silently
+        onProgress?.(5, 'Cloud unavailable — using local…');
+      }
     }
     return this.generateImageLocal(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
   }
@@ -467,12 +477,12 @@ export class ComfyUIService {
     // BYOK key takes priority over the shared key baked in at build time.
     if (!hasIPAdapter && referenceImageFilename) {
       const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
-      if (falApiKey && licenseService.canUse('characterPanels')) {
+      if (falApiKey && licenseService.hasCredits(CREDIT_COSTS.characterPanel)) {
         try {
           const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
           const falResult = await this.runCloudIPAdapter(referenceImageFilename, positivePrompt, falApiKey);
           if (falResult) {
-            licenseService.incrementUsage('characterPanels');
+            licenseService.spendCredits(CREDIT_COSTS.characterPanel);
             return falResult;
           }
         } catch {
@@ -517,108 +527,46 @@ export class ComfyUIService {
     return this.pollForCompletion(promptId, onProgress);
   }
 
-  private async generateImageCloud(
+  private async generateWithFluxSchnell(
     prompt: StructuredPrompt,
     aspectRatio: AspectRatio,
-    onProgress?: (progress: number, message: string) => void,
-    characterIds: string[] = [],
-    style?: StyleProfile,
-    shotAngle: string = ''
-  ): Promise<string> {
-    const settings = settingsService.get();
-    const apiKey = settings.muapiApiKey;
-    const endpoint = settings.muapiEndpoint || 'https://api.muapi.io/v1/comfyui';
-
-    onProgress?.(5, 'Connecting to cloud…');
-
-    // Resolve character description for prompt injection (same as local path)
-    let characterDescription: string | null = null;
-    if (characterIds.length > 0) {
-      for (const cid of characterIds) {
-        const character = characterLibraryService.get(cid);
-        if (character?.description) {
-          characterDescription = character.description;
-          break;
-        }
-      }
-    }
-
-    // Build workflow identical to local — no IPAdapter (no local file upload to cloud)
-    const workflow = this.buildWorkflow(
-      prompt,
-      aspectRatio,
-      characterDescription,
-      undefined,
-      { promptSuffix: style?.promptSuffix, negativePromptSuffix: style?.negativePrompt },
-      null,
-      false
-    );
-
-    onProgress?.(15, 'Submitting to cloud…');
-
+    falApiKey: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string | null> {
     try {
-      const submitRes = await fetch(`${endpoint}/prompt`, {
+      onProgress?.(5, 'Generating with FLUX.1 Schnell…');
+
+      const positivePrompt = this.buildPositivePrompt(prompt);
+
+      const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Key ${falApiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt: workflow }),
+        body: JSON.stringify({
+          prompt: positivePrompt,
+          image_size: { width: aspectRatio.width, height: aspectRatio.height },
+          num_inference_steps: 4,
+          num_images: 1,
+          enable_safety_checker: false,
+        }),
       });
 
-      if (!submitRes.ok) {
-        throw new Error(`Cloud generation failed: HTTP ${submitRes.status}`);
-      }
+      if (!res.ok) return null;
+      onProgress?.(60, 'Processing…');
 
-      const { prompt_id } = await submitRes.json() as { prompt_id: string };
-      onProgress?.(25, 'Generating in cloud…');
+      const data = await res.json() as { images?: { url: string }[] };
+      const imageUrl = data.images?.[0]?.url;
+      if (!imageUrl) return null;
 
-      for (let i = 0; i < 120; i++) {
-        await new Promise<void>((r) => setTimeout(r, 3000));
-
-        const histRes = await fetch(`${endpoint}/history/${prompt_id}`, {
-          headers: { 'Authorization': `Bearer ${apiKey}` },
-        });
-        if (!histRes.ok) continue;
-
-        const history = await histRes.json() as Record<string, {
-          status?: { completed?: boolean; status_str?: string };
-          outputs?: Record<string, { images?: { filename: string }[] }>;
-        }>;
-        const entry = history[prompt_id];
-        if (!entry) continue;
-
-        onProgress?.(25 + Math.min(i * 0.6, 65), 'Generating in cloud…');
-
-        if (entry.status?.completed) {
-          onProgress?.(92, 'Downloading result…');
-          for (const node of Object.values(entry.outputs ?? {})) {
-            const img = node.images?.[0];
-            if (img?.filename) {
-              const imgRes = await fetch(`${endpoint}/view?filename=${encodeURIComponent(img.filename)}`, {
-                headers: { 'Authorization': `Bearer ${apiKey}` },
-              });
-              if (!imgRes.ok) throw new Error('Failed to download cloud result');
-              const blob = await imgRes.blob();
-              const base64 = await blobToBase64(blob);
-              onProgress?.(100, 'Done');
-              telemetryService.track('panel_generated_cloud', { provider: 'muapi' });
-              return base64;
-            }
-          }
-        }
-
-        if (entry.status?.status_str === 'error') {
-          throw new Error('Cloud generation failed — check your Muapi credits');
-        }
-      }
-
-      throw new Error('Cloud generation timed out');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[CloudBridge] Cloud failed, falling back to local:', msg);
-      onProgress?.(5, 'Cloud unavailable — using local…');
-      return this.generateImageLocal(prompt, aspectRatio, onProgress, characterIds, style, shotAngle);
+      const imgRes = await fetch(imageUrl);
+      const blob = await imgRes.blob();
+      const base64 = await blobToBase64(blob);
+      onProgress?.(100, 'Done');
+      return base64;
+    } catch {
+      return null;
     }
   }
 
@@ -770,14 +718,14 @@ export class ComfyUIService {
     if (licenseService.isPro()) {
       const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
       if (falApiKey) {
-        if (!licenseService.canUse('inpaints')) {
-          onProgress?.(0, 'Monthly inpaint credits used — using local generation');
+        if (!licenseService.hasCredits(CREDIT_COSTS.inpaint)) {
+          onProgress?.(0, 'Insufficient credits — using local generation');
         } else {
           const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
           const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
           const result = await this.inpaintWithFluxFill(rawImage, rawMask, editDescription, falApiKey, onProgress);
           if (result) {
-            licenseService.incrementUsage('inpaints');
+            licenseService.spendCredits(CREDIT_COSTS.inpaint);
             return result;
           }
           // null means Fal.ai failed — fall through to local DreamShaper
@@ -1100,6 +1048,86 @@ export class ComfyUIService {
     };
   }
 
+  async animatePanelCloud(
+    imageData: string,
+    motionPrompt: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string | null> {
+    const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
+    if (!falApiKey) return null;
+    if (!licenseService.hasCredits(CREDIT_COSTS.motionClip)) {
+      onProgress?.(0, 'Insufficient credits for motion generation');
+      return null;
+    }
+
+    try {
+      onProgress?.(5, 'Sending to Kling via Fal.ai…');
+
+      const base64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+      const imageUrl = `data:image/png;base64,${base64}`;
+
+      const submitRes = await fetch('https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${falApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_url: imageUrl,
+          prompt: motionPrompt,
+          duration: '5',
+          aspect_ratio: '16:9',
+        }),
+      });
+
+      if (!submitRes.ok) {
+        console.warn('[Kling] Submit failed:', submitRes.status);
+        return null;
+      }
+
+      const job = await submitRes.json() as { request_id: string };
+      const requestId = job.request_id;
+
+      onProgress?.(15, 'Kling is generating motion…');
+
+      for (let i = 0; i < 60; i++) {
+        await sleep(5000);
+        const pollRes = await fetch(
+          `https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video/requests/${requestId}`,
+          { headers: { 'Authorization': `Key ${falApiKey}` } }
+        );
+        if (!pollRes.ok) continue;
+        const status = await pollRes.json() as { status?: string; video?: { url: string } };
+        const pct = 15 + Math.min(i * 1.3, 75);
+        onProgress?.(pct, `Generating motion… ${status.status ?? ''}`);
+
+        if (status.status === 'COMPLETED') {
+          onProgress?.(92, 'Downloading result…');
+          const videoUrl = status.video?.url;
+          if (!videoUrl) return null;
+
+          const videoRes = await fetch(videoUrl);
+          const blob = await videoRes.blob();
+          const base64Result = await blobToBase64(blob);
+
+          licenseService.spendCredits(CREDIT_COSTS.motionClip);
+          telemetryService.track('motion_generated_cloud', { provider: 'kling' });
+          onProgress?.(100, 'Done');
+          return base64Result;
+        }
+
+        if (status.status === 'FAILED') {
+          console.warn('[Kling] Generation failed');
+          return null;
+        }
+      }
+      return null;
+    } catch (err) {
+      console.warn('[Kling] Error:', err);
+      return null;
+    }
+  }
+
   async animatePanel(
     imageData: string,
     motionPrompt: string,
@@ -1111,7 +1139,7 @@ export class ComfyUIService {
     if (!wanAvailable) {
       throw new Error(
         'Wan 2.2 not installed in ComfyUI.\n' +
-        'To install: open docs/INSTANTMESH_SETUP.md in the project root for step-by-step instructions.\n' +
+        'To install: follow the ComfyUI custom nodes setup guide in the project README.\n' +
         'Generation time: ~20–40 min on Apple Silicon (block swap enabled).'
       );
     }

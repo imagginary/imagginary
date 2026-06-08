@@ -13,21 +13,18 @@ interface Props {
 type Provider = AppSettings['turntable3dProvider'];
 
 const PROVIDER_OPTIONS: { value: Provider; label: string; cost: string }[] = [
-  { value: 'instantmesh', label: 'InstantMesh',   cost: 'Free — local' },
-  { value: 'meshy',       label: 'Meshy',         cost: '$0.15 / gen' },
-  { value: 'tripo',       label: 'Tripo',         cost: '$0.15 / gen' },
-  { value: '3daistudio',  label: '3D AI Studio',  cost: '$0.10–0.20 / gen' },
+  { value: 'meshy',      label: 'Meshy',        cost: '$0.15 / gen' },
+  { value: 'tripo',      label: 'Tripo',        cost: '$0.15 / gen' },
+  { value: '3daistudio', label: '3D AI Studio', cost: '$0.10–0.20 / gen' },
 ];
 
 const PROVIDER_PLACEHOLDER: Record<Provider, string> = {
-  instantmesh: '',
   meshy:       'msy_xxxxxxxx',
   tripo:       'xxxxxxxx',
   '3daistudio': 'xxxxxxxx',
 };
 
 const PROVIDER_LINK: Record<Provider, string> = {
-  instantmesh: '',
   meshy:       'https://meshy.ai',
   tripo:       'https://tripo3d.ai',
   '3daistudio': 'https://3daistudio.com',
@@ -120,12 +117,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
   const [proModelDownloading, setProModelDownloading] = useState(false);
   const [proModelPct, setProModelPct] = useState(0);
   const [provider, setProvider] = useState<Provider>(settings.turntable3dProvider);
-  const [cloudEnabled, setCloudEnabled] = useState(settings.cloudGenerationEnabled);
-  const [muapiKey, setMuapiKey] = useState(settings.muapiApiKey);
-  const [muapiEndpoint, setMuapiEndpoint] = useState(
-    settings.muapiEndpoint || 'https://api.muapi.io/v1/comfyui'
-  );
-  const [muapiSaved, setMuapiSaved] = useState(false);
   const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseUrl);
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings.supabaseAnonKey);
   const [supabaseSaved, setSupabaseSaved] = useState(false);
@@ -134,15 +125,18 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     return { meshy: s.meshyApiKey, tripo: s.tripoApiKey, '3daistudio': s.threeDaiApiKey };
   });
   const [providerKeySaved, setProviderKeySaved] = useState(false);
+  const [absDownloading, setAbsDownloading] = useState(false);
+  const [absPct, setAbsPct] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [serviceUrls, setServiceUrls] = useState({
-    ollamaUrl:      settings.ollamaUrl      || '',
-    comfyuiUrl:     settings.comfyuiUrl     || '',
-    instantMeshUrl: settings.instantMeshUrl || '',
+    ollamaUrl:  settings.ollamaUrl  || '',
+    comfyuiUrl: settings.comfyuiUrl || '',
   });
   const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
   const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '');
   const [ollamaModelSaved, setOllamaModelSaved] = useState(false);
+  const [deepseekKey, setDeepseekKey] = useState(settings.deepseekApiKey || '');
+  const [deepseekKeySaved, setDeepseekKeySaved] = useState(false);
 
   useEffect(() => {
     comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
@@ -171,27 +165,11 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
   function handleServiceUrlsSave() {
     settingsService.save({
-      ollamaUrl:      serviceUrls.ollamaUrl.trim(),
-      comfyuiUrl:     serviceUrls.comfyuiUrl.trim(),
-      instantMeshUrl: serviceUrls.instantMeshUrl.trim(),
+      ollamaUrl:  serviceUrls.ollamaUrl.trim(),
+      comfyuiUrl: serviceUrls.comfyuiUrl.trim(),
     });
     setServiceUrlsSaved(true);
     setTimeout(() => setServiceUrlsSaved(false), 2000);
-  }
-
-  function handleCloudToggle(enabled: boolean) {
-    setCloudEnabled(enabled);
-    settingsService.save({ cloudGenerationEnabled: enabled });
-  }
-
-  function handleMuapiSave() {
-    settingsService.save({
-      muapiApiKey: muapiKey.trim(),
-      muapiEndpoint: muapiEndpoint.trim() || 'https://api.muapi.io/v1/comfyui',
-      cloudGenerationEnabled: cloudEnabled,
-    });
-    setMuapiSaved(true);
-    setTimeout(() => setMuapiSaved(false), 2000);
   }
 
   function handleSupabaseSave() {
@@ -213,9 +191,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     const keyField: Record<string, keyof AppSettings> = {
       meshy: 'meshyApiKey', tripo: 'tripoApiKey', '3daistudio': 'threeDaiApiKey',
     };
-    if (provider !== 'instantmesh') {
-      settingsService.save({ [keyField[provider]]: providerKey[provider as keyof typeof providerKey] } as Partial<AppSettings>);
-    }
+    settingsService.save({ [keyField[provider]]: providerKey[provider as keyof typeof providerKey] } as Partial<AppSettings>);
     setProviderKeySaved(true);
     setTimeout(() => setProviderKeySaved(false), 2000);
   }
@@ -279,12 +255,31 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                       <p className="text-[11px] text-amber-500/70">Pro or Studio required</p>
                     ) : absoluteRealityInstalled ? (
                       <p className="text-[11px] text-emerald-400">✓ Already installed</p>
+                    ) : absDownloading ? (
+                      <div className="space-y-1">
+                        <div className="w-full bg-gray-800 rounded-full h-1">
+                          <div className="bg-amber-400 h-1 rounded-full transition-all" style={{ width: `${absPct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-gray-500">{absPct}% downloading…</p>
+                      </div>
                     ) : (
                       <button
-                        onClick={() => (window as any).electronAPI?.openExternal('https://civitai.com/models/81458/absolutereality')}
-                        className="text-[11px] text-amber-400 hover:text-amber-300 underline"
+                        onClick={async () => {
+                          setAbsDownloading(true);
+                          setAbsPct(0);
+                          const cleanup = (window as any).electronAPI?.onAbsoluteRealityProgress(
+                            (d: { pct: number }) => setAbsPct(d.pct)
+                          );
+                          const result = await (window as any).electronAPI?.downloadAbsoluteReality();
+                          cleanup?.();
+                          setAbsDownloading(false);
+                          if (result?.success) {
+                            comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
+                          }
+                        }}
+                        className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1 rounded border border-gray-700"
                       >
-                        Download on CivitAI (2GB) ↗
+                        Download (2GB)
                       </button>
                     )}
                   </div>
@@ -363,6 +358,16 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
           <div className="border-t border-gray-800" />
 
+          {/* ── Credits ── */}
+          {isPro && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Your Credits</p>
+              <CreditUsageBar showCosts={true} />
+            </div>
+          )}
+
+          <div className="border-t border-gray-800" />
+
           {/* ── Section 1: Lip Sync ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -370,19 +375,16 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              Powers lip sync animation. Pro includes 30 clips per month. Add your own key for usage beyond your monthly allowance.
+              Powers lip sync animation. Add your own key for usage beyond your monthly credits.
             </p>
             {isPro ? (
-              <>
-                <KeyInput
-                  label="API Key"
-                  keyName="syncsoApiKey"
-                  placeholder="sk-sync-xxxxxxxx"
-                  link="https://sync.so"
-                  linkLabel="Get API key"
-                />
-                <CreditUsageBar type="lipSyncClips" label="Lip sync clips" />
-              </>
+              <KeyInput
+                label="API Key"
+                keyName="syncsoApiKey"
+                placeholder="sk-sync-xxxxxxxx"
+                link="https://sync.so"
+                linkLabel="Get API key"
+              />
             ) : (
               <ProGate />
             )}
@@ -413,14 +415,12 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                     ))}
                   </select>
                   <p className="text-[11px] text-gray-500 leading-relaxed">
-                    {provider === 'instantmesh'
-                      ? '6-angle multiview — requires InstantMesh running locally'
-                      : '3D mesh + thumbnail — best angle selected automatically per shot'}
+                    3D mesh + thumbnail — best angle selected automatically per shot
                   </p>
                 </div>
 
-                {/* API key — only for paid providers */}
-                {provider !== 'instantmesh' && (
+                {/* API key */}
+                {(
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs text-gray-400">{PROVIDER_OPTIONS.find(o => o.value === provider)?.label} API Key</label>
@@ -479,10 +479,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                   link="https://fal.ai"
                   linkLabel="Get API key"
                 />
-                <div className="space-y-2">
-                  <CreditUsageBar type="inpaints" label="Director's Eye inpaints" />
-                  <CreditUsageBar type="characterPanels" label="Character-consistent panels" />
-                </div>
                 <p className="text-[10px] text-gray-700">
                   If IPAdapter is installed locally in ComfyUI, it will be used automatically — no API key needed.
                 </p>
@@ -558,84 +554,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
           <div className="border-t border-gray-800" />
 
-          {/* ── Section 4: Cloud Generation — Muapi ── */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Cloud Generation — Muapi</p>
-              <ProBadge />
-            </div>
-            <p className="text-[11px] text-gray-500 leading-relaxed">
-              Generate panels in the cloud without a local GPU. Get an API key at muapi.io.
-            </p>
-            {isPro ? (
-              <>
-                {/* Enable toggle */}
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={cloudEnabled}
-                      onChange={(e) => handleCloudToggle(e.target.checked)}
-                    />
-                    <div className={`w-9 h-5 rounded-full transition-colors ${cloudEnabled ? 'bg-imagginary-600' : 'bg-gray-700'}`} />
-                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${cloudEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </div>
-                  <span className="text-xs text-gray-300">Enable cloud generation</span>
-                </label>
-
-                {cloudEnabled && (
-                  <div className="flex items-start gap-2 px-3 py-2 rounded bg-amber-950/40 border border-amber-800/40">
-                    <span className="text-amber-400 text-[10px] leading-relaxed">
-                      ⚠ Cloud generation will use your Muapi credits. ~$0.05–0.20 per panel.
-                    </span>
-                  </div>
-                )}
-
-                {/* API key */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-gray-400">API Key</label>
-                    <button
-                      onClick={() => (window as any).electronAPI?.openExternal('https://muapi.io')}
-                      className="flex items-center gap-1 text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors"
-                    >
-                      Get API key <ExternalLink className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                  <input
-                    type="password"
-                    value={muapiKey}
-                    onChange={(e) => { setMuapiKey(e.target.value); setMuapiSaved(false); }}
-                    placeholder="mua_xxxxxxxxxxxxxxxx"
-                    className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
-                  />
-                </div>
-
-                {/* Endpoint URL */}
-                <div className="space-y-1.5">
-                  <label className="text-xs text-gray-400">Endpoint URL</label>
-                  <input
-                    type="text"
-                    value={muapiEndpoint}
-                    onChange={(e) => { setMuapiEndpoint(e.target.value); setMuapiSaved(false); }}
-                    placeholder="https://api.muapi.io/v1/comfyui"
-                    className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
-                  />
-                </div>
-
-                <button
-                  onClick={handleMuapiSave}
-                  className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
-                >
-                  {muapiSaved ? 'Saved ✓' : 'Save'}
-                </button>
-              </>
-            ) : (
-              <ProGate />
-            )}
-          </div>
-
           {/* ── Advanced — Service URLs ── */}
           <div className="border-t border-gray-800" />
           <div className="space-y-3">
@@ -656,9 +574,8 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
                 {(
                   [
-                    { key: 'ollamaUrl',      label: 'Ollama URL',      placeholder: 'http://127.0.0.1:11434' },
-                    { key: 'comfyuiUrl',     label: 'ComfyUI URL',     placeholder: 'http://127.0.0.1:8188'  },
-                    { key: 'instantMeshUrl', label: 'InstantMesh URL', placeholder: 'http://127.0.0.1:7860'  },
+                    { key: 'ollamaUrl',  label: 'Ollama URL',  placeholder: 'http://127.0.0.1:11434' },
+                    { key: 'comfyuiUrl', label: 'ComfyUI URL', placeholder: 'http://127.0.0.1:8188'  },
                   ] as const
                 ).map(({ key, label, placeholder }) => (
                   <div key={key} className="space-y-1">
@@ -705,6 +622,56 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                   >
                     {ollamaModelSaved ? 'Saved ✓' : 'Save'}
                   </button>
+                </div>
+
+                {/* DeepSeek API — Pro/Studio cloud parsing */}
+                <div className="space-y-2 pt-3 border-t border-gray-800">
+                  <div>
+                    <p className="text-xs text-gray-300 flex items-center gap-2">
+                      Better Parsing — DeepSeek
+                      {isPro && (
+                        <span className="text-[9px] bg-amber-900/50 text-amber-400 px-1.5 py-0.5 rounded border border-amber-800">PRO</span>
+                      )}
+                    </p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">
+                      Pro and Studio users get significantly better shot parsing quality via DeepSeek AI.
+                      ~$0.001 per parse — extremely low cost.
+                    </p>
+                  </div>
+                  {!isPro ? (
+                    <p className="text-[10px] text-gray-600">Upgrade to Pro to use cloud parsing.</p>
+                  ) : (
+                    <>
+                      <input
+                        type="password"
+                        placeholder="sk-xxxxxxxxxxxxxxxx"
+                        value={deepseekKey}
+                        onChange={(e) => { setDeepseekKey(e.target.value); setDeepseekKeySaved(false); }}
+                        className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
+                      />
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => (window as any).electronAPI?.openExternal('https://platform.deepseek.com/api_keys')}
+                          className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
+                        >
+                          Get API key →
+                        </button>
+                        <button
+                          onClick={() => {
+                            settingsService.save({ deepseekApiKey: deepseekKey.trim() });
+                            setDeepseekKeySaved(true);
+                            setTimeout(() => setDeepseekKeySaved(false), 2000);
+                          }}
+                          className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
+                        >
+                          {deepseekKeySaved ? 'Saved ✓' : 'Save'}
+                        </button>
+                      </div>
+                      {deepseekKey.trim() && (
+                        <p className="text-[10px] text-emerald-500">✓ DeepSeek connected — Pro parsing active</p>
+                      )}
+                    </>
+                  )}
                 </div>
 
               </div>

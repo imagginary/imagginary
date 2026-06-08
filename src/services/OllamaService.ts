@@ -2,6 +2,7 @@ import { StructuredPrompt, ScriptShot } from '../types';
 import FILM_DICTIONARY, { lookupFilmTerm } from '../data/FilmLanguageDictionary';
 import { getOllamaUrl } from '../config/services';
 import { settingsService } from './SettingsService';
+import { licenseService } from './LicenseService';
 
 const FALLBACK_MODELS = ['qwen2.5:1.5b', 'qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
 
@@ -187,6 +188,12 @@ export class OllamaService {
   }
 
   async parseShot(description: string): Promise<StructuredPrompt> {
+    // Pro/Studio: try DeepSeek cloud first for better quality
+    if (licenseService.isPro()) {
+      const cloudResult = await this.parseWithDeepSeek(description, SYSTEM_PROMPT);
+      if (cloudResult) return cloudResult;
+    }
+
     const model = this.getModel();
 
     const userPrompt =
@@ -237,16 +244,13 @@ Return ONLY valid JSON, no explanation, no markdown:`;
    * into an ordered array of storyboard shots.
    * Term lists are derived dynamically from FILM_DICTIONARY — never hardcoded.
    */
-  async parseScreenplay(scriptText: string): Promise<ScriptShot[]> {
-    const model = this.getModel();
-
+  private buildScreenplaySystemPrompt(): string {
     const shotTypes = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'shot-type').map((t) => t.term))].join(', ');
     const angles    = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'camera-angle').map((t) => t.term))].join(', ');
     const moods     = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'mood').map((t) => t.term))].join(', ');
     const lighting  = [...new Set(FILM_DICTIONARY.filter((t) => t.category === 'lighting').map((t) => t.term))].join(', ');
 
-    const systemPrompt =
-`You are a professional storyboard supervisor breaking down a screenplay into shots.
+    return `You are a professional storyboard supervisor breaking down a screenplay into shots.
 Analyse the script and identify the appropriate number of shots to fully visualise this scene.
 Use your judgement — a short scene needs 3-4 shots, a complex multi-beat scene may need up to 12.
 Never pad with unnecessary shots. Never truncate a scene that needs more coverage.
@@ -275,6 +279,18 @@ ${RULE_MOOD_GENRE}
 
 Accept any format: standard screenplay (INT./EXT.), Fountain, or plain prose story description.
 Return only the JSON array. No explanation, no markdown, no preamble.`;
+  }
+
+  async parseScreenplay(scriptText: string): Promise<ScriptShot[]> {
+    const systemPrompt = this.buildScreenplaySystemPrompt();
+
+    // Pro/Studio: try DeepSeek cloud first for better quality
+    if (licenseService.isPro()) {
+      const cloudResult = await this.parseScreenplayWithDeepSeek(scriptText, systemPrompt);
+      if (cloudResult && cloudResult.length > 0) return cloudResult;
+    }
+
+    const model = this.getModel();
 
     try {
       const response = await fetch(`${getOllamaUrl()}/api/chat`, {
@@ -301,6 +317,119 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
         throw new Error('Screenplay parsing timed out. Is Ollama running?');
       }
       return this.screenplayFallback(scriptText);
+    }
+  }
+
+  // ── DeepSeek cloud parsing (Pro/Studio — falls back to Ollama silently) ──────
+
+  private async parseWithDeepSeek(
+    description: string,
+    systemPrompt: string,
+  ): Promise<StructuredPrompt | null> {
+    const apiKey = settingsService.getKey('deepseekApiKey');
+    if (!apiKey) return null;
+
+    try {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: `Parse this shot description and return structured JSON.
+REMEMBER: If you see INT./EXT. followed by a time token (NIGHT/DAY/DAWN etc), use that exact time — never override it.
+Only include characters explicitly mentioned. Match mood to genre.
+
+${description}
+
+Return ONLY valid JSON, no explanation, no markdown:`,
+            },
+          ],
+          temperature: TEMP_BALANCED,
+          max_tokens: 500,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (!res.ok) {
+        console.warn('[DeepSeek] API error:', res.status);
+        return null;
+      }
+
+      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) return null;
+
+      return this.validateStructuredPrompt(JSON.parse(content));
+    } catch (err) {
+      console.warn('[DeepSeek] Parse error — falling back to Ollama:', err);
+      return null;
+    }
+  }
+
+  private validateStructuredPrompt(raw: any): StructuredPrompt {
+    return {
+      subject:           raw.subject           || '',
+      background:        raw.background        || '',
+      mood:              raw.mood              || '',
+      lighting:          raw.lighting          || '',
+      angle:             raw.angle             || '',
+      shotType:          raw.shotType          || '',
+      timeOfDay:         raw.timeOfDay         || 'day',
+      additionalDetails: raw.additionalDetails || '',
+    };
+  }
+
+  private async parseScreenplayWithDeepSeek(
+    scriptText: string,
+    systemPrompt: string,
+  ): Promise<ScriptShot[] | null> {
+    const apiKey = settingsService.getKey('deepseekApiKey');
+    if (!apiKey) return null;
+
+    try {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: `Parse this screenplay and return a JSON array of shots:\n\n${scriptText}\n\nReturn ONLY a valid JSON array, no explanation, no markdown.`,
+            },
+          ],
+          temperature: TEMP_BALANCED,
+          max_tokens: 2000,
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (!res.ok) return null;
+
+      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) return null;
+
+      const parsed = JSON.parse(content);
+      // DeepSeek may return { shots: [...] } or directly [...]
+      const shots = Array.isArray(parsed) ? parsed : (parsed.shots ?? parsed.result ?? []);
+      if (!Array.isArray(shots) || shots.length === 0) return null;
+
+      return this.parseScreenplayJSON(JSON.stringify(shots), scriptText);
+    } catch (err) {
+      console.warn('[DeepSeek] Screenplay parse error — falling back to Ollama:', err);
+      return null;
     }
   }
 

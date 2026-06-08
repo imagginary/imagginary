@@ -6,10 +6,6 @@ class TurntableService {
   async generateMultiView(imageBase64: string): Promise<{ glbUrl: string; thumbnailUrl: string } | null> {
     const provider = this.getProvider();
 
-    if (provider === 'instantmesh') {
-      return null; // fall through to existing InstantMeshService
-    }
-
     if (provider === 'meshy') {
       return this.generateMeshy(imageBase64);
     }

@@ -1,5 +1,5 @@
 import { settingsService } from './SettingsService';
-import { licenseService } from './LicenseService';
+import { licenseService, CREDIT_COSTS } from './LicenseService';
 
 export interface LipSyncResult {
   videoUrl?: string;
@@ -17,7 +17,7 @@ class LipSyncService {
     audioPath: string,      // absolute path to WAV file
     onProgress?: (pct: number, msg: string) => void
   ): Promise<LipSyncResult | null> {
-    if (!licenseService.canUse('lipSyncClips')) {
+    if (!licenseService.hasCredits(CREDIT_COSTS.lipSync)) {
       return { error: 'monthly_limit_reached' };
     }
 
@@ -69,7 +69,7 @@ class LipSyncService {
         onProgress?.(pct, `Processing… ${status.status}`);
         if (status.status === 'completed') {
           onProgress?.(95, 'Finalising…');
-          licenseService.incrementUsage('lipSyncClips');
+          licenseService.spendCredits(CREDIT_COSTS.lipSync);
           return { videoUrl: status.outputUrl ?? '', videoData: null };
         }
         if (status.status === 'failed') return null;

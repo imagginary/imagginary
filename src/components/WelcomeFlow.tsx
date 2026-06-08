@@ -186,10 +186,6 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                           : undefined
                       }
                     />
-                    <div className="border-t border-gray-800 pt-2 mt-1">
-                      <ServiceRow label="InstantMesh" status={serviceStatus.instantmesh} />
-                      <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — multi-angle character consistency</p>
-                    </div>
                   </div>
                   <p className="text-xs text-gray-600 text-center">
                     Setting up your AI engine — this only happens once. Checking automatically…
@@ -200,10 +196,6 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                   <div className="flex flex-col gap-3 bg-gray-950 rounded-lg px-4 py-4 border border-gray-800">
                     <ServiceRow label="Ollama" status={serviceStatus.ollama} />
                     <ServiceRow label="ComfyUI" status={serviceStatus.comfyui} />
-                    <div className="border-t border-gray-800 pt-3 mt-1">
-                      <ServiceRow label="InstantMesh" status={serviceStatus.instantmesh} />
-                      <p className="ml-[26px] text-xs text-gray-600 mt-0.5">Optional — for multi-angle character consistency</p>
-                    </div>
                   </div>
                   <div className="flex items-center gap-3 mt-auto">
                     <button

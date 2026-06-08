@@ -17,13 +17,12 @@ import { sharedStudioService, SharedStudioEvent } from './services/SharedStudioS
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
-import { licenseService } from './services/LicenseService';
+import { licenseService, CREDIT_COSTS } from './services/LicenseService';
 import { telemetryService } from './services/TelemetryService';
 import { settingsService } from './services/SettingsService';
 import { ollamaService } from './services/OllamaService';
 import { comfyUIService } from './services/ComfyUIService';
 import { characterLibraryService } from './services/CharacterLibraryService';
-import { instantMeshService } from './services/InstantMeshService';
 import { animaticExporter } from './services/AnimaticExporter';
 import { productionExporter } from './services/ProductionExporter';
 import { motionComicExporter } from './services/MotionComicExporter';
@@ -37,7 +36,6 @@ import {
   ServiceStatus,
   GenerationProgress,
   CharacterGenerationProgress,
-  MeshGenerationProgress,
   StyleProfile,
   License,
   StructuredPrompt,
@@ -125,16 +123,6 @@ interface ElectronAPI {
   onDownloadModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
   downloadProModel: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
   onProModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
-  // Phase 9 — 3D Mesh / Turntable
-  generate3DMesh: (params: { characterId: string; portraitImagePath: string }) => Promise<{
-    success: boolean;
-    objPath?: string;
-    glbPath?: string;
-    turntableVideoPath?: string;
-    error?: string;
-  }>;
-  onMeshProgress: (cb: (data: MeshGenerationProgress) => void) => () => void;
-  openMeshFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   onJoinSharedProject: (cb: (data: { projectId: string }) => void) => () => void;
 }
 
@@ -158,7 +146,6 @@ export default function App() {
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({
     comfyui: 'checking',
     ollama: 'checking',
-    instantmesh: 'checking',
   });
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
   const [charProgress, setCharProgress] = useState<CharacterGenerationProgress | null>(null);
@@ -178,8 +165,6 @@ export default function App() {
   const [showVideoTransfer, setShowVideoTransfer] = useState(false);
   // Phase 15 — Voice Studio
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
-  // Phase 9 — 3D Mesh / Turntable
-  const [meshProgress, setMeshProgress] = useState<MeshGenerationProgress | null>(null);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -232,15 +217,13 @@ export default function App() {
 
   useEffect(() => {
     async function checkServices() {
-      const [ollamaOk, comfyStatus, instantMeshOk] = await Promise.all([
+      const [ollamaOk, comfyStatus] = await Promise.all([
         ollamaService.checkConnection(),
         comfyUIService.checkConnection(),
-        instantMeshService.checkConnection(),
       ]);
       setServiceStatus({
         ollama: ollamaOk ? 'connected' : 'disconnected',
         comfyui: comfyStatus.connected ? 'connected' : 'disconnected',
-        instantmesh: instantMeshOk ? 'connected' : 'disconnected',
       });
       if (comfyStatus.connected) {
         comfyUIService.checkWanModelAvailability().then((r) => {
@@ -316,7 +299,7 @@ export default function App() {
 
   // ── Character operations ─────────────────────────────────────────────────────
 
-  /** Full character creation flow: ComfyUI portrait → InstantMesh multiview */
+  /** Full character creation flow: ComfyUI portrait generation */
   async function handleCreateCharacter(name: string, description: string) {
     if (serviceStatus.comfyui !== 'connected') {
       alert('ComfyUI must be running to generate a character reference.');
@@ -365,64 +348,8 @@ export default function App() {
         }));
       }
 
-      // ── Stage 2: InstantMesh multiview (background, non-blocking) ─────────
-      if (serviceStatus.instantmesh === 'connected') {
-        setCharProgress({ characterId: charId, stage: 'generating-multiview', message: `Generating ${name} multi-view…` });
-        characterLibraryService.setMultiViewStatus(charId, 'generating');
-
-        // Fire-and-forget — update UI when done
-        instantMeshService.generateMultiView(imageData).then(async (result) => {
-          if (!result) {
-            characterLibraryService.setMultiViewStatus(charId, 'failed');
-            setProject((prev) => ({
-              ...prev,
-              characters: prev.characters.map((c) =>
-                c.id === charId ? { ...c, multiViewStatus: 'failed' } : c
-              ),
-              updatedAt: Date.now(),
-            }));
-            setCharProgress((p) => p?.characterId === charId
-              ? { ...p, stage: 'error', error: 'InstantMesh generation failed' }
-              : p
-            );
-            return;
-          }
-
-          // Save multiview images to disk
-          const savedPaths: Partial<typeof result.views> = {};
-          if (window.electronAPI) {
-            for (const [angle, data] of Object.entries(result.views)) {
-              if (data) {
-                const b64 = data.replace(/^data:image\/[^;]+;base64,/, '');
-                const res = await window.electronAPI.saveImage(b64, `char_${charId}_${angle}.png`);
-                if (res.success && res.filePath) savedPaths[angle as keyof typeof result.views] = res.filePath;
-              }
-            }
-          }
-
-          const multiViewPaths = { ...result.views, ...savedPaths } as typeof result.views;
-          const multiViewData = result.views;
-
-          const mvUpdated = characterLibraryService.updateMultiView(charId, multiViewPaths, multiViewData);
-          if (mvUpdated) {
-            setProject((prev) => ({
-              ...prev,
-              characters: prev.characters.map((c) => c.id === charId ? mvUpdated : c),
-              updatedAt: Date.now(),
-            }));
-          }
-
-          setCharProgress((p) => p?.characterId === charId
-            ? { ...p, stage: 'complete', message: `${name} multi-view ready` }
-            : p
-          );
-          setTimeout(() => setCharProgress((p) => p?.characterId === charId ? null : p), 3000);
-        });
-      } else {
-        // InstantMesh offline — character still usable with single reference
-        setCharProgress({ characterId: charId, stage: 'complete', message: `${name} created (no multi-view — InstantMesh offline)` });
-        setTimeout(() => setCharProgress(null), 3000);
-      }
+      setCharProgress({ characterId: charId, stage: 'complete', message: `${name} created` });
+      setTimeout(() => setCharProgress(null), 3000);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       setCharProgress({ characterId: charId, stage: 'error', message: 'Character generation failed', error: msg });
@@ -437,73 +364,6 @@ export default function App() {
       panels: prev.panels.map((p) => ({ ...p, characters: p.characters.filter((cid) => cid !== id) })),
       updatedAt: Date.now(),
     }));
-  }
-
-  // ── Phase 9 — 3D Mesh / Turntable ───────────────────────────────────────────
-
-  useEffect(() => {
-    if (!window.electronAPI?.onMeshProgress) return;
-    const cleanup = window.electronAPI.onMeshProgress((data: MeshGenerationProgress) => {
-      setMeshProgress(data);
-      if (data.stage === 'complete' || data.stage === 'error') {
-        setTimeout(() => setMeshProgress((p) => (p?.characterId === data.characterId ? null : p)), 4000);
-      }
-    });
-    return cleanup;
-  }, []);
-
-  async function handleGenerate3DMesh(characterId: string) {
-    const character = project.characters.find((c) => c.id === characterId);
-    if (!character?.referenceImagePath) {
-      alert('Character needs a reference image before generating a 3D mesh.');
-      return;
-    }
-    if (!window.electronAPI?.generate3DMesh) return;
-
-    setMeshProgress({
-      characterId,
-      stage: 'generating-mesh',
-      pct: 0,
-      message: `Generating 3D mesh for ${character.name}…`,
-    });
-
-    const result = await window.electronAPI.generate3DMesh({
-      characterId,
-      portraitImagePath: character.referenceImagePath,
-    }) as { success: boolean; objPath?: string; glbPath?: string; turntableVideoPath?: string; error?: string };
-
-    if (!result.success) {
-      setMeshProgress({
-        characterId,
-        stage: 'error',
-        pct: 0,
-        message: 'Mesh generation failed',
-        error: result.error ?? 'InstantMesh not available — make sure it is running.',
-      });
-      return;
-    }
-
-    // Persist mesh paths on the character
-    const updated = characterLibraryService.update(characterId, {
-      meshPath: result.objPath,
-      glbPath: result.glbPath,
-      turntableVideoPath: result.turntableVideoPath,
-      meshGeneratedAt: Date.now(),
-    });
-    if (updated) {
-      setProject((prev) => ({
-        ...prev,
-        characters: prev.characters.map((c) => (c.id === characterId ? updated : c)),
-        updatedAt: Date.now(),
-      }));
-    }
-
-    setMeshProgress({
-      characterId,
-      stage: 'complete',
-      pct: 100,
-      message: `3D model ready for ${character.name}`,
-    });
   }
 
   // ── Panel generation ─────────────────────────────────────────────────────────
@@ -968,27 +828,41 @@ export default function App() {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.generatedImageData) return;
 
-    // Persist the description immediately so it survives a cancel
     updatePanel(panelId, { motionDescription });
-
     setProgress({ panelId, status: 'animating', progress: 0, message: 'Refining motion prompt...' });
 
     try {
-      // Optionally refine through Ollama — falls back to raw text if offline
       let motionPrompt = motionDescription;
       if (serviceStatus.ollama === 'connected') {
         motionPrompt = await ollamaService.refineMotionPrompt(motionDescription);
       }
 
-      setProgress({ panelId, status: 'animating', progress: 5, message: 'Generating motion clip...' });
+      // Try Kling cloud first (Pro + Fal.ai key + sufficient credits)
+      const falApiKey = settingsService.getKey('falApiKey') || '';
+      const useCloud = licenseService.isPro() && !!falApiKey && licenseService.hasCredits(CREDIT_COSTS.motionClip);
 
-      const base64Video = await comfyUIService.animatePanel(
-        panel.generatedImageData,
-        motionPrompt,
-        (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
-      );
+      let base64Video: string | null = null;
 
-      // Save MP4/WebP to disk when running in Electron
+      if (useCloud) {
+        setProgress({ panelId, status: 'animating', progress: 5, message: 'Sending to Kling…' });
+        base64Video = await comfyUIService.animatePanelCloud(
+          panel.generatedImageData,
+          motionPrompt,
+          (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
+        );
+      }
+
+      if (!base64Video) {
+        // Fall back to local Wan I2V
+        setProgress({ panelId, status: 'animating', progress: 5, message: 'Generating motion clip...' });
+        base64Video = await comfyUIService.animatePanel(
+          panel.generatedImageData,
+          motionPrompt,
+          (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
+        );
+      }
+
+      // Save to disk when running in Electron
       let clipPath: string | null = null;
       if (window.electronAPI?.saveVideo) {
         const isMP4 = base64Video.startsWith('data:video/mp4');
@@ -1201,7 +1075,7 @@ export default function App() {
           serviceStatus={serviceStatus}
           servicesAutoStarted={servicesAutoStarted}
           onRefreshServices={() => {
-            setServiceStatus({ comfyui: 'checking', ollama: 'checking', instantmesh: 'checking' });
+            setServiceStatus({ comfyui: 'checking', ollama: 'checking' });
             checkServicesRef.current?.();
           }}
           onComplete={handleWelcomeComplete}
@@ -1320,8 +1194,6 @@ export default function App() {
               onCreateCharacter={handleCreateCharacter}
               onDeleteCharacter={deleteCharacter}
               generationProgress={charProgress}
-              onGenerate3DMesh={handleGenerate3DMesh}
-              meshProgress={meshProgress}
               isPro={licenseService.isPro()}
             />
           </div>
