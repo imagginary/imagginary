@@ -326,7 +326,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
     description: string,
     systemPrompt: string,
   ): Promise<StructuredPrompt | null> {
-    const apiKey = settingsService.getKey('deepseekApiKey');
+    const apiKey = settingsService.getKey('deepseekApiKey') || (process.env.DEEPSEEK_API_KEY ?? '');
     if (!apiKey) return null;
 
     try {
@@ -390,7 +390,7 @@ Return ONLY valid JSON, no explanation, no markdown:`,
     scriptText: string,
     systemPrompt: string,
   ): Promise<ScriptShot[] | null> {
-    const apiKey = settingsService.getKey('deepseekApiKey');
+    const apiKey = settingsService.getKey('deepseekApiKey') || (process.env.DEEPSEEK_API_KEY ?? '');
     if (!apiKey) return null;
 
     try {

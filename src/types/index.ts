@@ -235,8 +235,6 @@ export interface VideoValidationResult {
 // ── App Settings (BYOK cloud integrations) ────────────────────────────────────
 
 export interface AppSettings {
-  // Phase 15 Pt2 — Lip Sync
-  syncsoApiKey: string;
   // Phase 9 — Turntable 3D model picker
   turntable3dProvider: 'meshy' | 'tripo' | '3daistudio';
   meshyApiKey: string;
@@ -254,12 +252,9 @@ export interface AppSettings {
   comfyuiUrl: string;
   // Advanced — Ollama model override (empty = use default qwen2.5:14b)
   ollamaModel: string;
-  // Pro/Studio — DeepSeek cloud parsing (BYOK, essentially free at $0.001/parse)
-  deepseekApiKey: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  syncsoApiKey: '',
   turntable3dProvider: 'meshy',
   meshyApiKey: '',
   tripoApiKey: '',
@@ -271,7 +266,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ollamaUrl: '',
   comfyuiUrl: '',
   ollamaModel: '',
-  deepseekApiKey: '',
 };
 
 // ── Phase 7 — Script Reader ───────────────────────────────────────────────────

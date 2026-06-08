@@ -135,9 +135,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
   const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
   const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '');
   const [ollamaModelSaved, setOllamaModelSaved] = useState(false);
-  const [deepseekKey, setDeepseekKey] = useState(settings.deepseekApiKey || '');
-  const [deepseekKeySaved, setDeepseekKeySaved] = useState(false);
-
   useEffect(() => {
     comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
   }, []);
@@ -368,28 +365,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
           <div className="border-t border-gray-800" />
 
-          {/* ── Section 1: Lip Sync ── */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Lip Sync — Sync.so</p>
-              <ProBadge />
-            </div>
-            <p className="text-[11px] text-gray-500 leading-relaxed">
-              Powers lip sync animation. Add your own key for usage beyond your monthly credits.
-            </p>
-            {isPro ? (
-              <KeyInput
-                label="API Key"
-                keyName="syncsoApiKey"
-                placeholder="sk-sync-xxxxxxxx"
-                link="https://sync.so"
-                linkLabel="Get API key"
-              />
-            ) : (
-              <ProGate />
-            )}
-          </div>
-
           <div className="border-t border-gray-800" />
 
           {/* ── Section 2: 3D Turntable ── */}
@@ -468,7 +443,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               <ProBadge />
             </div>
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              Pro and Studio plans include monthly credits powered by our shared Fal.ai integration — no key needed. Add your own key below to use additional credits beyond your monthly allowance.
+              Pro and Studio plans include cloud generation via our shared integration. Add your own Fal.ai key below to use your personal account instead.
             </p>
             {isPro ? (
               <>
@@ -622,56 +597,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                   >
                     {ollamaModelSaved ? 'Saved ✓' : 'Save'}
                   </button>
-                </div>
-
-                {/* DeepSeek API — Pro/Studio cloud parsing */}
-                <div className="space-y-2 pt-3 border-t border-gray-800">
-                  <div>
-                    <p className="text-xs text-gray-300 flex items-center gap-2">
-                      Better Parsing — DeepSeek
-                      {isPro && (
-                        <span className="text-[9px] bg-amber-900/50 text-amber-400 px-1.5 py-0.5 rounded border border-amber-800">PRO</span>
-                      )}
-                    </p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">
-                      Pro and Studio users get significantly better shot parsing quality via DeepSeek AI.
-                      ~$0.001 per parse — extremely low cost.
-                    </p>
-                  </div>
-                  {!isPro ? (
-                    <p className="text-[10px] text-gray-600">Upgrade to Pro to use cloud parsing.</p>
-                  ) : (
-                    <>
-                      <input
-                        type="password"
-                        placeholder="sk-xxxxxxxxxxxxxxxx"
-                        value={deepseekKey}
-                        onChange={(e) => { setDeepseekKey(e.target.value); setDeepseekKeySaved(false); }}
-                        className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
-                      />
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => (window as any).electronAPI?.openExternal('https://platform.deepseek.com/api_keys')}
-                          className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
-                        >
-                          Get API key →
-                        </button>
-                        <button
-                          onClick={() => {
-                            settingsService.save({ deepseekApiKey: deepseekKey.trim() });
-                            setDeepseekKeySaved(true);
-                            setTimeout(() => setDeepseekKeySaved(false), 2000);
-                          }}
-                          className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
-                        >
-                          {deepseekKeySaved ? 'Saved ✓' : 'Save'}
-                        </button>
-                      </div>
-                      {deepseekKey.trim() && (
-                        <p className="text-[10px] text-emerald-500">✓ DeepSeek connected — Pro parsing active</p>
-                      )}
-                    </>
-                  )}
                 </div>
 
               </div>

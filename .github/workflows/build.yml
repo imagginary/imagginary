@@ -78,6 +78,8 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
           FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          SYNCSO_API_KEY: ${{ secrets.SYNCSO_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: npm run dist
 
       - name: Upload DMG to release
@@ -130,6 +132,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
           FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          SYNCSO_API_KEY: ${{ secrets.SYNCSO_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: npm run dist
 
       - name: Upload installer to release
@@ -177,6 +181,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
           FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          SYNCSO_API_KEY: ${{ secrets.SYNCSO_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: npm run dist
 
       - name: Upload AppImage to release

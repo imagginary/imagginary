@@ -65,6 +65,10 @@
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extraResources": [
         {
+          "from": "resources/motion_library",
+          "to": "motion_library"
+        },
+        {
           "from": "resources/ollama/mac",
           "to": "bin"
         },
@@ -89,6 +93,10 @@
       ],
       "icon": "assets/icon.ico",
       "extraResources": [
+        {
+          "from": "resources/motion_library",
+          "to": "motion_library"
+        },
         {
           "from": "resources/ollama/win",
           "to": "bin"
@@ -134,6 +142,10 @@
       "category": "Graphics",
       "artifactName": "${productName}-${arch}.${ext}",
       "extraResources": [
+        {
+          "from": "resources/motion_library",
+          "to": "motion_library"
+        },
         {
           "from": "resources/bin/ffmpeg-linux",
           "to": "bin/ffmpeg-linux"

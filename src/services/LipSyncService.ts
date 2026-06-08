@@ -9,7 +9,7 @@ export interface LipSyncResult {
 
 class LipSyncService {
   async isAvailable(): Promise<boolean> {
-    return !!settingsService.getKey('syncsoApiKey');
+    return !!(settingsService.getKey('syncsoApiKey') || (process.env.SYNCSO_API_KEY ?? ''));
   }
 
   async generateLipSync(
@@ -21,7 +21,7 @@ class LipSyncService {
       return { error: 'monthly_limit_reached' };
     }
 
-    const apiKey = settingsService.getKey('syncsoApiKey');
+    const apiKey = settingsService.getKey('syncsoApiKey') || (process.env.SYNCSO_API_KEY ?? '');
     if (!apiKey) return null;
 
     try {
