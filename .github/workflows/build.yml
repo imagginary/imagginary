@@ -12,6 +12,15 @@ jobs:
   build-mac:
     runs-on: macos-14  # Apple Silicon runner
     timeout-minutes: 25
+    env:
+      DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
+      DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
+      DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
+      DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
+      DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
+      DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
+      DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
+      DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,15 +33,6 @@ jobs:
         run: npm ci
 
       - name: Write runtime config (Dodo API key + checkout URLs)
-        env:
-          DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
-          DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
-          DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
-          DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
-          DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
-          DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
-          DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
-          DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
 
       - name: Verify runtime config
@@ -109,6 +109,15 @@ jobs:
 
   build-win:
     runs-on: windows-latest
+    env:
+      DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
+      DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
+      DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
+      DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
+      DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
+      DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
+      DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
+      DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -121,15 +130,6 @@ jobs:
         run: npm ci
 
       - name: Write runtime config (Dodo API key + checkout URLs)
-        env:
-          DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
-          DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
-          DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
-          DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
-          DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
-          DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
-          DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
-          DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
 
       - name: Verify runtime config
@@ -170,6 +170,15 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-22.04
+    env:
+      DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
+      DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
+      DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
+      DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
+      DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
+      DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
+      DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
+      DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -182,15 +191,6 @@ jobs:
         run: npm ci
 
       - name: Write runtime config (Dodo API key + checkout URLs)
-        env:
-          DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
-          DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
-          DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
-          DODO_PRO_ANNUAL_CHECKOUT_URL:    ${{ secrets.DODO_PRO_ANNUAL_CHECKOUT_URL }}
-          DODO_STUDIO_ANNUAL_CHECKOUT_URL: ${{ secrets.DODO_STUDIO_ANNUAL_CHECKOUT_URL }}
-          DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
-          DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
-          DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
 
       - name: Verify runtime config
