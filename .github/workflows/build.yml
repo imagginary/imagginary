@@ -132,6 +132,7 @@ jobs:
         run: node scripts/write-config.js
 
       - name: Verify runtime config
+        shell: bash
         run: |
           if [ ! -f resources/config.json ]; then
             echo "ERROR: resources/config.json was not created"
