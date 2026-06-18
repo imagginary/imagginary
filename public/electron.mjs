@@ -2571,32 +2571,39 @@ function detectTier(data) {
 
 ipcMain.handle('validate-license', async (_event, key) => {
   if (!key) return { valid: false, error: 'No key provided.' };
-  if (!DODO_API_KEY) return { valid: false, error: 'License validation unavailable.' };
+
   try {
-    const res = await fetch(
-      `${DODO_API_BASE}/licenses/${encodeURIComponent(key.trim())}/validate`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${DODO_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      }
-    );
-    const data = await res.json().catch(() => ({}));
-    console.log('[License] Dodo response status:', res.status);
-    console.log('[License] Dodo response data:', JSON.stringify(data));
+    const res = await fetch(`${DODO_API_BASE}/licenses/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ license_key: key.trim() }),
+    });
+
     if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error('[License] validate error:', res.status, text);
       if (res.status === 404) return { valid: false, error: 'License key not found. Check for typos.' };
       if (res.status === 403) return { valid: false, error: 'License key has been deactivated.' };
       return { valid: false, error: `Validation failed: HTTP ${res.status}` };
     }
-    if (data.status !== 'active') return { valid: false, error: `License is ${data.status}.` };
-    const tier     = detectTier(data);
-    const email    = data.customer?.email ?? data.email ?? '';
+
+    const data = await res.json();
+    console.log('[License] Dodo response:', JSON.stringify(data));
+
+    if (!data.valid) return { valid: false, error: 'License key is not valid.' };
+
+    const tier      = detectTier(data);
+    const email     = data.customer?.email ?? data.email ?? '';
     const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : null;
-    const license  = { key: key.trim(), tier, email, activatedAt: Date.now(), expiresAt };
+    const license   = {
+      key: key.trim(), tier, email,
+      activatedAt: Date.now(),
+      expiresAt,
+      lastValidatedAt: Date.now(),
+      lastCreditedAt: Date.now(),
+    };
     fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
     return { valid: true, tier, email, expiresAt };
   } catch (err) {
