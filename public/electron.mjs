@@ -2584,12 +2584,14 @@ ipcMain.handle('validate-license', async (_event, key) => {
         body: JSON.stringify({}),
       }
     );
+    const data = await res.json().catch(() => ({}));
+    console.log('[License] Dodo response status:', res.status);
+    console.log('[License] Dodo response data:', JSON.stringify(data));
     if (!res.ok) {
       if (res.status === 404) return { valid: false, error: 'License key not found. Check for typos.' };
       if (res.status === 403) return { valid: false, error: 'License key has been deactivated.' };
       return { valid: false, error: `Validation failed: HTTP ${res.status}` };
     }
-    const data = await res.json();
     if (data.status !== 'active') return { valid: false, error: `License is ${data.status}.` };
     const tier     = detectTier(data);
     const email    = data.customer?.email ?? data.email ?? '';
