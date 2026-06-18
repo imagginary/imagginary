@@ -2569,40 +2569,83 @@ function detectTier(data) {
   return 'pro';
 }
 
-ipcMain.handle('validate-license', async (_event, key) => {
+// Two-step license validation:
+// 1. Public /licenses/validate confirms the key is valid.
+// 2. Authenticated /licenses?license_key= fetches full details (tier, email, expiry).
+ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => {
   if (!key) return { valid: false, error: 'No key provided.' };
 
   try {
-    const res = await fetch(`${DODO_API_BASE}/licenses/validate`, {
+    // ── Step 1: confirm validity (public endpoint) ──────────────────────────
+    const validateRes = await fetch(`${DODO_API_BASE}/licenses/validate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ license_key: key.trim() }),
     });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      console.error('[License] validate error:', res.status, text);
-      if (res.status === 404) return { valid: false, error: 'License key not found. Check for typos.' };
-      if (res.status === 403) return { valid: false, error: 'License key has been deactivated.' };
-      return { valid: false, error: `Validation failed: HTTP ${res.status}` };
+    if (!validateRes.ok) {
+      const text = await validateRes.text().catch(() => '');
+      console.error('[License] validate error:', validateRes.status, text);
+      if (validateRes.status === 404) return { valid: false, error: 'License key not found. Check for typos.' };
+      if (validateRes.status === 403) return { valid: false, error: 'License key has been deactivated.' };
+      return { valid: false, error: `Validation failed: HTTP ${validateRes.status}` };
     }
 
-    const data = await res.json();
-    console.log('[License] Dodo response:', JSON.stringify(data));
+    const validateData = await validateRes.json();
+    console.log('[License] validate response:', JSON.stringify(validateData));
+    if (!validateData.valid) return { valid: false, error: 'License key is not valid.' };
 
-    if (!data.valid) return { valid: false, error: 'License key is not valid.' };
+    // ── Step 2: fetch full details (authenticated endpoint) ─────────────────
+    let tier = selectedTier;
+    let email = '';
+    let expiresAt = null;
 
-    const tier      = detectTier(data);
-    const email     = data.customer?.email ?? data.email ?? '';
-    const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : null;
-    const license   = {
+    if (DODO_API_KEY) {
+      const detailRes = await fetch(
+        `${DODO_API_BASE}/licenses?license_key=${encodeURIComponent(key.trim())}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${DODO_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (detailRes.ok) {
+        const detailData = await detailRes.json();
+        console.log('[License] detail response:', JSON.stringify(detailData));
+        const item = detailData.items?.[0] ?? detailData;
+        tier      = detectTier(item);
+        email     = item.customer?.email ?? item.email ?? '';
+        expiresAt = item.expires_at ? new Date(item.expires_at).getTime() : null;
+      } else {
+        const text = await detailRes.text().catch(() => '');
+        console.warn('[License] detail fetch failed:', detailRes.status, text);
+        // Fall through — use stored tier if available, else selectedTier.
+      }
+    } else {
+      console.warn('[License] DODO_API_KEY not set — tier detection unavailable, using stored/default.');
+    }
+
+    // ── Preserve stored tier/email if detail fetch didn't return them ────────
+    const existing = (() => {
+      try {
+        const p = getLicensePath();
+        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+      } catch { /* ignore */ }
+      return null;
+    })();
+    if (existing?.key === key.trim()) {
+      if (!email)              email     = existing.email     ?? '';
+      if (tier === 'pro' && existing.tier === 'studio') tier = 'studio'; // don't downgrade
+      if (expiresAt === null)  expiresAt = existing.expiresAt ?? null;
+    }
+
+    const license = {
       key: key.trim(), tier, email,
-      activatedAt: Date.now(),
+      activatedAt:     existing?.activatedAt     ?? Date.now(),
       expiresAt,
       lastValidatedAt: Date.now(),
-      lastCreditedAt: Date.now(),
+      lastCreditedAt:  existing?.lastCreditedAt  ?? Date.now(),
     };
     fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
     return { valid: true, tier, email, expiresAt };
