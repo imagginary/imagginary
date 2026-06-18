@@ -24,17 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test secret access
-        env:
-          MY_TEST: ${{ secrets.DODO_API_KEY }}
-        run: |
-          echo "Secret length: ${#MY_TEST}"
-          if [ -z "$MY_TEST" ]; then
-            echo "SECRET IS EMPTY"
-          else
-            echo "SECRET IS PRESENT"
-          fi
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

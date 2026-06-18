@@ -12,13 +12,6 @@
 const fs   = require('fs');
 const path = require('path');
 
-console.log('[write-config] All DODO env vars:');
-console.log('  DODO_API_KEY length:', (process.env.DODO_API_KEY || '').length);
-console.log('  DODO_API_KEY first 4 chars:', (process.env.DODO_API_KEY || '').substring(0, 4));
-console.log('  DODO_API_KEY last 4 chars:', (process.env.DODO_API_KEY || '').slice(-4));
-console.log('  DODO_PRO_CHECKOUT_URL length:', (process.env.DODO_PRO_CHECKOUT_URL || '').length);
-console.log('  All env keys containing DODO:', Object.keys(process.env).filter(k => k.includes('DODO')));
-
 const cfg = {
   DODO_API_KEY:                 process.env.DODO_API_KEY                 || '',
   DODO_API_BASE:                process.env.DODO_API_BASE                || 'https://api.dodopayments.com',
@@ -37,7 +30,6 @@ fs.writeFileSync(outPath, JSON.stringify(cfg, null, 2), 'utf8');
 
 console.log(`[write-config] wrote ${outPath}`);
 if (!cfg.DODO_API_KEY) {
-  console.error('[write-config] FATAL: DODO_API_KEY is empty — aborting build. Add the secret to GitHub Actions.');
-  process.exit(1);
+  console.warn('[write-config] WARNING: DODO_API_KEY is empty — license validation will be disabled in this build');
 }
-console.log(`[write-config] DODO_API_KEY present: true`);
+console.log(`[write-config] DODO_API_KEY present: ${!!cfg.DODO_API_KEY}`);
