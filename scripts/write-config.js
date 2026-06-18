@@ -28,9 +28,9 @@ const outPath = path.join(__dirname, '..', 'resources', 'config.json');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(cfg, null, 2), 'utf8');
 
-const hasKey = !!cfg.DODO_API_KEY;
 console.log(`[write-config] wrote ${outPath}`);
-console.log(`[write-config] DODO_API_KEY present: ${hasKey}`);
-if (!hasKey) {
-  console.warn('[write-config] WARNING: DODO_API_KEY is empty — license validation will be disabled in this build');
+if (!cfg.DODO_API_KEY) {
+  console.error('[write-config] FATAL: DODO_API_KEY is empty — aborting build. Add the secret to GitHub Actions.');
+  process.exit(1);
 }
+console.log(`[write-config] DODO_API_KEY present: true`);

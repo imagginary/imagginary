@@ -41,11 +41,12 @@ jobs:
             echo "ERROR: resources/config.json was not created"
             exit 1
           fi
-          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
-            echo "ERROR: DODO_API_KEY missing from config.json"
+          DODO_KEY=$(node -e "console.log(require('./resources/config.json').DODO_API_KEY || '')")
+          if [ -z "$DODO_KEY" ]; then
+            echo "ERROR: DODO_API_KEY is empty in config.json — check GitHub secret"
             exit 1
           fi
-          echo "✓ config.json present and contains DODO_API_KEY"
+          echo "✓ config.json present and DODO_API_KEY is non-empty"
 
       - name: Create placeholder Ollama binary dirs
         run: mkdir -p resources/ollama/mac resources/ollama/win resources/bin
@@ -138,11 +139,12 @@ jobs:
             echo "ERROR: resources/config.json was not created"
             exit 1
           fi
-          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
-            echo "ERROR: DODO_API_KEY missing from config.json"
+          DODO_KEY=$(node -e "console.log(require('./resources/config.json').DODO_API_KEY || '')")
+          if [ -z "$DODO_KEY" ]; then
+            echo "ERROR: DODO_API_KEY is empty in config.json — check GitHub secret"
             exit 1
           fi
-          echo "✓ config.json present and contains DODO_API_KEY"
+          echo "✓ config.json present and DODO_API_KEY is non-empty"
 
       - name: Download ffmpeg (win64)
         shell: pwsh
@@ -197,11 +199,12 @@ jobs:
             echo "ERROR: resources/config.json was not created"
             exit 1
           fi
-          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
-            echo "ERROR: DODO_API_KEY missing from config.json"
+          DODO_KEY=$(node -e "console.log(require('./resources/config.json').DODO_API_KEY || '')")
+          if [ -z "$DODO_KEY" ]; then
+            echo "ERROR: DODO_API_KEY is empty in config.json — check GitHub secret"
             exit 1
           fi
-          echo "✓ config.json present and contains DODO_API_KEY"
+          echo "✓ config.json present and DODO_API_KEY is non-empty"
 
       - name: Install Linux build deps
         run: sudo apt-get install -y rpm fuse libfuse2
