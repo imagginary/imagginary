@@ -12,6 +12,13 @@
 const fs   = require('fs');
 const path = require('path');
 
+console.log('[write-config] All DODO env vars:');
+console.log('  DODO_API_KEY length:', (process.env.DODO_API_KEY || '').length);
+console.log('  DODO_API_KEY first 4 chars:', (process.env.DODO_API_KEY || '').substring(0, 4));
+console.log('  DODO_API_KEY last 4 chars:', (process.env.DODO_API_KEY || '').slice(-4));
+console.log('  DODO_PRO_CHECKOUT_URL length:', (process.env.DODO_PRO_CHECKOUT_URL || '').length);
+console.log('  All env keys containing DODO:', Object.keys(process.env).filter(k => k.includes('DODO')));
+
 const cfg = {
   DODO_API_KEY:                 process.env.DODO_API_KEY                 || '',
   DODO_API_BASE:                process.env.DODO_API_BASE                || 'https://api.dodopayments.com',
