@@ -2547,7 +2547,7 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 // ── License / Dodo Payments ───────────────────────────────────────────────────
 
 const DODO_API_KEY   = _cfg('DODO_API_KEY');
-const DODO_API_BASE  = _cfg('DODO_API_BASE') || 'https://api.dodopayments.com';
+const DODO_API_BASE  = _cfg('DODO_API_BASE') || 'https://live.dodopayments.com';
 const CHECKOUT_URLS  = {
   pro:           _cfg('DODO_PRO_CHECKOUT_URL')           || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
   studio:        _cfg('DODO_STUDIO_CHECKOUT_URL')        || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
