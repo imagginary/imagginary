@@ -35,6 +35,18 @@ jobs:
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
 
+      - name: Verify runtime config
+        run: |
+          if [ ! -f resources/config.json ]; then
+            echo "ERROR: resources/config.json was not created"
+            exit 1
+          fi
+          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
+            echo "ERROR: DODO_API_KEY missing from config.json"
+            exit 1
+          fi
+          echo "✓ config.json present and contains DODO_API_KEY"
+
       - name: Create placeholder Ollama binary dirs
         run: mkdir -p resources/ollama/mac resources/ollama/win resources/bin
 
@@ -119,6 +131,18 @@ jobs:
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
 
+      - name: Verify runtime config
+        run: |
+          if [ ! -f resources/config.json ]; then
+            echo "ERROR: resources/config.json was not created"
+            exit 1
+          fi
+          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
+            echo "ERROR: DODO_API_KEY missing from config.json"
+            exit 1
+          fi
+          echo "✓ config.json present and contains DODO_API_KEY"
+
       - name: Download ffmpeg (win64)
         shell: pwsh
         run: |
@@ -165,6 +189,18 @@ jobs:
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
         run: node scripts/write-config.js
+
+      - name: Verify runtime config
+        run: |
+          if [ ! -f resources/config.json ]; then
+            echo "ERROR: resources/config.json was not created"
+            exit 1
+          fi
+          if ! grep -q '"DODO_API_KEY"' resources/config.json; then
+            echo "ERROR: DODO_API_KEY missing from config.json"
+            exit 1
+          fi
+          echo "✓ config.json present and contains DODO_API_KEY"
 
       - name: Install Linux build deps
         run: sudo apt-get install -y rpm fuse libfuse2

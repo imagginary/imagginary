@@ -1,6 +1,6 @@
 {
   "name": "imagginary",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "Imagginary — local-first AI storyboard generator for filmmakers",
   "main": "public/electron.mjs",
   "scripts": {
@@ -65,6 +65,10 @@
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extraResources": [
         {
+          "from": "resources/config.json",
+          "to": "config.json"
+        },
+        {
           "from": "resources/motion_library",
           "to": "motion_library"
         },
@@ -93,6 +97,10 @@
       ],
       "icon": "assets/icon.ico",
       "extraResources": [
+        {
+          "from": "resources/config.json",
+          "to": "config.json"
+        },
         {
           "from": "resources/motion_library",
           "to": "motion_library"
@@ -142,6 +150,10 @@
       "category": "Graphics",
       "artifactName": "${productName}-${arch}.${ext}",
       "extraResources": [
+        {
+          "from": "resources/config.json",
+          "to": "config.json"
+        },
         {
           "from": "resources/motion_library",
           "to": "motion_library"
