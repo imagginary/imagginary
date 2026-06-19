@@ -156,6 +156,8 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [isExportingMotionComic, setIsExportingMotionComic] = useState(false);
   const [motionComicProgress, setMotionComicProgress] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Phase 6B — Pose Engine
   const [showPoseEditor, setShowPoseEditor] = useState(false);
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
@@ -302,7 +304,7 @@ export default function App() {
   /** Full character creation flow: ComfyUI portrait generation */
   async function handleCreateCharacter(name: string, description: string) {
     if (serviceStatus.comfyui !== 'connected') {
-      alert('ComfyUI must be running to generate a character reference.');
+      setCharProgress({ characterId: '', stage: 'error', error: 'ComfyUI must be running to generate a character reference. Check the status indicators in the top bar.' });
       return;
     }
 
@@ -424,8 +426,19 @@ export default function App() {
         panel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID
       );
 
+      // Inject Director's Notes into the prompt if present
+      const notesText = panel?.notes?.trim();
+      const promptWithNotes: StructuredPrompt = notesText
+        ? {
+            ...structuredPrompt,
+            additionalDetails: [structuredPrompt.additionalDetails, notesText]
+              .filter(Boolean)
+              .join(', '),
+          }
+        : structuredPrompt;
+
       const imageData = await comfyUIService.generateImage(
-        structuredPrompt,
+        promptWithNotes,
         effectiveAspectRatio,
         (prog, msg) => setProgress({ panelId, status: 'generating', progress: 15 + (prog * 0.85), message: msg }),
         characterIds,
@@ -590,7 +603,7 @@ export default function App() {
 
     const loadResult = await window.electronAPI.loadProject(result.filePaths[0]);
     if (!loadResult.success || !loadResult.data) {
-      alert(`Failed to load project: ${loadResult.error}`);
+      setLoadError(`Could not open project: ${loadResult.error ?? 'File may be corrupted or from an older version.'}`);
       return;
     }
 
@@ -708,7 +721,10 @@ export default function App() {
     try {
       const result = await animaticExporter.export(project.panels, (percent) => setExportProgress(percent));
       if (result.success) telemetryService.track('animatic_exported', { panelCount: project.panels.length });
-      if (!result.success && result.error) alert(result.error);
+      if (!result.success) {
+        setExportError(result.error ?? 'Export failed. Please try again.');
+        setTimeout(() => setExportError(null), 5000);
+      }
     } finally {
       setIsExporting(false);
       setExportProgress(null);
@@ -720,7 +736,10 @@ export default function App() {
     setMotionComicProgress(0);
     try {
       const result = await motionComicExporter.export(project.panels, setMotionComicProgress);
-      if (!result.success && result.error) alert(result.error);
+      if (!result.success) {
+        setExportError(result.error ?? 'Export failed. Please try again.');
+        setTimeout(() => setExportError(null), 5000);
+      }
     } finally {
       setIsExportingMotionComic(false);
       setMotionComicProgress(0);
@@ -877,6 +896,17 @@ export default function App() {
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Motion clip ready' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
+      if (error instanceof Error && error.message === 'WAN_MODEL_UNAVAILABLE') {
+        setProgress({
+          panelId,
+          status: 'error',
+          progress: 0,
+          message: 'Motion generation unavailable',
+          error: 'Motion generation requires a powerful GPU (24GB+ VRAM). Pro users can use Kling cloud motion instead.',
+          errorLink: licenseService.isPro() ? undefined : { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
+        });
+        return;
+      }
       const msg = error instanceof Error ? error.message : 'Unknown error';
       setProgress({ panelId, status: 'error', progress: 0, message: 'Motion generation failed', error: msg });
     }
@@ -1382,6 +1412,23 @@ export default function App() {
           }}
           onClose={() => setShowActivateLicense(false)}
         />
+      )}
+
+      {/* Export error toast — auto-dismisses after 5s */}
+      {exportError && (
+        <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-700 text-red-200 text-xs px-4 py-2 rounded-lg z-50 max-w-sm">
+          {exportError}
+        </div>
+      )}
+
+      {/* Project load error toast */}
+      {loadError && (
+        <div
+          className="fixed bottom-4 right-4 bg-red-900/90 border border-red-700 text-red-200 text-xs px-4 py-2 rounded-lg z-50 max-w-sm cursor-pointer"
+          onClick={() => setLoadError(null)}
+        >
+          {loadError}
+        </div>
       )}
     </div>
   );

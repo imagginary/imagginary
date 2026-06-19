@@ -515,8 +515,7 @@ export class ComfyUIService {
     });
 
     if (!submitRes.ok) {
-      const errText = await submitRes.text();
-      throw new Error(`ComfyUI prompt submission failed: ${submitRes.status} — ${errText}`);
+      throw new Error('Panel generation failed. Please try again.');
     }
 
     const submitData = await submitRes.json() as PromptResponse;
@@ -589,8 +588,7 @@ export class ComfyUIService {
     });
 
     if (!submitRes.ok) {
-      const errText = await submitRes.text();
-      throw new Error(`Character reference generation failed: ${submitRes.status} — ${errText}`);
+      throw new Error('Character reference generation failed. Please try again.');
     }
 
     const { prompt_id } = await submitRes.json() as PromptResponse;
@@ -653,7 +651,7 @@ export class ComfyUIService {
       body: formData,
     });
 
-    if (!res.ok) throw new Error(`Failed to upload image to ComfyUI: ${res.status}`);
+    if (!res.ok) throw new Error('Could not process image. Please try again.');
     const data = await res.json() as { name: string };
     return data.name;
   }
@@ -768,8 +766,7 @@ export class ComfyUIService {
     });
 
     if (!submitRes.ok) {
-      const errText = await submitRes.text();
-      throw new Error(`ComfyUI inpaint submission failed: ${submitRes.status} — ${errText}`);
+      throw new Error('Edit failed. Please try again.');
     }
 
     const { prompt_id } = await submitRes.json() as PromptResponse;
@@ -1163,8 +1160,7 @@ export class ComfyUIService {
     });
 
     if (!submitRes.ok) {
-      const errText = await submitRes.text();
-      throw new Error(`ComfyUI prompt submission failed: ${submitRes.status} — ${errText}`);
+      throw new Error('Panel generation failed. Please try again.');
     }
 
     const { prompt_id } = await submitRes.json() as PromptResponse;
@@ -1229,7 +1225,7 @@ export class ComfyUIService {
               `&subfolder=${encodeURIComponent(file.subfolder ?? '')}` +
               `&type=${file.type}`;
             const videoRes = await fetch(videoUrl);
-            if (!videoRes.ok) throw new Error('Failed to fetch generated video from ComfyUI');
+            if (!videoRes.ok) throw new Error('Could not retrieve animated clip. Please try again.');
 
             const blob = await videoRes.blob();
             const base64 = await blobToBase64(blob);
@@ -1238,13 +1234,13 @@ export class ComfyUIService {
           }
         }
 
-        throw new Error('Generation completed but no video found in output');
+        throw new Error('Animation generation completed but produced no output. Please try again.');
       } catch (err) {
         if (attempt >= maxAttempts - 1) throw err;
       }
     }
 
-    throw new Error('Motion generation timed out after 60 minutes');
+    throw new Error('Animation is taking too long. Your GPU may not have enough memory for motion generation. Pro users can use Kling cloud instead.');
   }
 
   private async pollForCompletion(
@@ -1304,7 +1300,7 @@ export class ComfyUIService {
             const img = images[0];
             const imageUrl = `${await getComfyBaseUrl()}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder)}&type=${img.type}`;
             const imgRes = await fetch(imageUrl);
-            if (!imgRes.ok) throw new Error('Failed to fetch generated image');
+            if (!imgRes.ok) throw new Error('Could not retrieve generated panel. Please try again.');
 
             const blob = await imgRes.blob();
             const base64 = await blobToBase64(blob);
@@ -1313,13 +1309,13 @@ export class ComfyUIService {
           }
         }
 
-        throw new Error('Generation completed but no image found in output');
+        throw new Error('Generation completed but produced no panel. Please try again.');
       } catch (err) {
         if (attempt >= maxAttempts - 1) throw err;
       }
     }
 
-    throw new Error('Generation timed out after 2 minutes');
+    throw new Error('Panel generation timed out. ComfyUI may be overloaded — please try again.');
   }
 }
 

@@ -222,7 +222,7 @@ Return ONLY valid JSON, no explanation, no markdown:`;
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        throw new Error('Could not parse shot description. Check that Ollama is running.');
       }
 
       const data = await response.json() as { message: { content: string } };
@@ -231,7 +231,7 @@ Return ONLY valid JSON, no explanation, no markdown:`;
       return this.parseJSON(content, description);
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new Error('Ollama request timed out. Is Ollama running?');
+        throw new Error('Shot parsing timed out. Ollama may be overloaded — please try again.');
       }
       throw error;
     }
@@ -308,13 +308,13 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
         signal: AbortSignal.timeout(120000), // 2 min — full scene parse
       });
 
-      if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
+      if (!response.ok) throw new Error('Could not parse screenplay. Check that Ollama is running.');
 
       const data = await response.json() as { message: { content: string } };
       return this.parseScreenplayJSON(data.message?.content ?? '', scriptText);
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new Error('Screenplay parsing timed out. Is Ollama running?');
+        throw new Error('Screenplay parsing timed out. Please try again with a shorter script.');
       }
       return this.screenplayFallback(scriptText);
     }

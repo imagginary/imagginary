@@ -156,6 +156,7 @@ export default function VoiceStudio({
   const [lipSyncAvailable, setLipSyncAvailable] = useState(false);
   const [isGeneratingLipSync, setIsGeneratingLipSync] = useState(false);
   const [lipSyncProgress, setLipSyncProgress] = useState({ pct: 0, message: '' });
+  const [lipSyncError, setLipSyncError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -282,6 +283,7 @@ export default function VoiceStudio({
 
   async function handleGenerateLipSync() {
     if (!panel.voicePath || !panel.generatedImageData) return;
+    setLipSyncError(null);
     setIsGeneratingLipSync(true);
     const imageBase64 = panel.generatedImageData.replace(/^data:image\/[^;]+;base64,/, '');
     const result = await lipSyncService.generateLipSync(
@@ -290,6 +292,10 @@ export default function VoiceStudio({
       (pct, message) => setLipSyncProgress({ pct, message })
     );
     setIsGeneratingLipSync(false);
+    if (result?.error === 'insufficient_credits') {
+      setLipSyncError("Not enough credits for lip sync (16 credits needed). Top up your credits or wait for next month's allocation.");
+      return;
+    }
     if (result?.videoUrl) onLipSyncComplete(result.videoUrl);
   }
 
@@ -603,12 +609,17 @@ export default function VoiceStudio({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={handleGenerateLipSync}
-                        className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors"
-                      >
-                        Generate Lip Sync
-                      </button>
+                      <>
+                        <button
+                          onClick={handleGenerateLipSync}
+                          className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors"
+                        >
+                          Generate Lip Sync
+                        </button>
+                        {lipSyncError && (
+                          <p className="text-[10px] text-red-400 mt-1">{lipSyncError}</p>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (

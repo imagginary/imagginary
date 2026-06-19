@@ -503,7 +503,7 @@ function httpsDownload(url, destPath) {
           return get(res.headers.location);
         }
         if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed: HTTP ${res.statusCode} from ${u}`));
+          return reject(new Error(`Model download failed (${res.statusCode}). Check your internet connection and try again.`));
         }
         const file = fs.createWriteStream(destPath);
         res.pipe(file);
@@ -555,7 +555,7 @@ async function ensureWindowsPython(setInstallMsg) {
     tar.on('error', reject);
     tar.on('close', (code) => {
       fs.unlink(zipPath, () => {});
-      code === 0 ? resolve() : reject(new Error(`Python extraction failed (code ${code})`));
+      code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.'));
     });
   });
 
@@ -583,7 +583,7 @@ async function ensureWindowsPython(setInstallMsg) {
     proc.on('error', reject);
     proc.on('close', (code) => {
       fs.unlink(getPipPath, () => {});
-      code === 0 ? resolve() : reject(new Error(`pip bootstrap failed (code ${code})`));
+      code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.'));
     });
   });
 
@@ -595,7 +595,7 @@ async function ensureWindowsPython(setInstallMsg) {
     proc.stdout.on('data', (d) => console.log('[pip]', d.toString().trim()));
     proc.stderr.on('data', (d) => console.log('[pip]', d.toString().trim()));
     proc.on('error', reject);
-    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`virtualenv install failed (code ${code})`)));
+    proc.on('close', (code) => code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.')));
   });
 
   console.log('[Python] Embedded Python ready at', WIN_PYTHON_EXE);
@@ -707,7 +707,7 @@ async function installComfyUI(loadingWin) {
         git.stdout.on('data', (d) => console.log('[ComfyUI clone]', d.toString().trim()));
         git.stderr.on('data', (d) => console.log('[ComfyUI clone]', d.toString().trim()));
         git.on('error', reject);
-        git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git clone failed (code ${code})`)));
+        git.on('close', (code) => code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.')));
       });
     } else {
       await downloadComfyUIZip(comfyPath, setInstallMsg);
@@ -724,7 +724,7 @@ async function installComfyUI(loadingWin) {
       venv.stdout.on('data', (d) => console.log('[ComfyUI venv]', d.toString().trim()));
       venv.stderr.on('data', (d) => console.log('[ComfyUI venv]', d.toString().trim()));
       venv.on('error', reject);
-      venv.on('close', (code) => code === 0 ? resolve() : reject(new Error(`venv creation failed (code ${code})`)));
+      venv.on('close', (code) => code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.')));
     });
 
     // 3. Install requirements into the venv — full output captured for debugging
@@ -740,7 +740,7 @@ async function installComfyUI(loadingWin) {
       pip.stdout.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trimEnd()));
       pip.stderr.on('data', (d) => console.log('[ComfyUI pip]', d.toString().trimEnd()));
       pip.on('error', reject);
-      pip.on('close', (code) => code === 0 ? resolve() : reject(new Error(`pip install failed (code ${code})`)));
+      pip.on('close', (code) => code === 0 ? resolve() : reject(new Error('ComfyUI setup failed. Please check your internet connection and try again.')));
     });
 
     setInstallMsg('ComfyUI installed — starting up…');
@@ -1025,7 +1025,7 @@ function streamDownload(url, destPath, onProgress, redirectCount = 0) {
       }
       if (res.statusCode !== 200) {
         res.resume();
-        return reject(new Error(`HTTP ${res.statusCode}`));
+        return reject(new Error(`Model download failed (${res.statusCode}). Check your internet connection and try again.`));
       }
 
       const total = parseInt(res.headers['content-length'] || '0', 10);
@@ -1537,7 +1537,7 @@ ipcMain.handle('download-pro-model', async (event) => {
     if (firstByte[0] === 0x3c) {
       fs.unlinkSync(proModelPath);
       console.error('[ProModel] Downloaded file is an HTML page — removing corrupt file');
-      return { success: false, error: 'Download returned an HTML page — check the URL' };
+      return { success: false, error: 'Model download failed — server returned an unexpected response. Please try again.' };
     }
 
     return { success: true, cached: false };
@@ -1578,7 +1578,7 @@ ipcMain.handle('download-absolute-reality', async (event) => {
     fs.closeSync(fd);
     if (buf[0] === 0x3c) {
       fs.unlinkSync(modelPath);
-      return { success: false, error: 'Download returned HTML — try again or download manually from CivitAI' };
+      return { success: false, error: 'Model download failed — server returned an unexpected response. Please try again or download manually from CivitAI.' };
     }
 
     return { success: true, cached: false };

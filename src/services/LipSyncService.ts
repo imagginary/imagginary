@@ -18,7 +18,7 @@ class LipSyncService {
     onProgress?: (pct: number, msg: string) => void
   ): Promise<LipSyncResult | null> {
     if (!licenseService.hasCredits(CREDIT_COSTS.lipSync)) {
-      return { error: 'monthly_limit_reached' };
+      return { error: 'insufficient_credits' };
     }
 
     const apiKey = settingsService.getKey('syncsoApiKey') || (process.env.SYNCSO_API_KEY ?? '');
