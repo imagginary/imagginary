@@ -118,6 +118,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('transfer-pose-progress', handler);
   },
 
+  // Credits (main-process store — not accessible from DevTools)
+  getCredits:   ()    => ipcRenderer.invoke('get-credits'),
+  spendCredits: (cost) => ipcRenderer.invoke('spend-credits', cost),
+  setCredits:   (bal)  => ipcRenderer.invoke('set-credits', bal),
+  resetCredits: ()    => ipcRenderer.invoke('reset-credits'),
+
   // License / Dodo Payments
   validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
   getLicense: () => ipcRenderer.invoke('get-license'),
@@ -150,6 +156,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, msg) => cb(msg);
     ipcRenderer.on('install-progress', handler);
     return () => ipcRenderer.removeListener('install-progress', handler);
+  },
+
+  // Cloud API proxy — keys live in main process only, never in renderer bundle
+  falFluxSchnell:      (params) => ipcRenderer.invoke('fal-flux-schnell', params),
+  falIPAdapter:        (params) => ipcRenderer.invoke('fal-ipadapter', params),
+  falFluxFill:         (params) => ipcRenderer.invoke('fal-flux-fill', params),
+  falKling:            (params) => ipcRenderer.invoke('fal-kling', params),
+  syncsoLipSync:       (params) => ipcRenderer.invoke('syncso-lipsync', params),
+  deepSeekShot:        (params) => ipcRenderer.invoke('deepseek-parse-shot', params),
+  deepSeekScreenplay:  (params) => ipcRenderer.invoke('deepseek-parse-screenplay', params),
+  onCloudProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('cloud-progress', handler);
+    return () => ipcRenderer.removeListener('cloud-progress', handler);
   },
 
   // Platform (safe to read in preload)

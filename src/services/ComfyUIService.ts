@@ -152,8 +152,8 @@ export class ComfyUIService {
         if (!this.defaultCheckpoint || userChoice) {
           const preferred =
             userChoice ??
-            (licenseService.isPro() ? checkpoints.find((c) => /realvisxl/i.test(c)) : undefined) ??
-            (licenseService.isPro() ? checkpoints.find((c) => /absolutereality/i.test(c)) : undefined) ??
+            ((licenseService.isPro() || licenseService.isStudio()) ? checkpoints.find((c) => /realvisxl/i.test(c)) : undefined) ??
+            ((licenseService.isPro() || licenseService.isStudio()) ? checkpoints.find((c) => /absolutereality/i.test(c)) : undefined) ??
             checkpoints.find((c) => /dreamshaper/i.test(c)) ??
             checkpoints.find((c) => /v1-5|stable-diffusion|sd15|realism|artistic/i.test(c));
           this.defaultCheckpoint = preferred ?? checkpoints[0];
@@ -399,16 +399,22 @@ export class ComfyUIService {
     style?: StyleProfile,
     shotAngle: string = ''
   ): Promise<string> {
-    // Pro/Studio: automatically route to FLUX.1 Schnell via Fal.ai when key + credits available.
+    // Pro/Studio: automatically route to FLUX.1 Schnell via Fal.ai when credits available.
     // No manual toggle — cloud routing is transparent and always falls back to local on failure.
-    if (licenseService.isPro()) {
-      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
-      if (falApiKey && licenseService.hasCredits(CREDIT_COSTS.panelCloud)) {
-        const result = await this.generateWithFluxSchnell(prompt, aspectRatio, falApiKey, onProgress);
-        if (result) {
-          licenseService.spendCredits(CREDIT_COSTS.panelCloud);
+    if (licenseService.isPro() || licenseService.isStudio()) {
+      if (licenseService.hasCredits(CREDIT_COSTS.panelCloud)) {
+        onProgress?.(5, 'Generating with FLUX.1 Schnell…');
+        const positivePrompt = this.buildPositivePrompt(prompt);
+        const result = await (window as any).electronAPI.falFluxSchnell({
+          prompt: positivePrompt,
+          width: aspectRatio.width,
+          height: aspectRatio.height,
+        });
+        if (result?.base64 && !result.error) {
+          await licenseService.spendCredits(CREDIT_COSTS.panelCloud);
           telemetryService.track('panel_generated_cloud', { provider: 'flux_schnell' });
-          return result;
+          onProgress?.(100, 'Done');
+          return `data:image/png;base64,${result.base64}`;
         }
         // Flux failed — fall through to local silently
         onProgress?.(5, 'Cloud unavailable — using local…');
@@ -473,17 +479,22 @@ export class ComfyUIService {
       console.log('[IPAdapter] Node not available — using prompt-only generation');
     }
 
-    // If IPAdapter not installed locally but Fal.ai key exists → use cloud (if credits remain).
-    // BYOK key takes priority over the shared key baked in at build time.
+    // If IPAdapter not installed locally → use cloud IPAdapter via main process (if credits remain).
     if (!hasIPAdapter && referenceImageFilename) {
-      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
-      if (falApiKey && licenseService.hasCredits(CREDIT_COSTS.characterPanel)) {
+      if (licenseService.hasCredits(CREDIT_COSTS.characterPanel)) {
         try {
           const positivePrompt = this.buildPositivePrompt(prompt, characterDescription, style?.promptSuffix);
-          const falResult = await this.runCloudIPAdapter(referenceImageFilename, positivePrompt, falApiKey);
-          if (falResult) {
-            licenseService.spendCredits(CREDIT_COSTS.characterPanel);
-            return falResult;
+          // Pre-fetch reference image from ComfyUI here in renderer (localhost — no secret needed)
+          const refData = await this.getUploadedImageData(referenceImageFilename);
+          if (refData) {
+            const result = await (window as any).electronAPI.falIPAdapter({
+              prompt: positivePrompt,
+              faceImageData: refData,
+            });
+            if (result?.imageUrl && !result.error) {
+              await licenseService.spendCredits(CREDIT_COSTS.characterPanel);
+              return result.imageUrl;
+            }
           }
         } catch {
           // Fall through to local generation without IPAdapter
@@ -526,48 +537,6 @@ export class ComfyUIService {
     return this.pollForCompletion(promptId, onProgress);
   }
 
-  private async generateWithFluxSchnell(
-    prompt: StructuredPrompt,
-    aspectRatio: AspectRatio,
-    falApiKey: string,
-    onProgress?: (progress: number, message: string) => void
-  ): Promise<string | null> {
-    try {
-      onProgress?.(5, 'Generating with FLUX.1 Schnell…');
-
-      const positivePrompt = this.buildPositivePrompt(prompt);
-
-      const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${falApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: positivePrompt,
-          image_size: { width: aspectRatio.width, height: aspectRatio.height },
-          num_inference_steps: 4,
-          num_images: 1,
-          enable_safety_checker: false,
-        }),
-      });
-
-      if (!res.ok) return null;
-      onProgress?.(60, 'Processing…');
-
-      const data = await res.json() as { images?: { url: string }[] };
-      const imageUrl = data.images?.[0]?.url;
-      if (!imageUrl) return null;
-
-      const imgRes = await fetch(imageUrl);
-      const blob = await imgRes.blob();
-      const base64 = await blobToBase64(blob);
-      onProgress?.(100, 'Done');
-      return base64;
-    } catch {
-      return null;
-    }
-  }
 
   /** Generate a clean front-facing character portrait for the identity system */
   async generateCharacterReference(
@@ -608,32 +577,6 @@ export class ComfyUIService {
     }
   }
 
-  private async runCloudIPAdapter(
-    referenceFilename: string,
-    prompt: string,
-    falApiKey: string
-  ): Promise<string | null> {
-    const refData = await this.getUploadedImageData(referenceFilename);
-    if (!refData) return null;
-
-    const res = await fetch('https://fal.run/fal-ai/ipadapter-faceid', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Key ${falApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt,
-        face_image_url: refData,
-        scale: 0.6,
-        num_inference_steps: 20,
-      }),
-    });
-
-    if (!res.ok) return null;
-    const result = await res.json() as { images?: { url: string }[] };
-    return result.images?.[0]?.url ?? null;
-  }
 
   private async uploadImageToComfyUI(base64Data: string, filename: string): Promise<string> {
     const base64 = base64Data.replace(/^data:image\/[^;]+;base64,/, '');
@@ -711,20 +654,27 @@ export class ComfyUIService {
     onProgress?: (progress: number, message: string) => void,
     characterIds: string[] = []
   ): Promise<string> {
-    // Pro tier — use FLUX.1 Fill via Fal.ai if key is available and credits remain.
-    // BYOK key takes priority over the shared key baked in at build time.
-    if (licenseService.isPro()) {
-      const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
-      if (falApiKey) {
+    // Pro/Studio tier — use FLUX.1 Fill via Fal.ai (main-process proxy) if credits remain.
+    if (licenseService.isPro() || licenseService.isStudio()) {
+      {
         if (!licenseService.hasCredits(CREDIT_COSTS.inpaint)) {
           onProgress?.(0, 'Insufficient credits — using local generation');
         } else {
           const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
           const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
-          const result = await this.inpaintWithFluxFill(rawImage, rawMask, editDescription, falApiKey, onProgress);
-          if (result) {
-            licenseService.spendCredits(CREDIT_COSTS.inpaint);
-            return result;
+          onProgress?.(10, 'Sending to FLUX.1 Fill…');
+          const result = await (window as any).electronAPI.falFluxFill({
+            imageBase64: rawImage,
+            maskBase64:  rawMask,
+            prompt:      editDescription,
+            steps:       20,
+            strength:    0.75,
+          });
+          if (result?.base64 && !result.error) {
+            await licenseService.spendCredits(CREDIT_COSTS.inpaint);
+            onProgress?.(100, 'Done');
+            telemetryService.track('inpaint_flux_fill');
+            return `data:image/png;base64,${result.base64}`;
           }
           // null means Fal.ai failed — fall through to local DreamShaper
           onProgress?.(0, 'Cloud inpainting failed — using local model…');
@@ -774,61 +724,6 @@ export class ComfyUIService {
     return this.pollForCompletion(prompt_id, onProgress);
   }
 
-  private async inpaintWithFluxFill(
-    imageBase64: string,
-    maskBase64: string,
-    prompt: string,
-    falApiKey: string,
-    onProgress?: (progress: number, message: string) => void
-  ): Promise<string | null> {
-    try {
-      onProgress?.(10, 'Sending to FLUX.1 Fill…');
-
-      const res = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image/inpainting', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${falApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          image_url: `data:image/png;base64,${imageBase64}`,
-          mask_url:  `data:image/png;base64,${maskBase64}`,
-          num_inference_steps: INPAINT_STEPS,
-          strength: INPAINT_DENOISE,
-          guidance_scale: 3.5,
-          output_format: 'png',
-        }),
-      });
-
-      if (!res.ok) {
-        console.warn('[FluxFill] API error:', res.status, '— falling back to local');
-        return null; // triggers community fallback
-      }
-
-      onProgress?.(80, 'Processing result…');
-      const data = await res.json() as { images?: { url: string }[] };
-      const imageUrl = data.images?.[0]?.url;
-      if (!imageUrl) return null;
-
-      // Download the result image
-      const imgRes = await fetch(imageUrl);
-      const blob = await imgRes.blob();
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.readAsDataURL(blob);
-      });
-
-      onProgress?.(100, 'Done');
-      telemetryService.track('inpaint_flux_fill');
-      return `data:image/png;base64,${base64}`;
-
-    } catch (err) {
-      console.warn('[FluxFill] Error — falling back to local:', err);
-      return null; // triggers community fallback
-    }
-  }
 
   // ── Motion Layer (Phase 6 — Wan 2.2) ──────────────────────────────────────
 
@@ -1050,78 +945,41 @@ export class ComfyUIService {
     motionPrompt: string,
     onProgress?: (progress: number, message: string) => void
   ): Promise<string | null> {
-    const falApiKey = settingsService.getKey('falApiKey') || (process.env.FAL_API_KEY ?? '');
-    if (!falApiKey) return null;
     if (!licenseService.hasCredits(CREDIT_COSTS.motionClip)) {
       onProgress?.(0, 'Insufficient credits for motion generation');
       return null;
     }
 
+    // Listen for progress events from main process poll loop
+    let cleanupProgress: (() => void) | null = null;
+    if ((window as any).electronAPI?.onCloudProgress) {
+      cleanupProgress = (window as any).electronAPI.onCloudProgress(
+        (data: { handler: string; pct: number; msg: string }) => {
+          if (data.handler === 'fal-kling') onProgress?.(data.pct, data.msg);
+        }
+      );
+    }
+
     try {
-      onProgress?.(5, 'Sending to Kling via Fal.ai…');
-
-      const base64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
-      const imageUrl = `data:image/png;base64,${base64}`;
-
-      const submitRes = await fetch('https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${falApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          prompt: motionPrompt,
-          duration: '5',
-          aspect_ratio: '16:9',
-        }),
+      const result = await (window as any).electronAPI.falKling({
+        imageData,
+        motionPrompt,
+        duration: '5',
+        aspectRatio: '16:9',
       });
 
-      if (!submitRes.ok) {
-        console.warn('[Kling] Submit failed:', submitRes.status);
-        return null;
+      if (result?.base64 && !result.error) {
+        await licenseService.spendCredits(CREDIT_COSTS.motionClip);
+        telemetryService.track('motion_generated_cloud', { provider: 'kling' });
+        return result.base64;
       }
-
-      const job = await submitRes.json() as { request_id: string };
-      const requestId = job.request_id;
-
-      onProgress?.(15, 'Kling is generating motion…');
-
-      for (let i = 0; i < 60; i++) {
-        await sleep(5000);
-        const pollRes = await fetch(
-          `https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video/requests/${requestId}`,
-          { headers: { 'Authorization': `Key ${falApiKey}` } }
-        );
-        if (!pollRes.ok) continue;
-        const status = await pollRes.json() as { status?: string; video?: { url: string } };
-        const pct = 15 + Math.min(i * 1.3, 75);
-        onProgress?.(pct, `Generating motion… ${status.status ?? ''}`);
-
-        if (status.status === 'COMPLETED') {
-          onProgress?.(92, 'Downloading result…');
-          const videoUrl = status.video?.url;
-          if (!videoUrl) return null;
-
-          const videoRes = await fetch(videoUrl);
-          const blob = await videoRes.blob();
-          const base64Result = await blobToBase64(blob);
-
-          licenseService.spendCredits(CREDIT_COSTS.motionClip);
-          telemetryService.track('motion_generated_cloud', { provider: 'kling' });
-          onProgress?.(100, 'Done');
-          return base64Result;
-        }
-
-        if (status.status === 'FAILED') {
-          console.warn('[Kling] Generation failed');
-          return null;
-        }
-      }
+      console.warn('[Kling] Error from main process:', result?.error);
       return null;
     } catch (err) {
-      console.warn('[Kling] Error:', err);
+      console.warn('[Kling] IPC error:', err);
       return null;
+    } finally {
+      cleanupProgress?.();
     }
   }
 
@@ -1160,7 +1018,9 @@ export class ComfyUIService {
     });
 
     if (!submitRes.ok) {
-      throw new Error('Panel generation failed. Please try again.');
+      const body = await submitRes.text();
+      console.error('[ComfyUI] animatePanel queue error body:', body);
+      throw new Error(`ComfyUI queue failed: ${submitRes.status} — ${body}`);
     }
 
     const { prompt_id } = await submitRes.json() as PromptResponse;

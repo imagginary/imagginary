@@ -10,6 +10,8 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFile } from 'node:child_process';
 import net from 'node:net';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import ElectronStore from 'electron-store';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1152,9 +1154,9 @@ function createLoadingWindow() {
     center: true,
     backgroundColor: '#0a0a0a',
     webPreferences: {
-      // nodeIntegration for simple IPC receive in loading.html
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, 'loading-preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
     },
   });
   win.loadFile(path.join(__dirname, 'loading.html'));
@@ -1445,6 +1447,42 @@ app.on('before-quit', () => {
   }
 });
 
+// ── IPC Security helpers ──────────────────────────────────────────────────────
+
+// Lazily resolved so app.getPath() is called after app is ready.
+let _allowedRoots = null;
+function getAllowedRoots() {
+  if (!_allowedRoots) {
+    _allowedRoots = [
+      path.resolve(app.getPath('userData')),
+      path.resolve(app.getPath('temp')),
+      path.resolve(app.getPath('downloads')),
+    ];
+  }
+  return _allowedRoots;
+}
+
+// Paths the user explicitly chose via showOpenDialog / showSaveDialog.
+const userApprovedPaths = new Set();
+
+function assertSafePath(filePath) {
+  const resolved = path.resolve(filePath);
+  const roots = getAllowedRoots();
+  const ok = roots.some((r) => resolved.startsWith(r + path.sep) || resolved === r) ||
+             [...userApprovedPaths].some((approved) => resolved.startsWith(approved + path.sep) || resolved === approved);
+  if (!ok) throw new Error(`Access denied: ${resolved}`);
+  return resolved;
+}
+
+function safeJoin(baseDir, fileName) {
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(base, fileName);
+  if (!resolved.startsWith(base + path.sep)) throw new Error('Path traversal detected');
+  return resolved;
+}
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
 // ── IPC Handlers ──────────────────────────────────────────────────────────────
 
 // Synchronous fresh-install check — called from preload before React mounts
@@ -1599,7 +1637,10 @@ ipcMain.handle('save-project', async (_event, projectData, filePath) => {
 
 ipcMain.handle('load-project', async (_event, filePath) => {
   try {
-    const data = fs.readFileSync(filePath, 'utf8');
+    const resolvedPath = assertSafePath(filePath);
+    const stat = fs.statSync(resolvedPath);
+    if (stat.size > MAX_FILE_SIZE) throw new Error('File too large (max 50MB)');
+    const data = fs.readFileSync(resolvedPath, 'utf8');
     return { success: true, data: JSON.parse(data) };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1607,11 +1648,23 @@ ipcMain.handle('load-project', async (_event, filePath) => {
 });
 
 ipcMain.handle('show-save-dialog', async (_event, options) => {
-  return dialog.showSaveDialog(mainWindow, options);
+  const result = await dialog.showSaveDialog(mainWindow, options);
+  if (!result.canceled && result.filePath) {
+    userApprovedPaths.add(path.resolve(path.dirname(result.filePath)));
+    userApprovedPaths.add(path.resolve(result.filePath));
+  }
+  return result;
 });
 
 ipcMain.handle('show-open-dialog', async (_event, options) => {
-  return dialog.showOpenDialog(mainWindow, options);
+  const result = await dialog.showOpenDialog(mainWindow, options);
+  if (!result.canceled && result.filePaths) {
+    for (const p of result.filePaths) {
+      userApprovedPaths.add(path.resolve(p));
+      userApprovedPaths.add(path.resolve(path.dirname(p)));
+    }
+  }
+  return result;
 });
 
 ipcMain.handle('show-export-dialog', async (_event, options) => {
@@ -1623,7 +1676,7 @@ ipcMain.handle('save-image', async (_event, base64Data, fileName) => {
     const appDataPath = app.getPath('userData');
     const imagesDir = path.join(appDataPath, 'images');
     if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
-    const filePath = path.join(imagesDir, fileName);
+    const filePath = safeJoin(imagesDir, fileName);
     fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
     return { success: true, filePath };
   } catch (err) {
@@ -1635,7 +1688,7 @@ ipcMain.handle('save-video', async (_event, base64Data, fileName) => {
   try {
     const outputDir = path.join(app.getPath('userData'), 'imagginary-clips');
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-    const filePath = path.join(outputDir, fileName);
+    const filePath = safeJoin(outputDir, fileName);
     fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
     return { success: true, filePath };
   } catch (err) {
@@ -1645,10 +1698,27 @@ ipcMain.handle('save-video', async (_event, base64Data, fileName) => {
 
 ipcMain.handle('read-image', async (_event, filePath) => {
   try {
-    const buffer = fs.readFileSync(filePath);
+    const resolvedPath = assertSafePath(filePath);
+    const stat = fs.statSync(resolvedPath);
+    if (stat.size > MAX_FILE_SIZE) throw new Error('File too large (max 50MB)');
+
+    const MAGIC = {
+      jpeg: [0xFF, 0xD8, 0xFF],
+      png:  [0x89, 0x50, 0x4E, 0x47],
+      webp: [0x52, 0x49, 0x46, 0x46],
+    };
+    const buf = Buffer.alloc(8);
+    const fd = fs.openSync(resolvedPath, 'r');
+    fs.readSync(fd, buf, 0, 8, 0);
+    fs.closeSync(fd);
+    const isJpeg = MAGIC.jpeg.every((b, i) => buf[i] === b);
+    const isPng  = MAGIC.png.every((b, i) => buf[i] === b);
+    const isWebp = MAGIC.webp.every((b, i) => buf[i] === b);
+    if (!isJpeg && !isPng && !isWebp) throw new Error('Invalid image file');
+
+    const buffer = fs.readFileSync(resolvedPath);
     const base64 = buffer.toString('base64');
-    const ext = path.extname(filePath).slice(1).toLowerCase();
-    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const mime = isPng ? 'image/png' : isWebp ? 'image/webp' : 'image/jpeg';
     return { success: true, data: `data:${mime};base64,${base64}` };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1660,7 +1730,8 @@ ipcMain.handle('get-app-data-path', async () => app.getPath('userData'));
 ipcMain.on('open-download-page', () => shell.openExternal('https://imagginary.com'));
 
 ipcMain.handle('open-folder', async (_event, folderPath) => {
-  shell.openPath(folderPath);
+  const resolvedPath = assertSafePath(folderPath);
+  shell.openPath(resolvedPath);
 });
 
 ipcMain.handle('get-system-memory', () => {
@@ -1681,7 +1752,12 @@ ipcMain.handle('get-system-memory', () => {
 });
 
 ipcMain.handle('open-external', (_event, url) => {
-  shell.openExternal(url);
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error('Invalid URL'); }
+  if (!['https:', 'http:'].includes(parsed.protocol)) {
+    throw new Error('Only http/https URLs permitted');
+  }
+  return shell.openExternal(url);
 });
 
 ipcMain.handle('export-pdf', async (_event, base64Data) => {
@@ -2205,6 +2281,7 @@ ipcMain.handle('extract-video-pose', async (event, videoPath) => {
   if (!videoPath || !fs.existsSync(videoPath)) {
     return { success: false, error: 'Video file not found' };
   }
+  try { assertSafePath(videoPath); } catch (e) { return { success: false, error: e.message }; }
 
   const sendProgress = (data) => {
     try { event.sender.send('motion-clip-progress', data); } catch { /* window closed */ }
@@ -2299,6 +2376,7 @@ ipcMain.handle('validate-transfer-video', async (_event, filePath) => {
   if (!fs.existsSync(filePath)) {
     return { success: false, error: 'File not found' };
   }
+  try { assertSafePath(filePath); } catch (e) { return { success: false, error: e.message }; }
 
   const ext = path.extname(filePath).toLowerCase();
   const supported = ['.mp4', '.mov', '.avi', '.webm'];
@@ -2428,6 +2506,7 @@ ipcMain.handle('extract-transfer-poses', async (event, videoPath) => {
   if (!videoPath || !fs.existsSync(videoPath)) {
     return { success: false, error: 'Video file not found' };
   }
+  try { assertSafePath(videoPath); } catch (e) { return { success: false, error: e.message }; }
 
   const sendProgress = (pct, msg) => {
     try { event.sender.send('transfer-pose-progress', { pct, msg }); } catch { /* window closed */ }
@@ -2556,10 +2635,34 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
   }
 });
 
+// ── Cloud API keys (main-process only — never sent to renderer) ───────────────
+const FAL_API_KEY      = _cfg('FAL_API_KEY');
+const SYNCSO_API_KEY   = _cfg('SYNCSO_API_KEY');
+const DEEPSEEK_API_KEY = _cfg('DEEPSEEK_API_KEY');
+
+/** Read the stored license tier from disk. Returns 'community' if none. */
+function getStoredLicenseTier() {
+  try {
+    const p = getLicensePath();
+    if (!fs.existsSync(p)) return 'community';
+    const lic = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!verifyLicense(lic)) { console.warn('[License] HMAC mismatch — ignoring stored license'); return 'community'; }
+    if (lic.expiresAt && Date.now() > lic.expiresAt) return 'community';
+    return lic.tier ?? 'community';
+  } catch { return 'community'; }
+}
+
+/** Returns true for Pro or Studio tier. */
+function isProOrStudio() {
+  const t = getStoredLicenseTier();
+  return t === 'pro' || t === 'studio';
+}
+
 // ── License / Dodo Payments ───────────────────────────────────────────────────
 
-const DODO_API_KEY   = _cfg('DODO_API_KEY');
-const DODO_API_BASE  = _cfg('DODO_API_BASE') || 'https://live.dodopayments.com';
+const DODO_API_KEY            = _cfg('DODO_API_KEY');
+const DODO_API_BASE           = _cfg('DODO_API_BASE') || 'https://live.dodopayments.com';
+const DODO_CUSTOMER_PORTAL_URL = _cfg('DODO_CUSTOMER_PORTAL_URL') || 'https://customer.dodopayments.com';
 const CHECKOUT_URLS  = {
   pro:           _cfg('DODO_PRO_CHECKOUT_URL')           || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',
   studio:        _cfg('DODO_STUDIO_CHECKOUT_URL')        || 'https://checkout.dodopayments.com/buy/pdt_0NfSlpx2ktThlKQivLq6X',
@@ -2570,6 +2673,79 @@ const CHECKOUT_URLS  = {
 function getLicensePath() {
   return path.join(app.getPath('userData'), 'imagginary-license.json');
 }
+
+const LICENSE_HMAC_SECRET = _cfg('LICENSE_HMAC_SECRET') || 'dev-fallback-secret-change-in-prod';
+
+function signLicense(obj) {
+  const { _sig: _removed, ...payload } = obj;
+  const body = JSON.stringify(payload);
+  const sig = createHmac('sha256', LICENSE_HMAC_SECRET).update(body).digest('hex');
+  return { ...payload, _sig: sig };
+}
+
+function verifyLicense(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  const { _sig: sig, ...payload } = obj;
+  if (!sig) return false;
+  const body = JSON.stringify(payload);
+  const expected = createHmac('sha256', LICENSE_HMAC_SECRET).update(body).digest('hex');
+  try {
+    return timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+// ── Credit Store (electron-store — not accessible from renderer/DevTools) ─────
+
+const store = new ElectronStore();
+const creditDefaults = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt: 0 };
+
+// Per-feature credit costs (mirrors CREDIT_COSTS in LicenseService.ts)
+const CREDIT_COST = {
+  panelCloud:     2,
+  inpaint:        3,
+  characterPanel: 2,
+  motionClip:    14,
+  lipSync:       16,
+};
+
+function getCredits() {
+  return store.get('credits', creditDefaults);
+}
+
+function setCredits(val) {
+  store.set('credits', val);
+}
+
+ipcMain.handle('get-credits', () => getCredits());
+
+ipcMain.handle('spend-credits', (_, cost) => {
+  const bal = getCredits();
+  const total = bal.subscriptionCredits + bal.topUpCredits;
+  if (total < cost) return { success: false, remaining: total };
+  let toSpend = cost;
+  if (bal.topUpCredits >= toSpend) {
+    bal.topUpCredits -= toSpend;
+  } else {
+    toSpend -= bal.topUpCredits;
+    bal.topUpCredits = 0;
+    bal.subscriptionCredits -= toSpend;
+  }
+  setCredits(bal);
+  return { success: true, remaining: bal.subscriptionCredits + bal.topUpCredits };
+});
+
+ipcMain.handle('set-credits', (_, { subscriptionCredits, topUpCredits, lastCreditedAt }) => {
+  const existing = getCredits();
+  setCredits({
+    subscriptionCredits,
+    topUpCredits,
+    lastCreditedAt: lastCreditedAt ?? existing.lastCreditedAt,
+  });
+});
+
+ipcMain.handle('reset-credits', () => setCredits(creditDefaults));
 
 /** Detect tier from Dodo response — checks metadata.tier first, then product name. */
 function detectTier(data) {
@@ -2659,7 +2835,7 @@ ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => 
       lastValidatedAt: Date.now(),
       lastCreditedAt:  existing?.lastCreditedAt  ?? Date.now(),
     };
-    fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
+    fs.writeFileSync(getLicensePath(), JSON.stringify(signLicense(license), null, 2), 'utf8');
     return { valid: true, tier, email, expiresAt };
   } catch (err) {
     console.error('[License] validate error:', err.message);
@@ -2672,12 +2848,18 @@ ipcMain.handle('get-license', () => {
     const p = getLicensePath();
     if (!fs.existsSync(p)) return null;
     const license = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!verifyLicense(license)) {
+      console.warn('[License] HMAC mismatch on get-license — treating as no license');
+      fs.unlinkSync(p);
+      return null;
+    }
     // Expire on-disk entry automatically
     if (license.expiresAt && Date.now() > license.expiresAt) {
       fs.unlinkSync(p);
       return null;
     }
-    return license;
+    const { _sig: _removed, ...clean } = license;
+    return clean;
   } catch {
     return null;
   }
@@ -2685,7 +2867,7 @@ ipcMain.handle('get-license', () => {
 
 ipcMain.handle('save-license', (_event, license) => {
   try {
-    fs.writeFileSync(getLicensePath(), JSON.stringify(license, null, 2), 'utf8');
+    fs.writeFileSync(getLicensePath(), JSON.stringify(signLicense(license), null, 2), 'utf8');
     return { success: true };
   } catch {
     return { success: false };
@@ -2708,7 +2890,7 @@ ipcMain.handle('open-checkout', (_event, tier) => {
 });
 
 ipcMain.handle('open-customer-portal', () => {
-  shell.openExternal('https://app.dodopayments.com/customer-portal');
+  shell.openExternal(DODO_CUSTOMER_PORTAL_URL);
 });
 
 const TOPUP_URLS = {
@@ -3018,9 +3200,293 @@ ipcMain.handle('clone-voice', async (event, params) => {
 
 ipcMain.handle('read-file-as-base64', (_event, filePath) => {
   try {
-    const buf = fs.readFileSync(filePath);
+    const resolvedPath = assertSafePath(filePath);
+    const stat = fs.statSync(resolvedPath);
+    if (stat.size > MAX_FILE_SIZE) throw new Error('File too large (max 50MB)');
+    const buf = fs.readFileSync(resolvedPath);
     return buf.toString('base64');
   } catch { return null; }
+});
+
+// ── Cloud API proxy handlers (keys never leave main process) ─────────────────
+// All handlers validate Pro/Studio tier from the on-disk license before calling
+// any external API. Progress is streamed back via 'cloud-progress' IPC events.
+
+/** Fetch a URL and return the body as a base64 string. */
+async function fetchToBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.toString('base64');
+}
+
+ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _bal0 = getCredits();
+  if (_bal0.subscriptionCredits + _bal0.topUpCredits < CREDIT_COST.panelCloud) return { error: 'insufficient credits' };
+  try {
+    const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        image_size: { width, height },
+        num_inference_steps: 4,
+        num_images: 1,
+        enable_safety_checker: false,
+      }),
+    });
+    if (!res.ok) return { error: `fal-flux-schnell: ${res.status}` };
+    const data = await res.json();
+    const imageUrl = data.images?.[0]?.url;
+    if (!imageUrl) return { error: 'No image URL in response' };
+    const base64 = await fetchToBase64(imageUrl);
+    return { base64 };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _bal1 = getCredits();
+  if (_bal1.subscriptionCredits + _bal1.topUpCredits < CREDIT_COST.characterPanel) return { error: 'insufficient credits' };
+  try {
+    const res = await fetch('https://fal.run/fal-ai/ipadapter-faceid', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        face_image_url: faceImageData,
+        scale: 0.6,
+        num_inference_steps: 20,
+      }),
+    });
+    if (!res.ok) return { error: `fal-ipadapter: ${res.status}` };
+    const data = await res.json();
+    const imageUrl = data.images?.[0]?.url;
+    if (!imageUrl) return { error: 'No image URL in response' };
+    return { imageUrl };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt, steps, strength }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _bal2 = getCredits();
+  if (_bal2.subscriptionCredits + _bal2.topUpCredits < CREDIT_COST.inpaint) return { error: 'insufficient credits' };
+  try {
+    const res = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image/inpainting', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        image_url: `data:image/png;base64,${imageBase64}`,
+        mask_url:  `data:image/png;base64,${maskBase64}`,
+        num_inference_steps: steps ?? 20,
+        strength: strength ?? 0.75,
+        guidance_scale: 3.5,
+        output_format: 'png',
+      }),
+    });
+    if (!res.ok) return { error: `fal-flux-fill: ${res.status}` };
+    const data = await res.json();
+    const imageUrl = data.images?.[0]?.url;
+    if (!imageUrl) return { error: 'No image URL in response' };
+    const base64 = await fetchToBase64(imageUrl);
+    return { base64 };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = '5', aspectRatio = '16:9' }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _bal3 = getCredits();
+  if (_bal3.subscriptionCredits + _bal3.topUpCredits < CREDIT_COST.motionClip) return { error: 'insufficient credits' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'fal-kling', pct, msg }); } catch {}
+  };
+
+  try {
+    const base64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+    send(5, 'Sending to Kling via Fal.ai…');
+
+    const submitRes = await fetch('https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: `data:image/png;base64,${base64}`,
+        prompt: motionPrompt,
+        duration,
+        aspect_ratio: aspectRatio,
+      }),
+    });
+
+    if (!submitRes.ok) return { error: `Kling submit failed: ${submitRes.status}` };
+    const job = await submitRes.json();
+    const requestId = job.request_id;
+
+    send(15, 'Kling is generating motion…');
+
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const pollRes = await fetch(
+        `https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video/requests/${requestId}`,
+        { headers: { 'Authorization': `Key ${key}` } }
+      );
+      if (!pollRes.ok) continue;
+      const status = await pollRes.json();
+      const pct = Math.min(15 + i * 1.3, 90);
+      send(pct, `Generating motion… ${status.status ?? ''}`);
+
+      if (status.status === 'COMPLETED') {
+        send(92, 'Downloading result…');
+        const videoUrl = status.video?.url;
+        if (!videoUrl) return { error: 'No video URL in Kling response' };
+        const base64Result = await fetchToBase64(videoUrl);
+        send(100, 'Done');
+        return { base64: `data:video/mp4;base64,${base64Result}` };
+      }
+      if (status.status === 'FAILED') return { error: 'Kling generation failed' };
+    }
+    return { error: 'Kling timed out' };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('syncso-lipsync', async (event, { imageBase64, audioBase64 }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = SYNCSO_API_KEY;
+  if (!key) return { error: 'SYNCSO_API_KEY not configured' };
+  const _bal4 = getCredits();
+  if (_bal4.subscriptionCredits + _bal4.topUpCredits < CREDIT_COST.lipSync) return { error: 'insufficient credits' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'syncso-lipsync', pct, msg }); } catch {}
+  };
+
+  try {
+    send(10, 'Uploading to Sync.so…');
+
+    const res = await fetch('https://api.sync.so/v2/generate', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'lipsync-2',
+        input: [
+          { type: 'video', url: `data:image/png;base64,${imageBase64}` },
+          { type: 'audio', url: `data:audio/wav;base64,${audioBase64}` },
+        ],
+        options: { output_format: 'mp4', sync_mode: 'bounce' },
+      }),
+    });
+
+    if (!res.ok) return { error: `Sync.so submit failed: ${res.status}` };
+    const job = await res.json();
+    const jobId = job.id;
+
+    send(30, 'Processing…');
+
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const poll = await fetch(`https://api.sync.so/v2/generate/${jobId}`, {
+        headers: { 'x-api-key': key },
+      });
+      const status = await poll.json();
+      const pct = Math.min(30 + i * 1.5, 90);
+      send(pct, `Processing… ${status.status}`);
+      if (status.status === 'completed') {
+        send(95, 'Finalising…');
+        return { videoUrl: status.outputUrl ?? '' };
+      }
+      if (status.status === 'failed') return { error: 'Sync.so generation failed' };
+    }
+    return { error: 'Sync.so timed out' };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('deepseek-parse-shot', async (_event, { description, systemPrompt }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = DEEPSEEK_API_KEY;
+  if (!key) return { error: 'DEEPSEEK_API_KEY not configured' };
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `Parse this shot description and return structured JSON.
+REMEMBER: If you see INT./EXT. followed by a time token (NIGHT/DAY/DAWN etc), use that exact time — never override it.
+Only include characters explicitly mentioned. Match mood to genre.
+
+${description}
+
+Return ONLY valid JSON, no explanation, no markdown:`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!res.ok) return { error: `DeepSeek: ${res.status}` };
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return { error: 'Empty DeepSeek response' };
+    return { content };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('deepseek-parse-screenplay', async (_event, { scriptText, systemPrompt }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = DEEPSEEK_API_KEY;
+  if (!key) return { error: 'DEEPSEEK_API_KEY not configured' };
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `Parse this screenplay and return a JSON array of shots:\n\n${scriptText}\n\nReturn ONLY a valid JSON array, no explanation, no markdown.`,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!res.ok) return { error: `DeepSeek: ${res.status}` };
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return { error: 'Empty DeepSeek response' };
+    return { content };
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

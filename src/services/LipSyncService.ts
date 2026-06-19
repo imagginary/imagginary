@@ -9,7 +9,8 @@ export interface LipSyncResult {
 
 class LipSyncService {
   async isAvailable(): Promise<boolean> {
-    return !!(settingsService.getKey('syncsoApiKey') || (process.env.SYNCSO_API_KEY ?? ''));
+    // BYOK key still works; baked-in key presence is checked in main process
+    return !!(settingsService.getKey('syncsoApiKey') || (window as any).electronAPI?.syncsoLipSync);
   }
 
   async generateLipSync(
@@ -21,63 +22,35 @@ class LipSyncService {
       return { error: 'insufficient_credits' };
     }
 
-    const apiKey = settingsService.getKey('syncsoApiKey') || (process.env.SYNCSO_API_KEY ?? '');
-    if (!apiKey) return null;
+    // Read audio file as base64 via IPC
+    onProgress?.(10, 'Uploading to Sync.so…');
+    const audioBase64 = await (window as any).electronAPI.readFileAsBase64(audioPath);
+    if (!audioBase64) return null;
+
+    // Listen for progress events from main process poll loop
+    let cleanupProgress: (() => void) | null = null;
+    if ((window as any).electronAPI?.onCloudProgress) {
+      cleanupProgress = (window as any).electronAPI.onCloudProgress(
+        (data: { handler: string; pct: number; msg: string }) => {
+          if (data.handler === 'syncso-lipsync') onProgress?.(data.pct, data.msg);
+        }
+      );
+    }
 
     try {
-      onProgress?.(10, 'Uploading to Sync.so…');
+      const result = await (window as any).electronAPI.syncsoLipSync({ imageBase64, audioBase64 });
 
-      // Read audio file as base64 via IPC
-      const audioBase64 = await (window as any).electronAPI.readFileAsBase64(audioPath);
-      if (!audioBase64) return null;
-
-      onProgress?.(20, 'Generating lip sync…');
-
-      const res = await fetch('https://api.sync.so/v2/generate', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'lipsync-2',
-          input: [
-            { type: 'video', url: `data:image/png;base64,${imageBase64}` },
-            { type: 'audio', url: `data:audio/wav;base64,${audioBase64}` },
-          ],
-          options: { output_format: 'mp4', sync_mode: 'bounce' },
-        }),
-      });
-
-      if (!res.ok) {
-        console.error('[LipSync] API error:', res.status);
-        return null;
+      if (result?.videoUrl && !result.error) {
+        await licenseService.spendCredits(CREDIT_COSTS.lipSync);
+        return { videoUrl: result.videoUrl, videoData: null };
       }
-
-      const job = await res.json() as { id: string };
-      const jobId = job.id;
-
-      onProgress?.(30, 'Processing…');
-
-      for (let i = 0; i < 60; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const poll = await fetch(`https://api.sync.so/v2/generate/${jobId}`, {
-          headers: { 'x-api-key': apiKey },
-        });
-        const status = await poll.json() as { status: string; outputUrl?: string };
-        const pct = 30 + Math.min(i * 1.5, 60);
-        onProgress?.(pct, `Processing… ${status.status}`);
-        if (status.status === 'completed') {
-          onProgress?.(95, 'Finalising…');
-          licenseService.spendCredits(CREDIT_COSTS.lipSync);
-          return { videoUrl: status.outputUrl ?? '', videoData: null };
-        }
-        if (status.status === 'failed') return null;
-      }
+      console.error('[LipSync] Error from main process:', result?.error);
       return null;
     } catch (err) {
-      console.error('[LipSync] Error:', err);
+      console.error('[LipSync] IPC error:', err);
       return null;
+    } finally {
+      cleanupProgress?.();
     }
   }
 }

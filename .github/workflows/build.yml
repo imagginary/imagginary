@@ -42,6 +42,7 @@ jobs:
 
       - name: Write runtime config
         env:
+          LICENSE_HMAC_SECRET:             ${{ secrets.LICENSE_HMAC_SECRET }}
           DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
           DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
           DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
@@ -50,6 +51,7 @@ jobs:
           DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
+          DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
@@ -127,6 +129,7 @@ jobs:
 
       - name: Write runtime config
         env:
+          LICENSE_HMAC_SECRET:             ${{ secrets.LICENSE_HMAC_SECRET }}
           DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
           DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
           DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
@@ -135,6 +138,7 @@ jobs:
           DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
+          DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
@@ -202,6 +206,7 @@ jobs:
 
       - name: Write runtime config
         env:
+          LICENSE_HMAC_SECRET:             ${{ secrets.LICENSE_HMAC_SECRET }}
           DODO_API_KEY:                    ${{ secrets.DODO_API_KEY }}
           DODO_PRO_CHECKOUT_URL:           ${{ secrets.DODO_PRO_CHECKOUT_URL }}
           DODO_STUDIO_CHECKOUT_URL:        ${{ secrets.DODO_STUDIO_CHECKOUT_URL }}
@@ -210,6 +215,7 @@ jobs:
           DODO_STARTER_CREDITS_URL:        ${{ secrets.DODO_STARTER_CREDITS_URL }}
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
+          DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}

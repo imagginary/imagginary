@@ -1,6 +1,6 @@
 {
   "name": "imagginary",
-  "version": "1.0.39",
+  "version": "1.0.40",
   "description": "Imagginary — local-first AI storyboard generator for filmmakers",
   "main": "public/electron.mjs",
   "scripts": {
@@ -209,6 +209,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
     "@types/three": "^0.184.1",
+    "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.8.0",

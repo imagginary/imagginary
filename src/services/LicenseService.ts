@@ -1,8 +1,8 @@
 import { License, LicenseTier, CreditBalance } from '../types';
 
-const BALANCE_KEY = 'imagginary_credit_balance';
 const VALIDATION_INTERVAL = 24 * 60 * 60 * 1000;
 const BILLING_CYCLE = 30 * 24 * 60 * 60 * 1000;
+const LEGACY_BALANCE_KEY = 'imagginary_credit_balance';
 
 export const CREDIT_POOLS: Record<LicenseTier, number> = {
   pro:       532,
@@ -19,18 +19,51 @@ export const CREDIT_COSTS = {
   turntable:       2,
 };
 
+// In-memory cache of the balance — kept in sync after every async mutation.
+// Sync reads (getBalance, hasCredits) use this cache so React render functions
+// don't need to be async.
+interface BalanceCache {
+  subscriptionCredits: number;
+  topUpCredits: number;
+  lastCreditedAt: number;
+}
+
 class LicenseService {
   private license: License | null = null;
   private loaded = false;
+  private _cache: BalanceCache = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt: 0 };
 
   async load(): Promise<void> {
     if (this.loaded) return;
     this.loaded = true;
     try {
+      // ── One-time migration from localStorage ──────────────────────────────
+      const legacy = localStorage.getItem(LEGACY_BALANCE_KEY);
+      if (legacy) {
+        try {
+          const old = JSON.parse(legacy);
+          await (window as any).electronAPI.setCredits({
+            subscriptionCredits: old.subscriptionCredits ?? 0,
+            topUpCredits:        old.topUpCredits        ?? 0,
+            lastCreditedAt:      old.lastCreditedAt      ?? 0,
+          });
+        } catch { /* ignore migration errors, main-process store wins */ }
+        localStorage.removeItem(LEGACY_BALANCE_KEY);
+      }
+
+      // ── Load balance from main process ────────────────────────────────────
+      const bal = await (window as any).electronAPI.getCredits();
+      this._cache = {
+        subscriptionCredits: bal.subscriptionCredits ?? 0,
+        topUpCredits:        bal.topUpCredits        ?? 0,
+        lastCreditedAt:      bal.lastCreditedAt      ?? 0,
+      };
+
+      // ── Load license ──────────────────────────────────────────────────────
       const stored = await (window as any).electronAPI.getLicense();
       if (stored) {
         this.license = stored as License;
-        this.checkAndAddMonthlyCredits();
+        await this.checkAndAddMonthlyCredits();
         this.maybeRevalidate();
       }
     } catch {
@@ -38,21 +71,18 @@ class LicenseService {
     }
   }
 
-  private checkAndAddMonthlyCredits(): void {
+  private async checkAndAddMonthlyCredits(): Promise<void> {
     if (!this.license || this.getTier() === 'community') return;
-    const balance = this.getBalance();
     const now = Date.now();
-    if (now - balance.lastCreditedAt >= BILLING_CYCLE) {
-      const allocation = CREDIT_POOLS[this.getTier()] ?? 0;
-      const newBalance: CreditBalance = {
-        subscriptionCredits: balance.subscriptionCredits + allocation,
-        topUpCredits: balance.topUpCredits,
-        lastCreditedAt: now,
-        tier: this.getTier(),
-      };
-      localStorage.setItem(BALANCE_KEY, JSON.stringify(newBalance));
-      console.log(`[Credits] Added ${allocation} subscription credits. Total: ${newBalance.subscriptionCredits + newBalance.topUpCredits}`);
-    }
+    if (now - this._cache.lastCreditedAt < BILLING_CYCLE) return;
+    const allocation = CREDIT_POOLS[this.getTier()] ?? 0;
+    this._cache = {
+      subscriptionCredits: this._cache.subscriptionCredits + allocation,
+      topUpCredits:        this._cache.topUpCredits,
+      lastCreditedAt:      now,
+    };
+    await (window as any).electronAPI.setCredits(this._cache);
+    console.log(`[Credits] Added ${allocation} subscription credits. Total: ${this._cache.subscriptionCredits + this._cache.topUpCredits}`);
   }
 
   private maybeRevalidate(): void {
@@ -71,88 +101,70 @@ class LicenseService {
           };
           this.license = updated;
           await (window as any).electronAPI.saveLicense(updated);
-          this.checkAndAddMonthlyCredits();
+          await this.checkAndAddMonthlyCredits();
         } else {
           console.log('[License] Re-validation failed:', result.error, '— downgrading to Community on next launch');
           await (window as any).electronAPI.clearLicense();
         }
       } catch {
         console.log('[License] Re-validation network error — will retry tomorrow');
+        const MAX_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+        if (this.license && Date.now() - (this.license.lastValidatedAt ?? 0) > MAX_GRACE_MS) {
+          await (window as any).electronAPI.clearLicense();
+          this.license = null;
+        }
       }
     }, 2000);
   }
 
+  // Sync read from in-memory cache — safe to call in React render.
   getBalance(): CreditBalance {
-    try {
-      const raw = localStorage.getItem(BALANCE_KEY);
-      if (!raw) return this.initBalance();
-      const balance: CreditBalance = JSON.parse(raw);
-      if (balance.tier !== this.getTier() && this.getTier() !== 'community') {
-        const updated = { ...balance, tier: this.getTier() };
-        localStorage.setItem(BALANCE_KEY, JSON.stringify(updated));
-        return updated;
-      }
-      return balance;
-    } catch {
-      return this.initBalance();
-    }
-  }
-
-  private initBalance(): CreditBalance {
-    const tier = this.getTier();
-    const initial: CreditBalance = {
-      subscriptionCredits: CREDIT_POOLS[tier] ?? 0,
-      topUpCredits: 0,
-      lastCreditedAt: Date.now(),
-      tier,
+    return {
+      subscriptionCredits: this._cache.subscriptionCredits,
+      topUpCredits:        this._cache.topUpCredits,
+      lastCreditedAt:      this._cache.lastCreditedAt,
+      tier:                this.getTier(),
     };
-    localStorage.setItem(BALANCE_KEY, JSON.stringify(initial));
-    return initial;
   }
 
+  // Sync check from cache — UX gate only. Main process enforces via spend-credits.
   hasCredits(cost: number): boolean {
     if (this.getTier() === 'community') return false;
-    const balance = this.getBalance();
-    return (balance.subscriptionCredits + balance.topUpCredits) >= cost;
+    return (this._cache.subscriptionCredits + this._cache.topUpCredits) >= cost;
   }
 
-  spendCredits(cost: number): void {
-    const balance = this.getBalance();
-    let remaining = cost;
-    if (balance.topUpCredits > 0) {
-      const fromTopUp = Math.min(balance.topUpCredits, remaining);
-      balance.topUpCredits -= fromTopUp;
-      remaining -= fromTopUp;
+  async spendCredits(cost: number): Promise<boolean> {
+    const result = await (window as any).electronAPI.spendCredits(cost);
+    if (result?.success) {
+      // Mirror the main-process spend logic to keep the cache accurate:
+      // topUp is spent first, then subscription.
+      const newTopUp = Math.max(0, this._cache.topUpCredits - cost);
+      const newSub = (result.remaining as number) - newTopUp;
+      this._cache = {
+        subscriptionCredits: Math.max(0, newSub),
+        topUpCredits:        newTopUp,
+        lastCreditedAt:      this._cache.lastCreditedAt,
+      };
     }
-    if (remaining > 0) {
-      balance.subscriptionCredits = Math.max(0, balance.subscriptionCredits - remaining);
-    }
-    localStorage.setItem(BALANCE_KEY, JSON.stringify(balance));
+    return result?.success ?? false;
   }
 
-  addTopUpCredits(amount: number): void {
-    const balance = this.getBalance();
-    balance.topUpCredits += amount;
-    localStorage.setItem(BALANCE_KEY, JSON.stringify(balance));
+  async addTopUpCredits(amount: number): Promise<void> {
+    this._cache = {
+      ...this._cache,
+      topUpCredits: this._cache.topUpCredits + amount,
+    };
+    await (window as any).electronAPI.setCredits(this._cache);
   }
 
-  getRemainingCredits(): number {
-    const balance = this.getBalance();
-    return balance.subscriptionCredits + balance.topUpCredits;
-  }
-
-  getSubscriptionCredits(): number {
-    return this.getBalance().subscriptionCredits;
-  }
-
-  getTopUpCredits(): number {
-    return this.getBalance().topUpCredits;
-  }
-
-  getDaysUntilNextCredit(): number {
-    const balance = this.getBalance();
-    const nextCredit = balance.lastCreditedAt + BILLING_CYCLE;
-    return Math.max(0, Math.ceil((nextCredit - Date.now()) / (24 * 60 * 60 * 1000)));
+  private async initBalance(): Promise<void> {
+    const tier = this.getTier();
+    this._cache = {
+      subscriptionCredits: CREDIT_POOLS[tier] ?? 0,
+      topUpCredits:        0,
+      lastCreditedAt:      Date.now(),
+    };
+    await (window as any).electronAPI.setCredits(this._cache);
   }
 
   async validate(key: string): Promise<{ valid: boolean; error?: string }> {
@@ -170,8 +182,7 @@ class LicenseService {
           lastValidatedAt: Date.now(),
           lastCreditedAt: Date.now(),
         };
-        localStorage.removeItem(BALANCE_KEY);
-        this.initBalance();
+        await this.initBalance();
       }
       return result;
     } catch (err: any) {
@@ -181,7 +192,8 @@ class LicenseService {
 
   async deactivate(): Promise<void> {
     this.license = null;
-    localStorage.removeItem(BALANCE_KEY);
+    await (window as any).electronAPI.resetCredits();
+    this._cache = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt: 0 };
     await (window as any).electronAPI.clearLicense();
   }
 
@@ -203,6 +215,18 @@ class LicenseService {
   getLicense(): License | null { return this.license; }
   getEmail(): string | null { return this.license?.email ?? null; }
   getTotalCredits(): number { return CREDIT_POOLS[this.getTier()] ?? 0; }
+
+  getRemainingCredits(): number {
+    return this._cache.subscriptionCredits + this._cache.topUpCredits;
+  }
+
+  getSubscriptionCredits(): number { return this._cache.subscriptionCredits; }
+  getTopUpCredits(): number { return this._cache.topUpCredits; }
+
+  getDaysUntilNextCredit(): number {
+    const nextCredit = this._cache.lastCreditedAt + BILLING_CYCLE;
+    return Math.max(0, Math.ceil((nextCredit - Date.now()) / (24 * 60 * 60 * 1000)));
+  }
 }
 
 export const licenseService = new LicenseService();
