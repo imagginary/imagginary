@@ -236,9 +236,7 @@ export interface VideoValidationResult {
 
 export interface AppSettings {
   // Phase 9 — Turntable 3D model picker
-  turntable3dProvider: 'meshy' | 'tripo' | '3daistudio';
-  meshyApiKey: string;
-  tripoApiKey: string;
+  turntable3dProvider: '3daistudio';
   threeDaiApiKey: string;
   // Phase 9 — Character consistency (cloud IPAdapter)
   falApiKey: string;
@@ -255,9 +253,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  turntable3dProvider: 'meshy',
-  meshyApiKey: '',
-  tripoApiKey: '',
+  turntable3dProvider: '3daistudio',
   threeDaiApiKey: '',
   falApiKey: '',
   supabaseUrl: '',

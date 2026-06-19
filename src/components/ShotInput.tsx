@@ -22,6 +22,8 @@ interface ShotInputProps {
   isGenerating: boolean;
   serviceStatus: ServiceStatus;
   disabled: boolean;
+  estimatedSeconds?: number | null;
+  onUpgradeClick?: () => void;
 }
 
 function ConstraintSelect({
@@ -62,6 +64,8 @@ export default function ShotInput({
   isGenerating,
   serviceStatus,
   disabled,
+  estimatedSeconds,
+  onUpgradeClick,
 }: ShotInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -138,6 +142,19 @@ export default function ShotInput({
       <p className="mt-2 text-[10px] text-gray-700">
         Press Enter to generate · Describe shot type, subject, setting, mood, lighting
       </p>
+      {estimatedSeconds && estimatedSeconds > 60 && (
+        <p className="text-[9px] text-amber-700 mt-1">
+          ⏱ Estimated {Math.round(estimatedSeconds / 60)}–{Math.round(estimatedSeconds / 60) + 3} min on your hardware
+          {onUpgradeClick && (
+            <>
+              {' · '}
+              <button className="underline" onClick={onUpgradeClick}>
+                Pro generates in ~10s via cloud
+              </button>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

@@ -10,25 +10,6 @@ interface Props {
   onClose: () => void;
 }
 
-type Provider = AppSettings['turntable3dProvider'];
-
-const PROVIDER_OPTIONS: { value: Provider; label: string; cost: string }[] = [
-  { value: 'meshy',      label: 'Meshy',        cost: '$0.15 / gen' },
-  { value: 'tripo',      label: 'Tripo',        cost: '$0.15 / gen' },
-  { value: '3daistudio', label: '3D AI Studio', cost: '$0.10–0.20 / gen' },
-];
-
-const PROVIDER_PLACEHOLDER: Record<Provider, string> = {
-  meshy:       'msy_xxxxxxxx',
-  tripo:       'xxxxxxxx',
-  '3daistudio': 'xxxxxxxx',
-};
-
-const PROVIDER_LINK: Record<Provider, string> = {
-  meshy:       'https://meshy.ai',
-  tripo:       'https://tripo3d.ai',
-  '3daistudio': 'https://3daistudio.com',
-};
 
 function ProBadge() {
   return (
@@ -116,15 +97,9 @@ export default function SettingsModal({ isPro, onClose }: Props) {
   const [checkpointSaved, setCheckpointSaved] = useState(false);
   const [proModelDownloading, setProModelDownloading] = useState(false);
   const [proModelPct, setProModelPct] = useState(0);
-  const [provider, setProvider] = useState<Provider>(settings.turntable3dProvider);
   const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseUrl);
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings.supabaseAnonKey);
   const [supabaseSaved, setSupabaseSaved] = useState(false);
-  const [providerKey, setProviderKey] = useState(() => {
-    const s = settingsService.get();
-    return { meshy: s.meshyApiKey, tripo: s.tripoApiKey, '3daistudio': s.threeDaiApiKey };
-  });
-  const [providerKeySaved, setProviderKeySaved] = useState(false);
   const [absDownloading, setAbsDownloading] = useState(false);
   const [absPct, setAbsPct] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -176,21 +151,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
     });
     setSupabaseSaved(true);
     setTimeout(() => setSupabaseSaved(false), 2000);
-  }
-
-  function handleProviderChange(p: Provider) {
-    setProvider(p);
-    settingsService.save({ turntable3dProvider: p });
-    setProviderKeySaved(false);
-  }
-
-  function handleProviderKeySave() {
-    const keyField: Record<string, keyof AppSettings> = {
-      meshy: 'meshyApiKey', tripo: 'tripoApiKey', '3daistudio': 'threeDaiApiKey',
-    };
-    settingsService.save({ [keyField[provider]]: providerKey[provider as keyof typeof providerKey] } as Partial<AppSettings>);
-    setProviderKeySaved(true);
-    setTimeout(() => setProviderKeySaved(false), 2000);
   }
 
   return (
@@ -371,67 +331,11 @@ export default function SettingsModal({ isPro, onClose }: Props) {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">3D Character Turntable</p>
-              <ProBadge />
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 border border-gray-700 font-medium uppercase tracking-wide">Coming Soon</span>
             </div>
-            {isPro ? (
-              <>
-                {/* Provider dropdown */}
-                <div className="space-y-1.5">
-                  <label className="text-xs text-gray-400">Provider</label>
-                  <select
-                    value={provider}
-                    onChange={(e) => handleProviderChange(e.target.value as Provider)}
-                    className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 outline-none transition-colors"
-                  >
-                    {PROVIDER_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label} — {o.cost}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-gray-500 leading-relaxed">
-                    3D mesh + thumbnail — best angle selected automatically per shot
-                  </p>
-                </div>
-
-                {/* API key */}
-                {(
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs text-gray-400">{PROVIDER_OPTIONS.find(o => o.value === provider)?.label} API Key</label>
-                      {PROVIDER_LINK[provider] && (
-                        <button
-                          onClick={() => (window as any).electronAPI?.openExternal(PROVIDER_LINK[provider])}
-                          className="flex items-center gap-1 text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors"
-                        >
-                          Get API key <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        value={providerKey[provider as keyof typeof providerKey] ?? ''}
-                        onChange={(e) => {
-                          setProviderKey((prev) => ({ ...prev, [provider]: e.target.value }));
-                          setProviderKeySaved(false);
-                        }}
-                        placeholder={PROVIDER_PLACEHOLDER[provider]}
-                        className="flex-1 bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
-                      />
-                      <button
-                        onClick={handleProviderKeySave}
-                        className="px-3 py-2 rounded text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors whitespace-nowrap"
-                      >
-                        {providerKeySaved ? 'Saved ✓' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <ProGate />
-            )}
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Generate a 360° turntable from any panel image. Configuration options will appear here when this feature launches.
+            </p>
           </div>
 
           <div className="border-t border-gray-800" />

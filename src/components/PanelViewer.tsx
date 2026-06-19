@@ -669,7 +669,7 @@ export default function PanelViewer({
                   ? 'bg-red-600/20 text-red-400 border border-red-600/40 hover:bg-red-600/30'
                   : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
               }`}
-              title="Paint a region to edit"
+              title="Director's Eye — paint over any area and describe the change"
             >
               <Pencil className="w-3 h-3" />
               {editMode ? 'Editing…' : 'Edit Region'}
@@ -685,11 +685,9 @@ export default function PanelViewer({
                   : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
               }`}
               title={
-                comfyuiConnected && !hasClip
-                  ? 'Requires Wan 2.2 — see README for setup guide'
-                  : hasClip
-                    ? 'View or regenerate motion clip'
-                    : 'Generate a motion clip from this panel'
+                hasClip
+                  ? 'View or regenerate the motion clip for this panel'
+                  : 'Animate this panel with camera movement and motion. Pro uses Kling cloud (~60s). Local needs 24GB GPU.'
               }
             >
               <Film className="w-3 h-3" />
@@ -705,7 +703,7 @@ export default function PanelViewer({
                   ? 'text-violet-400 hover:text-violet-300 hover:bg-violet-900/20'
                   : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
               }`}
-              title="Open Pose Engine to generate a skeleton-guided animation"
+              title="Pose Engine — describe a character action and generate the exact pose"
             >
               <Sparkles className="w-3 h-3" />
               {hasPoseClip ? 'Pose Ready' : 'Pose'}
@@ -716,7 +714,7 @@ export default function PanelViewer({
             <button
               onClick={() => onOpenMotionLibrary?.()}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-              title="Browse and apply pre-cleared motion clips from the library"
+              title="Motion Library — apply a pre-built cinematic motion to this panel"
             >
               <Film className="w-3 h-3" />
               Motion Library
@@ -727,7 +725,7 @@ export default function PanelViewer({
             <button
               onClick={() => onOpenVideoTransfer?.()}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-              title="Upload a reference video and transfer its pose sequence to a character (Pro+)"
+              title="Video Transfer — upload any video and apply its movement to your character (Pro)"
             >
               <Upload className="w-3 h-3" />
               Video Transfer
@@ -742,7 +740,7 @@ export default function PanelViewer({
                   ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/20'
                   : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
               }`}
-              title="Generate character dialogue audio with Coqui TTS (Pro)"
+              title="Voice Layer — generate character dialogue with AI voice synthesis (Pro)"
             >
               <Mic className="w-3 h-3" />
               {panel?.voicePath ? 'Voice Ready' : 'Voice'}
@@ -764,7 +762,7 @@ export default function PanelViewer({
             <button
               onClick={handleOpenHistory}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors ml-auto"
-              title={isPro ? 'View revision history' : 'Revision history — Pro feature'}
+              title="Generation history — browse and restore previous versions of this panel"
             >
               <History className="w-3 h-3" />
               History ({revisions.length})

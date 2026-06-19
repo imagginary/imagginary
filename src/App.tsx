@@ -188,6 +188,7 @@ export default function App() {
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [sessionUsers, setSessionUsers] = useState<Array<{ userId: string; userName: string }>>([]);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [estimatedGenerationSeconds, setEstimatedGenerationSeconds] = useState<number | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPath = useRef<string | null>(null);
 
@@ -212,6 +213,18 @@ export default function App() {
   useEffect(() => {
     settingsService.load();
     licenseService.load().then(() => setLicense(licenseService.getLicense()));
+  }, []);
+
+  // ── Hardware speed estimate (for slow-machine hint in ShotInput) ──────────────
+  useEffect(() => {
+    (window as any).electronAPI?.getSystemMemory?.().then((info: any) => {
+      if (info.speedCategory === 'slow') {
+        const estimate = info.isAppleSilicon
+          ? info.totalGB >= 8 ? 180 : 300
+          : 240;
+        setEstimatedGenerationSeconds(estimate);
+      }
+    }).catch(() => {});
   }, []);
 
   // ── Service status polling ───────────────────────────────────────────────────
@@ -1329,6 +1342,8 @@ export default function App() {
             isGenerating={isGenerating}
             serviceStatus={serviceStatus}
             disabled={false}
+            estimatedSeconds={licenseService.isPro() ? null : estimatedGenerationSeconds}
+            onUpgradeClick={() => setShowActivateLicense(true)}
           />
         </div>
 

@@ -1663,10 +1663,22 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   shell.openPath(folderPath);
 });
 
-ipcMain.handle('get-system-memory', () => ({
-  totalMem: os.totalmem(),
-  freeMem: os.freemem(),
-}));
+ipcMain.handle('get-system-memory', () => {
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const cpuCount = os.cpus().length;
+  const cpuModel = os.cpus()[0]?.model ?? 'Unknown CPU';
+  const platform = process.platform;
+  const isAppleSilicon = platform === 'darwin' && process.arch === 'arm64';
+  const totalGB = totalMem / (1024 ** 3);
+
+  let speedCategory = 'slow';
+  if (isAppleSilicon && totalGB >= 16) speedCategory = 'fast';
+  else if (isAppleSilicon && totalGB >= 8) speedCategory = 'medium';
+  else if (totalGB >= 32) speedCategory = 'medium';
+
+  return { totalMem, freeMem, cpuCount, cpuModel, platform, isAppleSilicon, totalGB, speedCategory };
+});
 
 ipcMain.handle('open-external', (_event, url) => {
   shell.openExternal(url);

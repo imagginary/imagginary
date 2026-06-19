@@ -70,10 +70,15 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
   const [projectTitle, setProjectTitle] = useState('Untitled Project');
   const [shotDescription, setShotDescription] = useState('');
   const [visible, setVisible] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<any>(null);
   const autoAdvancedRef = useRef(false);
 
   // Fade in on mount
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
+  useEffect(() => {
+    (window as any).electronAPI?.getSystemMemory?.().then(setSystemInfo).catch(() => {});
+  }, []);
 
   // Auto-advance from step 1 to step 2 if both services become green
   // (covers manual-start and the case where autoStarted races with service polling)
@@ -287,6 +292,20 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
                 rows={5}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-3 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-imagginary-500 transition-colors resize-none"
               />
+              {systemInfo?.speedCategory === 'slow' && (
+                <div className="p-3 bg-amber-900/20 border border-amber-800/40 rounded-lg">
+                  <p className="text-[11px] text-amber-400 font-medium mb-1">
+                    ⚡ Panel generation may be slow on your machine
+                  </p>
+                  <p className="text-[10px] text-amber-600 leading-relaxed">
+                    {systemInfo.isAppleSilicon
+                      ? `Your Mac has ${Math.round(systemInfo.totalGB)}GB unified memory. Generation works best with 16GB+.`
+                      : `Your machine has ${Math.round(systemInfo.totalGB)}GB RAM without a detected GPU. Each panel may take 3–8 minutes.`
+                    }
+                    {' '}Pro users generate panels in under 10 seconds via cloud — no GPU needed.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-3 mt-auto">
                 <button
                   onClick={() => setStep(2)}
