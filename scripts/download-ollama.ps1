@@ -7,7 +7,8 @@ $OllamaVersion = "v0.9.0"
 Write-Host "Downloading Ollama $OllamaVersion for Windows..."
 New-Item -ItemType Directory -Force -Path resources\ollama\win | Out-Null
 Invoke-WebRequest `
-  -Uri "https://github.com/ollama/ollama/releases/download/$OllamaVersion/ollama-windows-amd64.exe" `
-  -OutFile "resources\ollama\win\ollama.exe"
+  -Uri "https://github.com/ollama/ollama/releases/download/$OllamaVersion/ollama-windows-amd64.zip" `
+  -OutFile "$env:TEMP\ollama-win.zip"
+Expand-Archive "$env:TEMP\ollama-win.zip" -DestinationPath resources\ollama\win -Force
 
 Write-Host "Done. resources\ollama\win\ollama.exe is ready."

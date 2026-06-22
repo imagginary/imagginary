@@ -27,13 +27,15 @@ jobs:
 
       - name: Download Ollama binary (Windows)
         # Pin version here when upgrading Ollama: https://github.com/ollama/ollama/releases
+        # ollama-windows-amd64.zip contains ollama.exe + DLL runner files
         shell: pwsh
         run: |
           $OLLAMA_VERSION = "v0.9.0"
           New-Item -ItemType Directory -Force -Path resources/ollama/win
           New-Item -ItemType Directory -Force -Path resources/ollama/mac
           New-Item -ItemType Directory -Force -Path resources/bin
-          Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-windows-amd64.exe" -OutFile "resources/ollama/win/ollama.exe"
+          Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-windows-amd64.zip" -OutFile "$env:TEMP\ollama-win.zip"
+          Expand-Archive "$env:TEMP\ollama-win.zip" -DestinationPath resources/ollama/win -Force
 
       - name: Download ffmpeg (win64)
         shell: pwsh
@@ -100,11 +102,12 @@ jobs:
 
       - name: Download Ollama binary (macOS)
         # Pin version here when upgrading Ollama: https://github.com/ollama/ollama/releases
+        # ollama-darwin.tgz contains the ollama binary + libggml-*.dylib GPU runner files
         run: |
           OLLAMA_VERSION="v0.9.0"
           mkdir -p resources/ollama/mac resources/ollama/win resources/bin
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-darwin" \
-            -o resources/ollama/mac/ollama
+          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-darwin.tgz" \
+            | tar -xz -C resources/ollama/mac
           chmod +x resources/ollama/mac/ollama
 
       - name: Download ffmpeg (arm64)
