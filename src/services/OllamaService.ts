@@ -4,7 +4,7 @@ import { getOllamaUrl } from '../config/services';
 import { settingsService } from './SettingsService';
 import { licenseService } from './LicenseService';
 
-const FALLBACK_MODELS = ['qwen2.5:1.5b', 'qwen2.5:7b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
+const FALLBACK_MODELS = ['qwen2.5:7b', 'qwen2.5:3b', 'qwen2.5:1.5b', 'llama3.2:3b', 'llama3.1:8b', 'mistral:7b', 'phi3:mini'];
 
 // Ollama inference temperature settings — tuned per use case
 const TEMP_STRUCTURED = 0.1;  // Deterministic structured JSON output (character names, classification)
@@ -189,7 +189,7 @@ export class OllamaService {
 
   async parseShot(description: string): Promise<StructuredPrompt> {
     // Pro/Studio: try DeepSeek cloud first for better quality
-    if (licenseService.isPro()) {
+    if (licenseService.isPro() || licenseService.isStudio()) {
       const cloudResult = await this.parseWithDeepSeek(description, SYSTEM_PROMPT);
       if (cloudResult) return cloudResult;
     }
@@ -285,7 +285,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
     const systemPrompt = this.buildScreenplaySystemPrompt();
 
     // Pro/Studio: try DeepSeek cloud first for better quality
-    if (licenseService.isPro()) {
+    if (licenseService.isPro() || licenseService.isStudio()) {
       const cloudResult = await this.parseScreenplayWithDeepSeek(scriptText, systemPrompt);
       if (cloudResult && cloudResult.length > 0) return cloudResult;
     }
@@ -326,47 +326,13 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
     description: string,
     systemPrompt: string,
   ): Promise<StructuredPrompt | null> {
-    const apiKey = settingsService.getKey('deepseekApiKey') || (process.env.DEEPSEEK_API_KEY ?? '');
-    if (!apiKey) return null;
-
     try {
-      const res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: `Parse this shot description and return structured JSON.
-REMEMBER: If you see INT./EXT. followed by a time token (NIGHT/DAY/DAWN etc), use that exact time — never override it.
-Only include characters explicitly mentioned. Match mood to genre.
-
-${description}
-
-Return ONLY valid JSON, no explanation, no markdown:`,
-            },
-          ],
-          temperature: TEMP_BALANCED,
-          max_tokens: 500,
-          response_format: { type: 'json_object' },
-        }),
-      });
-
-      if (!res.ok) {
-        console.warn('[DeepSeek] API error:', res.status);
+      const result = await (window as any).electronAPI?.deepSeekShot?.({ description, systemPrompt });
+      if (!result || result.error) {
+        if (result?.error) console.warn('[DeepSeek] Parse error — falling back to Ollama:', result.error);
         return null;
       }
-
-      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) return null;
-
-      return this.validateStructuredPrompt(JSON.parse(content));
+      return this.validateStructuredPrompt(JSON.parse(result.content));
     } catch (err) {
       console.warn('[DeepSeek] Parse error — falling back to Ollama:', err);
       return null;
@@ -390,42 +356,16 @@ Return ONLY valid JSON, no explanation, no markdown:`,
     scriptText: string,
     systemPrompt: string,
   ): Promise<ScriptShot[] | null> {
-    const apiKey = settingsService.getKey('deepseekApiKey') || (process.env.DEEPSEEK_API_KEY ?? '');
-    if (!apiKey) return null;
-
     try {
-      const res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: `Parse this screenplay and return a JSON array of shots:\n\n${scriptText}\n\nReturn ONLY a valid JSON array, no explanation, no markdown.`,
-            },
-          ],
-          temperature: TEMP_BALANCED,
-          max_tokens: 2000,
-          response_format: { type: 'json_object' },
-        }),
-      });
-
-      if (!res.ok) return null;
-
-      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) return null;
-
-      const parsed = JSON.parse(content);
+      const result = await (window as any).electronAPI?.deepSeekScreenplay?.({ scriptText, systemPrompt });
+      if (!result || result.error) {
+        if (result?.error) console.warn('[DeepSeek] Screenplay parse error — falling back to Ollama:', result.error);
+        return null;
+      }
+      const parsed = JSON.parse(result.content);
       // DeepSeek may return { shots: [...] } or directly [...]
       const shots = Array.isArray(parsed) ? parsed : (parsed.shots ?? parsed.result ?? []);
       if (!Array.isArray(shots) || shots.length === 0) return null;
-
       return this.parseScreenplayJSON(JSON.stringify(shots), scriptText);
     } catch (err) {
       console.warn('[DeepSeek] Screenplay parse error — falling back to Ollama:', err);

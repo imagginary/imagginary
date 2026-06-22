@@ -287,7 +287,7 @@ function attemptPullOnce(loadingWin, model) {
  * Only surfaces the Retry button after both have exhausted auto-retries.
  * Never returns until one model is confirmed present.
  */
-async function ensureOllamaModel(loadingWin, preferredModel = 'qwen2.5:1.5b') {
+async function ensureOllamaModel(loadingWin, preferredModel = 'qwen2.5:3b') {
   const FALLBACK_MODEL = 'qwen2.5:1.5b';
   const MAX_AUTO = 3;
 
@@ -1101,9 +1101,9 @@ async function startBundledServices(loadingWin) {
   const ollamaOk = await startOllama(loadingWin);
   sendLoadingUpdate(loadingWin, ollamaOk ? 'Ollama ready.' : 'Ollama unavailable — continuing.', 20);
 
-  // 2. AI model (qwen2.5:1.5b) — ensureOllamaModel polls for ~/.ollama/id_ed25519 internally
+  // 2. AI model (qwen2.5:3b) — ensureOllamaModel polls for ~/.ollama/id_ed25519 internally
   if (ollamaOk) {
-    await ensureOllamaModel(loadingWin, 'qwen2.5:1.5b');
+    await ensureOllamaModel(loadingWin, 'qwen2.5:3b');
   }
   sendLoadingUpdate(loadingWin, 'AI model ready.', 54);
 
