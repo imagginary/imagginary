@@ -25,12 +25,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create placeholder Ollama binary dirs
+      - name: Download Ollama binary (Windows)
+        # Pin version here when upgrading Ollama: https://github.com/ollama/ollama/releases
         shell: pwsh
         run: |
+          $OLLAMA_VERSION = "v0.9.0"
           New-Item -ItemType Directory -Force -Path resources/ollama/win
           New-Item -ItemType Directory -Force -Path resources/ollama/mac
           New-Item -ItemType Directory -Force -Path resources/bin
+          Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-windows-amd64.exe" -OutFile "resources/ollama/win/ollama.exe"
 
       - name: Download ffmpeg (win64)
         shell: pwsh
@@ -95,8 +98,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create placeholder Ollama binary dirs
-        run: mkdir -p resources/ollama/mac resources/ollama/win resources/bin
+      - name: Download Ollama binary (macOS)
+        # Pin version here when upgrading Ollama: https://github.com/ollama/ollama/releases
+        run: |
+          OLLAMA_VERSION="v0.9.0"
+          mkdir -p resources/ollama/mac resources/ollama/win resources/bin
+          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-darwin" \
+            -o resources/ollama/mac/ollama
+          chmod +x resources/ollama/mac/ollama
 
       - name: Download ffmpeg (arm64)
         run: |
@@ -191,7 +200,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create placeholder Ollama binary dirs
+      - name: Create placeholder Ollama dirs (Linux build skips Ollama)
         run: mkdir -p resources/ollama/win resources/ollama/mac resources/bin
 
       - name: Install Linux build deps

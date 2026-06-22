@@ -120,7 +120,11 @@ function sendLoadingUpdate(win, status, progress) {
 function getOllamaBinary() {
   if (!app.isPackaged) return 'ollama'; // dev: use system ollama from PATH
   const ext = process.platform === 'win32' ? '.exe' : '';
-  return path.join(process.resourcesPath, 'bin', `ollama${ext}`);
+  const bundled = path.join(process.resourcesPath, 'bin', `ollama${ext}`);
+  if (fs.existsSync(bundled)) return bundled;
+  // Fallback: system ollama in PATH (handles corrupt/missing bundled binary gracefully)
+  console.warn('[Ollama] Bundled binary not found at', bundled, '— falling back to system ollama');
+  return `ollama${ext}`;
 }
 
 async function startOllama(loadingWin) {

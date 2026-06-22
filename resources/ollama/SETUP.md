@@ -1,29 +1,22 @@
 # Ollama Binary Setup
 
-Place the Ollama binaries here before running `npm run dist`.
+These binaries are NOT committed to git. CI downloads them automatically during the build.
 
-## Mac (arm64 + x64)
+For local development builds, run:
 
-Download the Ollama CLI binary from https://ollama.ai/download/mac and place it at:
+    npm run setup:ollama
 
-    resources/ollama/mac/ollama
+This downloads `ollama-darwin` (macOS universal binary) into `resources/ollama/mac/ollama`.
+Windows devs: run `scripts/download-ollama.ps1` in PowerShell instead.
 
-Make it executable:
+## Version pin
 
-    chmod +x resources/ollama/mac/ollama
+The pinned version is set in both `scripts/download-ollama.sh` and `.github/workflows/build.yml`.
+Update `OLLAMA_VERSION` in both places when bumping: https://github.com/ollama/ollama/releases
 
-The same binary works for both arm64 and x64 (it is a universal binary).
+## How it works
 
-## Windows (x64)
-
-Download the Ollama CLI binary from https://ollama.ai/download/windows and place it at:
-
-    resources/ollama/win/ollama.exe
-
-## Notes
-
-- These binaries are NOT committed to git (listed in .gitignore).
-- The binaries are bundled into the app's Resources/bin/ directory at build time
-  via the `extraResources` field in package.json.
-- In dev mode (npm run dev), Aeon uses the system `ollama` from PATH instead.
-- The binary is spawned with `ollama serve` on app startup in packaged mode.
+- The binary is bundled into `Contents/Resources/bin/ollama` at build time via the
+  `extraResources` field in `package.json`.
+- In packaged mode the app spawns `ollama serve` using the bundled binary.
+- In dev mode (`npm run dev`) the app uses the system `ollama` from PATH instead.
