@@ -3113,18 +3113,48 @@ ipcMain.handle('install-coqui-tts', async (event) => {
       : path.join(comfyPath, 'venv', 'bin', 'pip');
     const pipBin = fs.existsSync(venvPip) ? venvPip : 'pip3';
 
+    // Log which pip and Python version we're using
+    const pythonBin = pipBin.replace(/pip(\.exe)?$/, 'python').replace(/pip3$/, 'python3');
+    console.log('[Coqui install] pip binary:', pipBin);
+    console.log('[Coqui install] pip exists:', fs.existsSync(pipBin));
     sendProgress(`Using pip: ${pipBin}`);
+
+    // Log Python version to catch py3.13 compat issues
+    try {
+      const pyVerProc = spawn(pythonBin, ['--version'], { stdio: 'pipe' });
+      pyVerProc.stdout.on('data', (d) => console.log('[Coqui install] Python version:', d.toString().trim()));
+      pyVerProc.stderr.on('data', (d) => console.log('[Coqui install] Python version:', d.toString().trim()));
+    } catch { /* non-fatal */ }
+
+    const stdoutLines = [];
+    const stderrLines = [];
 
     const result = await new Promise((resolve) => {
       const proc = spawn(pipBin, ['install', 'TTS'], { stdio: 'pipe' });
 
-      proc.stdout.on('data', (d) => sendProgress(d.toString().trim()));
-      proc.stderr.on('data', (d) => sendProgress(d.toString().trim()));
+      proc.stdout.on('data', (d) => {
+        const text = d.toString().trim();
+        stdoutLines.push(text);
+        console.log('[Coqui install stdout]', text);
+        sendProgress(text);
+      });
+      proc.stderr.on('data', (d) => {
+        const text = d.toString().trim();
+        stderrLines.push(text);
+        console.error('[Coqui install stderr]', text);
+        sendProgress(text);
+      });
 
       proc.on('close', (code) => {
-        resolve({ success: code === 0 });
+        console.log(`[Coqui install] pip exited with code ${code}`);
+        if (code !== 0) {
+          const lastErr = stderrLines.slice(-10).join('\n');
+          console.error('[Coqui install] FAILED. Last stderr:\n', lastErr);
+        }
+        resolve({ success: code === 0, exitCode: code, stderr: stderrLines.slice(-20).join('\n') });
       });
       proc.on('error', (err) => {
+        console.error('[Coqui install] spawn error:', err.message);
         resolve({ success: false, error: err.message });
       });
     });
