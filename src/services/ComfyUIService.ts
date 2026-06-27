@@ -493,7 +493,22 @@ export class ComfyUIService {
             });
             if (result?.imageUrl && !result.error) {
               await licenseService.spendCredits(CREDIT_COSTS.characterPanel);
-              return result.imageUrl;
+              // Fetch and convert to base64 data URL so downstream callers
+              // (uploadImageToComfyUI, animatePanel, etc.) always receive a
+              // consistent data:image/... format — never a raw https:// URL.
+              try {
+                const fetchRes = await fetch(result.imageUrl);
+                const blob = await fetchRes.blob();
+                const b64 = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+                return b64;
+              } catch {
+                // If CDN fetch fails, fall through to local generation
+              }
             }
           }
         } catch {
@@ -594,7 +609,11 @@ export class ComfyUIService {
       body: formData,
     });
 
-    if (!res.ok) throw new Error('Could not process image. Please try again.');
+    if (!res.ok) {
+      const body = await res.text().catch(() => '(unreadable)');
+      console.error('[ComfyUI] uploadImageToComfyUI failed:', res.status, body);
+      throw new Error(`Could not process image (${res.status}): ${body}`);
+    }
     const data = await res.json() as { name: string };
     return data.name;
   }
