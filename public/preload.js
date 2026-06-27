@@ -134,13 +134,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   validateTopup: (code) => ipcRenderer.invoke('validate-topup', code),
   openTopupCheckout: (pack) => ipcRenderer.invoke('open-topup-checkout', pack),
 
-  // Phase 15 — Voice Layer (Coqui TTS)
+  // Phase 15 — Voice Layer (edge-tts)
   checkCoquiTTS: () => ipcRenderer.invoke('check-coqui-tts'),
   getVoiceLibrary: () => ipcRenderer.invoke('get-voice-library'),
   getVoiceSample: (voiceId) => ipcRenderer.invoke('get-voice-sample', voiceId),
   generateVoice: (params) => ipcRenderer.invoke('generate-voice', params),
   installCoquiTTS: () => ipcRenderer.invoke('install-coqui-tts'),
   cloneVoice: (params) => ipcRenderer.invoke('clone-voice', params),
+  getEdgeTtsVoices: () => ipcRenderer.invoke('get-edge-tts-voices'),
+  previewVoice: (params) => ipcRenderer.invoke('preview-voice', params),
   readFileAsBase64: (filePath) => ipcRenderer.invoke('read-file-as-base64', filePath),
   onJoinSharedProject: (cb) => {
     const handler = (_event, data) => cb(data);

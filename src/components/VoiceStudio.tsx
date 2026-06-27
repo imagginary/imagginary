@@ -1,27 +1,26 @@
 /**
- * Phase 15 — VoiceStudio
+ * Phase 15 — VoiceStudio (edge-tts)
  *
- * Modal for generating character dialogue audio via Coqui TTS.
+ * Modal for generating character dialogue audio via edge-tts.
  *
  * Flow:
- *   1. Auto-check if Coqui TTS is installed — show install prompt if not
- *   2. Voice library grid — 8 built-in profiles, filterable by style/gender
- *   3. Select voice → preview sample
- *   4. Pick character + write dialogue
- *   5. Generate → WAV output with inline playback + download
- *   Studio only: Upload 5-min sample to clone a custom voice
+ *   1. Auto-check if edge-tts is installed — show install prompt if not
+ *   2. Featured voices grid — 11 curated profiles (multilingual)
+ *   3. "Browse all voices" expands the full ~320-voice catalogue with
+ *      search, language filter, gender filter, and live preview
+ *   4. Select voice → write dialogue → Generate → WAV output
+ *   Studio only: Voice cloning panel
  *
- * Pro: library voices. Studio: custom cloning.
- * Community users see upgrade prompt.
+ * Pro: all library voices. Studio: custom cloning. Community: upgrade gate.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   X, Play, Pause, Download, Upload, Loader2, Mic, MicOff,
-  CheckCircle, AlertCircle, Lock, Volume2, RefreshCw,
+  CheckCircle, AlertCircle, Lock, Volume2, RefreshCw, Globe, ChevronDown, ChevronUp, Search,
 } from 'lucide-react';
 import { Character, Panel } from '../types';
-import { VoiceProfile, voiceService, CoquiCheckResult } from '../services/VoiceService';
+import { VoiceProfile, EdgeVoice, voiceService, EdgeTtsCheckResult } from '../services/VoiceService';
 import { lipSyncService } from '../services/LipSyncService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -39,9 +38,36 @@ interface VoiceStudioProps {
 
 type InstallState = 'checking' | 'available' | 'not-installed' | 'installing' | 'failed';
 
+// ── Language grouping ─────────────────────────────────────────────────────────
+
+const LANG_GROUPS: Record<string, string[]> = {
+  'English': ['en-US', 'en-GB', 'en-AU', 'en-CA', 'en-IN', 'en-IE', 'en-NZ', 'en-ZA', 'en-HK', 'en-SG', 'en-PH', 'en-KE', 'en-NG', 'en-TZ'],
+  'Indian Languages': ['hi-IN', 'ta-IN', 'te-IN', 'ml-IN', 'kn-IN', 'mr-IN', 'gu-IN', 'bn-IN', 'ur-IN'],
+  'European': ['de-DE', 'de-AT', 'de-CH', 'fr-FR', 'fr-BE', 'fr-CA', 'fr-CH', 'es-ES', 'es-MX', 'es-US', 'it-IT', 'pt-BR', 'pt-PT', 'nl-NL', 'nl-BE', 'pl-PL', 'ru-RU', 'sv-SE', 'nb-NO', 'da-DK', 'fi-FI', 'cs-CZ', 'ro-RO', 'sk-SK', 'hu-HU', 'hr-HR', 'uk-UA', 'bg-BG', 'el-GR', 'tr-TR', 'ca-ES'],
+  'Asian': ['zh-CN', 'zh-HK', 'zh-TW', 'ja-JP', 'ko-KR', 'id-ID', 'th-TH', 'vi-VN', 'ms-MY', 'fil-PH'],
+  'Middle East & Africa': ['ar-SA', 'ar-EG', 'ar-AE', 'he-IL', 'fa-IR', 'ur-PK', 'sw-KE', 'af-ZA', 'am-ET', 'so-SO'],
+  'Other': [],
+};
+
+function getLocaleGroup(locale: string): string {
+  for (const [group, locales] of Object.entries(LANG_GROUPS)) {
+    if (group === 'Other') continue;
+    if (locales.some((l) => locale.startsWith(l.split('-').slice(0, 2).join('-')))) return group;
+  }
+  return 'Other';
+}
+
+// ── Helper: flag emoji from locale ───────────────────────────────────────────
+
+function localeFlag(locale: string): string {
+  const country = locale.split('-')[1] ?? '';
+  if (!country || country.length !== 2) return '🌐';
+  return country.toUpperCase().replace(/./g, (c) => String.fromCodePoint(c.charCodeAt(0) + 0x1f1a5));
+}
+
 // ── Style tag pill ────────────────────────────────────────────────────────────
 
-function StyleTag({ label }: { label: string }) {
+function Tag({ label }: { label: string }) {
   return (
     <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-700 text-gray-400 uppercase tracking-wide">
       {label}
@@ -49,7 +75,7 @@ function StyleTag({ label }: { label: string }) {
   );
 }
 
-// ── Voice card ────────────────────────────────────────────────────────────────
+// ── Featured voice card ───────────────────────────────────────────────────────
 
 function VoiceCard({
   profile,
@@ -75,28 +101,61 @@ function VoiceCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-gray-100 truncate">{profile.name}</p>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">{localeFlag(profile.language)}</span>
+            <p className="text-xs font-semibold text-gray-100 truncate">{profile.name}</p>
+          </div>
           <p className="text-[10px] text-gray-500 mt-0.5 leading-relaxed line-clamp-2">{profile.description}</p>
           <div className="flex flex-wrap gap-1 mt-1.5">
-            <StyleTag label={profile.style} />
-            <StyleTag label={profile.gender} />
-            <StyleTag label={profile.age} />
-            {profile.accent !== 'american' && <StyleTag label={profile.accent} />}
+            <Tag label={profile.gender} />
+            <Tag label={profile.language} />
           </div>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onPreview(); }}
           className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-          title="Preview voice sample"
+          title="Preview voice"
         >
           {isPreviewing ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
         </button>
       </div>
-      {selected && (
-        <div className="absolute top-1.5 right-10">
-          <div className="w-2 h-2 rounded-full bg-imagginary-500" />
-        </div>
-      )}
+      {selected && <div className="absolute top-1.5 right-10 w-2 h-2 rounded-full bg-imagginary-500" />}
+    </div>
+  );
+}
+
+// ── Browser voice row ─────────────────────────────────────────────────────────
+
+function BrowserRow({
+  voice,
+  isSelected,
+  isPreviewing,
+  onSelect,
+  onPreview,
+}: {
+  voice: EdgeVoice;
+  isSelected: boolean;
+  isPreviewing: boolean;
+  onSelect: () => void;
+  onPreview: () => void;
+}) {
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+      isSelected ? 'border-imagginary-500/60 bg-imagginary-900/15' : 'border-transparent hover:bg-gray-800/50'
+    }`} onClick={onSelect}>
+      <span className="text-base shrink-0">{localeFlag(voice.locale)}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-gray-200 truncate">{voice.name}</p>
+        <p className="text-[10px] text-gray-600">{voice.locale} · {voice.gender}</p>
+      </div>
+      {isSelected && <CheckCircle className="w-3.5 h-3.5 text-imagginary-400 shrink-0" />}
+      <button
+        onClick={(e) => { e.stopPropagation(); onPreview(); }}
+        className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+        title="Preview"
+      >
+        {isPreviewing ? <Pause className="w-2.5 h-2.5" /> : <Play className="w-2.5 h-2.5" />}
+      </button>
     </div>
   );
 }
@@ -111,10 +170,7 @@ function ProgressBar({ pct, label }: { pct: number; label: string }) {
         <span>{Math.round(pct)}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-imagginary-500 transition-all duration-300"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="h-full rounded-full bg-imagginary-500 transition-all duration-300" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -134,9 +190,23 @@ export default function VoiceStudio({
 }: VoiceStudioProps) {
   const [installState, setInstallState] = useState<InstallState>('checking');
   const [installProgress, setInstallProgress] = useState('');
+
+  // Featured voices (from index.json)
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  // Tracks which edgeVoice name is "active" for generation (may come from browser)
+  const [activeEdgeVoice, setActiveEdgeVoice] = useState<string | null>(null);
+  const [activeVoiceLabel, setActiveVoiceLabel] = useState<string>('');
+
+  const [previewingId, setPreviewingId] = useState<string | null>(null); // voice name or profile id
+
+  // Voice browser
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [allVoices, setAllVoices] = useState<EdgeVoice[]>([]);
+  const [browserSearch, setBrowserSearch] = useState('');
+  const [browserLang, setBrowserLang] = useState('All');
+  const [browserGender, setBrowserGender] = useState('All');
+
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(
     panel.voiceCharacterId ?? (panel.characters[0] ?? null),
   );
@@ -146,13 +216,14 @@ export default function VoiceStudio({
   const [genError, setGenError] = useState<string | null>(null);
   const [generatedWavPath, setGeneratedWavPath] = useState<string | null>(panel.voicePath ?? null);
   const [isPlayingResult, setIsPlayingResult] = useState(false);
+
   // Studio: voice cloning
   const [cloneFile, setCloneFile] = useState<File | null>(null);
   const [cloneName, setCloneName] = useState('');
   const [isCloning, setIsCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
 
-  // Lip sync state
+  // Lip sync
   const [lipSyncAvailable, setLipSyncAvailable] = useState(false);
   const [isGeneratingLipSync, setIsGeneratingLipSync] = useState(false);
   const [lipSyncProgress, setLipSyncProgress] = useState({ pct: 0, message: '' });
@@ -162,26 +233,33 @@ export default function VoiceStudio({
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloneInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Boot: check Coqui TTS + lip sync availability ──────────────────────────
+  // ── Boot ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    voiceService.checkCoquiTTS().then((res: CoquiCheckResult) => {
+    voiceService.checkCoquiTTS().then((res: EdgeTtsCheckResult) => {
       setInstallState(res.available ? 'available' : 'not-installed');
     });
     lipSyncService.isAvailable().then(setLipSyncAvailable);
   }, []);
 
-  // ── Load voice library once Coqui is available ──────────────────────────────
-
   useEffect(() => {
     if (installState !== 'available') return;
     voiceService.getAvailableVoices().then((v) => {
       setVoices(v);
-      if (v.length > 0 && !selectedVoiceId) setSelectedVoiceId(v[0].id);
+      if (v.length > 0 && !selectedVoiceId) {
+        setSelectedVoiceId(v[0].id);
+        setActiveEdgeVoice(v[0].edgeVoice);
+        setActiveVoiceLabel(v[0].name);
+      }
     });
   }, [installState]);
 
-  // ── Cleanup audio on unmount ────────────────────────────────────────────────
+  // Load full catalogue when browser opens for the first time
+  useEffect(() => {
+    if (showBrowser && allVoices.length === 0) {
+      voiceService.getAllEdgeVoices().then(setAllVoices);
+    }
+  }, [showBrowser]);
 
   useEffect(() => {
     return () => {
@@ -196,50 +274,76 @@ export default function VoiceStudio({
     setInstallState('installing');
     setInstallProgress('Starting install…');
     const ok = await voiceService.installCoquiTTS((msg) => setInstallProgress(msg));
-    if (ok) {
-      setInstallState('available');
-    } else {
-      setInstallState('failed');
-    }
+    setInstallState(ok ? 'available' : 'failed');
   }, []);
 
-  // ── Preview sample ──────────────────────────────────────────────────────────
+  // ── Preview any edge-tts voice by name ─────────────────────────────────────
 
-  const handlePreview = useCallback(async (voiceId: string) => {
-    if (previewingId === voiceId) {
+  const handlePreviewEdgeVoice = useCallback(async (edgeVoice: string, trackingKey: string) => {
+    if (previewingId === trackingKey) {
       previewAudioRef.current?.pause();
       setPreviewingId(null);
       return;
     }
+    previewAudioRef.current?.pause();
+    setPreviewingId(trackingKey);
     try {
-      previewAudioRef.current?.pause();
-      const samplePath = await voiceService.previewVoice(voiceId);
-      const audio = new Audio(`file://${samplePath}`);
+      const path = await voiceService.previewVoice(edgeVoice);
+      const audio = new Audio(`file://${path}`);
       previewAudioRef.current = audio;
       audio.onended = () => setPreviewingId(null);
       audio.play();
-      setPreviewingId(voiceId);
     } catch {
-      // sample not available yet — silently ignore
+      setPreviewingId(null);
     }
   }, [previewingId]);
+
+  // ── Select featured profile ─────────────────────────────────────────────────
+
+  const handleSelectProfile = useCallback((profile: VoiceProfile) => {
+    setSelectedVoiceId(profile.id);
+    setActiveEdgeVoice(profile.edgeVoice);
+    setActiveVoiceLabel(profile.name);
+  }, []);
+
+  // ── Select voice from browser ───────────────────────────────────────────────
+
+  const handleSelectBrowserVoice = useCallback((voice: EdgeVoice) => {
+    setSelectedVoiceId(null); // deselect featured
+    setActiveEdgeVoice(voice.name);
+    setActiveVoiceLabel(voice.name);
+  }, []);
+
+  // ── Browser filter ──────────────────────────────────────────────────────────
+
+  const filteredBrowserVoices = useMemo(() => {
+    if (allVoices.length === 0) return [];
+    const search = browserSearch.toLowerCase();
+    return allVoices.filter((v) => {
+      if (browserGender !== 'All' && v.gender.toLowerCase() !== browserGender.toLowerCase()) return false;
+      if (browserLang !== 'All') {
+        const group = getLocaleGroup(v.locale);
+        if (group !== browserLang) return false;
+      }
+      if (search && !v.name.toLowerCase().includes(search) && !v.locale.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [allVoices, browserSearch, browserLang, browserGender]);
 
   // ── Generate ────────────────────────────────────────────────────────────────
 
   const handleGenerate = useCallback(async () => {
-    if (!selectedVoiceId || !dialogue.trim()) return;
-    const profile = voices.find((v) => v.id === selectedVoiceId);
-    if (!profile) return;
-
+    if (!activeEdgeVoice || !dialogue.trim()) return;
     setGenState('generating');
     setGenProgress(0);
     setGenError(null);
 
+    const fakeProfile = { id: 'dynamic', name: activeVoiceLabel, description: '', gender: 'male' as const, language: '', edgeVoice: activeEdgeVoice };
     try {
       const wavPath = await voiceService.generateVoice(
         dialogue.trim(),
-        selectedVoiceId,
-        profile,
+        activeEdgeVoice.replace(/[^a-z0-9_-]/gi, '-'), // safe voiceId for filename
+        fakeProfile,
         (pct) => setGenProgress(pct),
       );
       setGeneratedWavPath(wavPath);
@@ -248,9 +352,9 @@ export default function VoiceStudio({
       setGenError(err instanceof Error ? err.message : 'Generation failed');
       setGenState('error');
     }
-  }, [selectedVoiceId, dialogue, voices]);
+  }, [activeEdgeVoice, activeVoiceLabel, dialogue]);
 
-  // ── Playback ─────────────────────────────────────────────────────────────────
+  // ── Playback ────────────────────────────────────────────────────────────────
 
   const handlePlayResult = useCallback(() => {
     if (!generatedWavPath) return;
@@ -270,16 +374,16 @@ export default function VoiceStudio({
     if (!generatedWavPath) return;
     const a = document.createElement('a');
     a.href = `file://${generatedWavPath}`;
-    a.download = `voice_${selectedVoiceId ?? 'output'}.wav`;
+    a.download = `voice_${activeEdgeVoice ?? 'output'}.wav`;
     a.click();
-  }, [generatedWavPath, selectedVoiceId]);
+  }, [generatedWavPath, activeEdgeVoice]);
 
   const handleConfirm = useCallback(() => {
     if (!generatedWavPath) return;
     onComplete(generatedWavPath, selectedCharacterId);
   }, [generatedWavPath, selectedCharacterId, onComplete]);
 
-  // ── Lip sync ──────────────────────────────────────────────────────────────────
+  // ── Lip sync ────────────────────────────────────────────────────────────────
 
   async function handleGenerateLipSync() {
     if (!panel.voicePath || !panel.generatedImageData) return;
@@ -293,15 +397,13 @@ export default function VoiceStudio({
     );
     setIsGeneratingLipSync(false);
     if (result?.error === 'insufficient_credits') {
-      setLipSyncError("Not enough credits for lip sync (16 credits needed). Top up your credits or wait for next month's allocation.");
+      setLipSyncError("Not enough credits for lip sync (16 credits needed). Top up or wait for next month's allocation.");
       return;
     }
     if (result?.videoUrl) onLipSyncComplete(result.videoUrl);
   }
 
-  const handleRegenerateLipSync = handleGenerateLipSync;
-
-  // ── Voice clone ──────────────────────────────────────────────────────────────
+  // ── Voice clone ─────────────────────────────────────────────────────────────
 
   const handleClone = useCallback(async () => {
     if (!cloneFile || !cloneName.trim()) return;
@@ -310,7 +412,7 @@ export default function VoiceStudio({
     try {
       const profile = await voiceService.cloneVoice(cloneFile.path ?? cloneFile.name, cloneName.trim());
       setVoices((prev) => [...prev, profile]);
-      setSelectedVoiceId(profile.id);
+      handleSelectProfile(profile);
       setCloneFile(null);
       setCloneName('');
     } catch (err) {
@@ -319,8 +421,6 @@ export default function VoiceStudio({
       setIsCloning(false);
     }
   }, [cloneFile, cloneName]);
-
-  const selectedVoice = voices.find((v) => v.id === selectedVoiceId) ?? null;
 
   // ── Community gate ───────────────────────────────────────────────────────────
 
@@ -342,7 +442,7 @@ export default function VoiceStudio({
           <Lock className="w-10 h-10 text-imagginary-500/60 mx-auto mb-4" />
           <p className="text-base font-semibold text-gray-100 mb-2">Voice Studio — Pro Feature</p>
           <p className="text-sm text-gray-500 mb-6">
-            Generate character dialogue audio with 8 professional voice profiles.
+            Generate character dialogue with 300+ multilingual voices.
             Custom voice cloning available on Studio.
           </p>
           <button className="px-5 py-2.5 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors">
@@ -353,6 +453,8 @@ export default function VoiceStudio({
     );
   }
 
+  // ── Main UI ──────────────────────────────────────────────────────────────────
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl flex flex-col w-full max-w-3xl max-h-[90vh] mx-4 overflow-hidden">
@@ -362,9 +464,7 @@ export default function VoiceStudio({
           <div className="flex items-center gap-2">
             <Mic className="w-4 h-4 text-imagginary-400" />
             <span className="text-sm font-semibold text-gray-100">Voice Studio</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-imagginary-900/40 text-imagginary-400 border border-imagginary-800/40 font-medium uppercase tracking-wide">
-              Pro
-            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-imagginary-900/40 text-imagginary-400 border border-imagginary-800/40 font-medium uppercase tracking-wide">Pro</span>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
             <X className="w-4 h-4" />
@@ -373,47 +473,49 @@ export default function VoiceStudio({
 
         <div className="flex-1 overflow-y-auto min-h-0">
 
-          {/* ── Install prompt ──────────────────────────────────────────────── */}
+          {/* ── Checking ───────────────────────────────────────────────────── */}
           {installState === 'checking' && (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
-              <p className="text-sm text-gray-500">Checking Coqui TTS…</p>
+              <p className="text-sm text-gray-500">Checking edge-tts…</p>
             </div>
           )}
 
+          {/* ── Not installed ───────────────────────────────────────────────── */}
           {installState === 'not-installed' && (
             <div className="flex flex-col items-center justify-center py-16 gap-4 px-6">
               <MicOff className="w-10 h-10 text-gray-600" />
-              <p className="text-sm font-semibold text-gray-200">Coqui TTS not installed</p>
+              <p className="text-sm font-semibold text-gray-200">edge-tts not installed</p>
               <p className="text-xs text-gray-500 text-center max-w-sm">
-                Voice generation requires Coqui TTS (~500 MB). It installs into the existing
-                ComfyUI Python environment — no separate Python needed.
+                Voice generation uses Microsoft Edge TTS (~5 MB). Works on any Python version — no GPU required.
               </p>
               <button
                 onClick={handleInstall}
                 className="px-5 py-2.5 bg-imagginary-600 hover:bg-imagginary-500 text-black text-sm font-semibold rounded-lg transition-colors"
               >
-                Install Coqui TTS (~500 MB)
+                Install edge-tts
               </button>
             </div>
           )}
 
+          {/* ── Installing ─────────────────────────────────────────────────── */}
           {installState === 'installing' && (
             <div className="flex flex-col items-center justify-center py-16 gap-4 px-8">
               <Loader2 className="w-6 h-6 text-imagginary-400 animate-spin" />
-              <p className="text-sm font-medium text-gray-200">Installing Coqui TTS…</p>
+              <p className="text-sm font-medium text-gray-200">Installing edge-tts…</p>
               <p className="text-xs text-gray-500 font-mono text-center max-w-md">{installProgress}</p>
             </div>
           )}
 
+          {/* ── Install failed ─────────────────────────────────────────────── */}
           {installState === 'failed' && (
             <div className="flex flex-col items-center justify-center py-16 gap-4 px-6">
               <AlertCircle className="w-8 h-8 text-red-500" />
               <p className="text-sm font-semibold text-gray-200">Install failed</p>
               <p className="text-xs text-gray-500 text-center max-w-sm">
                 Run{' '}
-                <code className="font-mono bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">pip install TTS</code>
-                {' '}in your ComfyUI Python environment, then reopen Voice Studio.
+                <code className="font-mono bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">pip install edge-tts</code>
+                {' '}then reopen Voice Studio.
               </p>
               <button onClick={handleInstall} className="flex items-center gap-1.5 text-xs text-imagginary-400 hover:text-imagginary-300">
                 <RefreshCw className="w-3 h-3" /> Try again
@@ -421,13 +523,13 @@ export default function VoiceStudio({
             </div>
           )}
 
-          {/* ── Main UI (Coqui available) ───────────────────────────────────── */}
+          {/* ── Main UI ────────────────────────────────────────────────────── */}
           {installState === 'available' && (
             <div className="p-5 space-y-5">
 
-              {/* Voice library grid */}
+              {/* ── Featured Voices ─────────────────────────────────────────── */}
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Voice Library</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Featured Voices</p>
                 {voices.length === 0 ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-5 h-5 text-gray-600 animate-spin" />
@@ -439,8 +541,8 @@ export default function VoiceStudio({
                         key={v.id}
                         profile={v}
                         selected={selectedVoiceId === v.id}
-                        onSelect={() => setSelectedVoiceId(v.id)}
-                        onPreview={() => handlePreview(v.id)}
+                        onSelect={() => handleSelectProfile(v)}
+                        onPreview={() => handlePreviewEdgeVoice(v.edgeVoice, v.id)}
                         isPreviewing={previewingId === v.id}
                       />
                     ))}
@@ -448,11 +550,88 @@ export default function VoiceStudio({
                 )}
               </div>
 
-              {/* Character + dialogue */}
+              {/* ── Browse All Voices ───────────────────────────────────────── */}
+              <div className="rounded-lg border border-gray-800 bg-gray-900/30 overflow-hidden">
+                <button
+                  onClick={() => setShowBrowser((b) => !b)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5" />
+                    Browse all 300+ voices
+                    {activeEdgeVoice && !selectedVoiceId && (
+                      <span className="ml-2 text-[10px] text-imagginary-400 font-normal">
+                        Selected: {activeVoiceLabel}
+                      </span>
+                    )}
+                  </div>
+                  {showBrowser ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+
+                {showBrowser && (
+                  <div className="border-t border-gray-800 p-4 space-y-3">
+                    {/* Filters */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="relative flex-1 min-w-36">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-600" />
+                        <input
+                          value={browserSearch}
+                          onChange={(e) => setBrowserSearch(e.target.value)}
+                          placeholder="Search by name or locale…"
+                          className="w-full pl-7 pr-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs text-gray-200 placeholder-gray-600 outline-none focus:border-imagginary-500"
+                        />
+                      </div>
+                      <select
+                        value={browserLang}
+                        onChange={(e) => setBrowserLang(e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 outline-none focus:border-imagginary-500"
+                      >
+                        <option value="All">All languages</option>
+                        {Object.keys(LANG_GROUPS).map((g) => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                      <select
+                        value={browserGender}
+                        onChange={(e) => setBrowserGender(e.target.value)}
+                        className="bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 outline-none focus:border-imagginary-500"
+                      >
+                        <option value="All">All genders</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                      </select>
+                    </div>
+
+                    {/* Voice list */}
+                    {allVoices.length === 0 ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="w-5 h-5 text-gray-600 animate-spin" />
+                      </div>
+                    ) : filteredBrowserVoices.length === 0 ? (
+                      <p className="text-xs text-gray-600 text-center py-4">No voices match your filters.</p>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto space-y-0.5 pr-1">
+                        {filteredBrowserVoices.map((v) => (
+                          <BrowserRow
+                            key={v.name}
+                            voice={v}
+                            isSelected={activeEdgeVoice === v.name}
+                            isPreviewing={previewingId === v.name}
+                            onSelect={() => handleSelectBrowserVoice(v)}
+                            onPreview={() => handlePreviewEdgeVoice(v.name, v.name)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-gray-700 text-right">
+                      {filteredBrowserVoices.length} of {allVoices.length} voices
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Dialogue ────────────────────────────────────────────────── */}
               <div className="space-y-3">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Dialogue</p>
 
-                {/* Character selector */}
                 {characters.length > 0 && (
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-500 shrink-0">Speaking character</label>
@@ -469,7 +648,6 @@ export default function VoiceStudio({
                   </div>
                 )}
 
-                {/* Dialogue textarea */}
                 <textarea
                   value={dialogue}
                   onChange={(e) => setDialogue(e.target.value)}
@@ -478,33 +656,25 @@ export default function VoiceStudio({
                   className="w-full bg-gray-800 border border-gray-700 focus:border-imagginary-500 rounded-lg px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none resize-none transition-colors"
                 />
 
-                {/* Generate button */}
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleGenerate}
-                    disabled={!selectedVoiceId || !dialogue.trim() || genState === 'generating'}
+                    disabled={!activeEdgeVoice || !dialogue.trim() || genState === 'generating'}
                     className="flex items-center gap-2 px-4 py-2 bg-imagginary-600 hover:bg-imagginary-500 text-black text-xs font-semibold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {genState === 'generating' ? (
-                      <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
-                    ) : (
-                      <><Volume2 className="w-3 h-3" /> Generate Voice</>
-                    )}
+                    {genState === 'generating'
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+                      : <><Volume2 className="w-3 h-3" /> Generate Voice</>}
                   </button>
-
-                  {selectedVoice && (
+                  {activeEdgeVoice && (
                     <p className="text-[10px] text-gray-600">
-                      Using: <span className="text-gray-400">{selectedVoice.name}</span>
+                      Using: <span className="text-gray-400">{activeVoiceLabel}</span>
                     </p>
                   )}
                 </div>
 
-                {/* Generation progress */}
-                {genState === 'generating' && (
-                  <ProgressBar pct={genProgress} label="Synthesising speech…" />
-                )}
+                {genState === 'generating' && <ProgressBar pct={genProgress} label="Synthesising speech…" />}
 
-                {/* Error */}
                 {genState === 'error' && genError && (
                   <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-950/30 border border-red-800/40">
                     <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
@@ -513,7 +683,7 @@ export default function VoiceStudio({
                 )}
               </div>
 
-              {/* Generated result */}
+              {/* ── Result ──────────────────────────────────────────────────── */}
               {generatedWavPath && genState === 'done' && (
                 <div className="rounded-lg border border-gray-700 bg-gray-900 p-4 space-y-3">
                   <div className="flex items-center gap-2">
@@ -522,47 +692,28 @@ export default function VoiceStudio({
                   </div>
                   <p className="text-[10px] text-gray-600 font-mono truncate">{generatedWavPath}</p>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={handlePlayResult}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
-                    >
+                    <button onClick={handlePlayResult} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors">
                       {isPlayingResult ? <><Pause className="w-3 h-3" /> Pause</> : <><Play className="w-3 h-3" /> Play</>}
                     </button>
-                    <button
-                      onClick={handleDownload}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
-                    >
+                    <button onClick={handleDownload} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors">
                       <Download className="w-3 h-3" /> Download WAV
                     </button>
-                    <button
-                      onClick={handleConfirm}
-                      className="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors"
-                    >
+                    <button onClick={handleConfirm} className="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors">
                       <CheckCircle className="w-3 h-3" /> Save to Panel
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Studio: Voice cloning */}
+              {/* ── Studio: Voice cloning ────────────────────────────────────── */}
               {isStudio && (
                 <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4 space-y-3">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Custom Voice Clone</p>
                     <span className="text-[9px] px-1 py-0.5 rounded bg-violet-900/30 text-violet-400 border border-violet-800/30 font-medium uppercase">Studio</span>
                   </div>
-                  <p className="text-[10px] text-gray-600">
-                    Upload a 5-minute minimum audio sample to fine-tune a custom voice.
-                  </p>
-
-                  <input
-                    ref={cloneInputRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={(e) => setCloneFile(e.target.files?.[0] ?? null)}
-                  />
-
+                  <p className="text-[10px] text-gray-600">Upload a 5-minute minimum audio sample to clone a custom voice.</p>
+                  <input ref={cloneInputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => setCloneFile(e.target.files?.[0] ?? null)} />
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => cloneInputRef.current?.click()}
@@ -571,7 +722,6 @@ export default function VoiceStudio({
                       <Upload className="w-3 h-3" />
                       {cloneFile ? cloneFile.name : 'Upload Voice Sample'}
                     </button>
-
                     {cloneFile && (
                       <>
                         <input
@@ -592,14 +742,11 @@ export default function VoiceStudio({
                       </>
                     )}
                   </div>
-
-                  {cloneError && (
-                    <p className="text-[10px] text-red-400">{cloneError}</p>
-                  )}
+                  {cloneError && <p className="text-[10px] text-red-400">{cloneError}</p>}
                 </div>
               )}
 
-              {/* Phase 15 Pt2 — Lip Sync */}
+              {/* ── Lip Sync ─────────────────────────────────────────────────── */}
               {panel.voicePath ? (
                 lipSyncAvailable ? (
                   <div className="space-y-2">
@@ -612,21 +759,14 @@ export default function VoiceStudio({
                     ) : panel.lipSyncPath ? (
                       <div className="space-y-1.5">
                         <p className="text-[10px] text-green-500">Lip sync ready</p>
-                        <button onClick={handleRegenerateLipSync} className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
-                          Regenerate
-                        </button>
+                        <button onClick={handleGenerateLipSync} className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">Regenerate</button>
                       </div>
                     ) : (
                       <>
-                        <button
-                          onClick={handleGenerateLipSync}
-                          className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors"
-                        >
+                        <button onClick={handleGenerateLipSync} className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors">
                           Generate Lip Sync
                         </button>
-                        {lipSyncError && (
-                          <p className="text-[10px] text-red-400 mt-1">{lipSyncError}</p>
-                        )}
+                        {lipSyncError && <p className="text-[10px] text-red-400 mt-1">{lipSyncError}</p>}
                       </>
                     )}
                   </div>
@@ -634,12 +774,7 @@ export default function VoiceStudio({
                   <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/30 p-4 text-center space-y-2">
                     <p className="text-xs font-semibold text-gray-500">Lip Sync</p>
                     <p className="text-[10px] text-gray-600">Add your Sync.so API key in Settings to enable lip sync.</p>
-                    <button
-                      onClick={onOpenSettings}
-                      className="text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors"
-                    >
-                      Open Settings →
-                    </button>
+                    <button onClick={onOpenSettings} className="text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors">Open Settings →</button>
                   </div>
                 )
               ) : (

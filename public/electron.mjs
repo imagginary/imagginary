@@ -2957,26 +2957,46 @@ function resolveVenvPython() {
 }
 
 /**
- * Check whether Coqui TTS is importable in the ComfyUI venv.
+ * Resolve the edge-tts binary: ComfyUI venv first, then system PATH.
+ */
+function resolveEdgeTtsBin() {
+  const isWin = process.platform === 'win32';
+  const venvBin = isWin
+    ? path.join(os.homedir(), 'ComfyUI', 'venv', 'Scripts', 'edge-tts.exe')
+    : path.join(os.homedir(), 'ComfyUI', 'venv', 'bin', 'edge-tts');
+  if (fs.existsSync(venvBin)) return venvBin;
+  return 'edge-tts'; // fall back to system PATH (e.g. anaconda3)
+}
+
+/**
+ * Resolve the bundled ffmpeg binary.
+ */
+function resolveFfmpegBin() {
+  const platformBinary = process.platform === 'win32' ? 'ffmpeg-win.exe'
+    : process.platform === 'darwin' ? 'ffmpeg-mac'
+    : 'ffmpeg-linux';
+  const bundled = path.join(process.resourcesPath ?? '', 'bin', platformBinary);
+  if (fs.existsSync(bundled)) return bundled;
+  return 'ffmpeg'; // fall back to system PATH
+}
+
+/**
+ * Check whether edge-tts is accessible.
  */
 ipcMain.handle('check-coqui-tts', async () => {
   try {
-    const pythonBin = resolveVenvPython();
-    const version = await new Promise((resolve) => {
-      const proc = spawn(pythonBin, ['-c', 'import TTS; print(TTS.__version__)'], { stdio: 'pipe' });
+    const bin = resolveEdgeTtsBin();
+    const ok = await new Promise((resolve) => {
+      const proc = spawn(bin, ['--version'], { stdio: 'pipe' });
       let out = '';
       proc.stdout.on('data', (d) => { out += d.toString(); });
-      proc.on('close', (code) => {
-        resolve(code === 0 ? out.trim() : null);
-      });
+      proc.stderr.on('data', (d) => { out += d.toString(); });
+      proc.on('close', (code) => resolve(code === 0 ? out.trim() : null));
       proc.on('error', () => resolve(null));
     });
-    if (version) {
-      return { available: true, version };
-    }
-    return { available: false, installCommand: 'pip install TTS' };
+    return ok ? { available: true, version: ok } : { available: false };
   } catch {
-    return { available: false, installCommand: 'pip install TTS' };
+    return { available: false };
   }
 });
 
@@ -3004,12 +3024,14 @@ ipcMain.handle('get-voice-library', async () => {
 
 /**
  * Return the path to a pre-recorded sample WAV for the given voice ID.
+ * Falls back to a live edge-tts preview if no static file exists.
  */
 ipcMain.handle('get-voice-sample', async (_event, voiceId) => {
   if (!voiceId || typeof voiceId !== 'string') {
     return { success: false, error: 'Invalid voice ID' };
   }
   try {
+    // Try static bundled samples first (legacy)
     const candidates = [
       path.join(__dirname, '..', 'resources', 'voices', 'samples', `${voiceId}.wav`),
       path.join(app.getAppPath(), 'resources', 'voices', 'samples', `${voiceId}.wav`),
@@ -3025,15 +3047,13 @@ ipcMain.handle('get-voice-sample', async (_event, voiceId) => {
 });
 
 /**
- * Run Coqui TTS to synthesise speech from text.
- * Streams progress events back to the renderer.
- *
- * Uses: python -m TTS --text "..." --model_name "..." [--speaker_idx "..."] --out_path output.wav
+ * Generate speech via edge-tts, then convert MP3 → WAV via bundled ffmpeg.
+ * Streams voice-progress events back to the renderer.
  */
 ipcMain.handle('generate-voice', async (event, params) => {
-  const { text, voiceId, modelName, speakerId } = params ?? {};
-  if (!text || !voiceId) {
-    return { success: false, error: 'text and voiceId are required' };
+  const { text, voiceId, edgeVoice } = params ?? {};
+  if (!text || !voiceId || !edgeVoice) {
+    return { success: false, error: 'text, voiceId, and edgeVoice are required' };
   }
 
   const sendProgress = (pct) => {
@@ -3042,62 +3062,128 @@ ipcMain.handle('generate-voice', async (event, params) => {
 
   try {
     sendProgress(5);
-    const pythonBin = resolveVenvPython();
 
-    // Output to app data dir
-    const appDataDir = app.getPath('userData');
-    const voiceDir = path.join(appDataDir, 'voices');
+    const voiceDir = path.join(app.getPath('userData'), 'voices');
     fs.mkdirSync(voiceDir, { recursive: true });
-    const outPath = path.join(voiceDir, `voice_${voiceId}_${Date.now()}.wav`);
+    const ts = Date.now();
+    const mp3Path = path.join(voiceDir, `voice_${voiceId}_${ts}.mp3`);
+    const wavPath = path.join(voiceDir, `voice_${voiceId}_${ts}.wav`);
 
-    const args = [
-      '-m', 'TTS',
-      '--text', text,
-      '--model_name', modelName ?? 'tts_models/en/vctk/vits',
-      '--out_path', outPath,
-    ];
-    if (speakerId) args.push('--speaker_idx', speakerId);
+    const edgeTtsBin = resolveEdgeTtsBin();
+    console.log('[Voice] edge-tts bin:', edgeTtsBin, '| voice:', edgeVoice);
+    sendProgress(10);
 
-    sendProgress(15);
-    console.log('[Voice] Running:', pythonBin, args.slice(0, 6).join(' '), '…');
-
-    const result = await new Promise((resolve) => {
-      const proc = spawn(pythonBin, args, { stdio: 'pipe' });
+    // Step 1 — synthesise to MP3
+    const ttsResult = await new Promise((resolve) => {
+      const proc = spawn(edgeTtsBin, [
+        '--voice', edgeVoice,
+        '--text', text,
+        '--write-media', mp3Path,
+      ], { stdio: 'pipe' });
       let stderr = '';
-      let progressTick = 20;
-
-      proc.stderr.on('data', (d) => {
-        stderr += d.toString();
-        // Coqui prints progress to stderr; emit rough incremental ticks
-        if (progressTick < 90) {
-          progressTick = Math.min(90, progressTick + 5);
-          sendProgress(progressTick);
-        }
-      });
-
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
       proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outPath)) {
-          resolve({ success: true, wavPath: outPath });
-        } else {
-          const errMsg = stderr.split('\n').filter(Boolean).slice(-3).join(' ') || 'TTS process failed';
-          resolve({ success: false, error: errMsg });
-        }
+        resolve(code === 0 ? null : (stderr.split('\n').filter(Boolean).slice(-3).join(' ') || 'edge-tts failed'));
       });
-
-      proc.on('error', (err) => {
-        resolve({ success: false, error: err.message });
-      });
+      proc.on('error', (err) => resolve(err.message));
     });
 
+    if (ttsResult) return { success: false, error: ttsResult };
+    sendProgress(55);
+
+    // Step 2 — convert MP3 → WAV (22050 Hz mono, as expected by lip-sync)
+    const ffmpegBin = resolveFfmpegBin();
+    const ffmpegResult = await new Promise((resolve) => {
+      const proc = spawn(ffmpegBin, [
+        '-y', '-i', mp3Path,
+        '-ar', '22050', '-ac', '1',
+        wavPath,
+      ], { stdio: 'pipe' });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        resolve(code === 0 && fs.existsSync(wavPath) ? null : (stderr.slice(-200) || 'ffmpeg conversion failed'));
+      });
+      proc.on('error', (err) => resolve(err.message));
+    });
+
+    // Cleanup MP3 regardless of outcome
+    try { fs.unlinkSync(mp3Path); } catch { /* ignore */ }
+
+    if (ffmpegResult) return { success: false, error: ffmpegResult };
     sendProgress(100);
-    return result;
+    return { success: true, wavPath };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
 
 /**
- * Install Coqui TTS into the ComfyUI venv via pip.
+ * Return the full edge-tts voice catalogue (~320 voices) as structured JSON.
+ */
+ipcMain.handle('get-edge-tts-voices', async () => {
+  try {
+    const bin = resolveEdgeTtsBin();
+    const stdout = await new Promise((resolve, reject) => {
+      const proc = spawn(bin, ['--list-voices'], { stdio: 'pipe' });
+      let out = '';
+      proc.stdout.on('data', (d) => { out += d.toString(); });
+      proc.on('close', (code) => code === 0 ? resolve(out) : reject(new Error('edge-tts --list-voices failed')));
+      proc.on('error', reject);
+    });
+
+    // Parse the tabular output (Name, Gender, ContentCategories, VoicePersonalities)
+    const lines = stdout.trim().split('\n');
+    const voices = [];
+    for (let i = 2; i < lines.length; i++) { // skip header + separator
+      const cols = lines[i].split(/\s{2,}/);
+      if (cols.length < 2) continue;
+      const name = cols[0].trim();
+      const gender = cols[1].trim();
+      if (!name || !name.includes('-')) continue;
+      // locale = first two BCP-47 segments, e.g. "en-US" from "en-US-GuyNeural"
+      const parts = name.split('-');
+      const locale = parts.length >= 2 ? `${parts[0]}-${parts[1]}` : parts[0];
+      voices.push({ name, gender, locale });
+    }
+    return voices;
+  } catch (err) {
+    console.error('[get-edge-tts-voices] error:', err.message);
+    return [];
+  }
+});
+
+/**
+ * Generate a short live preview clip for any edge-tts voice name.
+ * Returns the MP3 path (played directly in renderer via file:// URL).
+ */
+ipcMain.handle('preview-voice', async (_event, { edgeVoice } = {}) => {
+  if (!edgeVoice) return { success: false, error: 'edgeVoice required' };
+  try {
+    const bin = resolveEdgeTtsBin();
+    const previewPath = path.join(app.getPath('temp'), `preview_${Date.now()}.mp3`);
+    const sampleText = 'A detective walks into a rain-soaked alley at midnight.';
+    const err = await new Promise((resolve) => {
+      const proc = spawn(bin, [
+        '--voice', edgeVoice,
+        '--text', sampleText,
+        '--write-media', previewPath,
+      ], { stdio: 'pipe' });
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => resolve(code === 0 ? null : stderr.slice(-200)));
+      proc.on('error', (e) => resolve(e.message));
+    });
+    if (err) return { success: false, error: err };
+    return { success: true, previewPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Install edge-tts via pip (system pip3 or ComfyUI venv pip).
+ * edge-tts supports Python 3.7+ including 3.13 — no compat issues.
  * Streams install log lines as 'install-progress' events.
  */
 ipcMain.handle('install-coqui-tts', async (event) => {
@@ -3113,48 +3199,37 @@ ipcMain.handle('install-coqui-tts', async (event) => {
       : path.join(comfyPath, 'venv', 'bin', 'pip');
     const pipBin = fs.existsSync(venvPip) ? venvPip : 'pip3';
 
-    // Log which pip and Python version we're using
-    const pythonBin = pipBin.replace(/pip(\.exe)?$/, 'python').replace(/pip3$/, 'python3');
-    console.log('[Coqui install] pip binary:', pipBin);
-    console.log('[Coqui install] pip exists:', fs.existsSync(pipBin));
-    sendProgress(`Using pip: ${pipBin}`);
-
-    // Log Python version to catch py3.13 compat issues
-    try {
-      const pyVerProc = spawn(pythonBin, ['--version'], { stdio: 'pipe' });
-      pyVerProc.stdout.on('data', (d) => console.log('[Coqui install] Python version:', d.toString().trim()));
-      pyVerProc.stderr.on('data', (d) => console.log('[Coqui install] Python version:', d.toString().trim()));
-    } catch { /* non-fatal */ }
+    console.log('[edge-tts install] pip binary:', pipBin);
+    sendProgress(`Installing edge-tts via: ${pipBin}`);
 
     const stdoutLines = [];
     const stderrLines = [];
 
     const result = await new Promise((resolve) => {
-      const proc = spawn(pipBin, ['install', 'TTS'], { stdio: 'pipe' });
+      const proc = spawn(pipBin, ['install', 'edge-tts'], { stdio: 'pipe' });
 
       proc.stdout.on('data', (d) => {
         const text = d.toString().trim();
         stdoutLines.push(text);
-        console.log('[Coqui install stdout]', text);
+        console.log('[edge-tts install stdout]', text);
         sendProgress(text);
       });
       proc.stderr.on('data', (d) => {
         const text = d.toString().trim();
         stderrLines.push(text);
-        console.error('[Coqui install stderr]', text);
+        console.error('[edge-tts install stderr]', text);
         sendProgress(text);
       });
 
       proc.on('close', (code) => {
-        console.log(`[Coqui install] pip exited with code ${code}`);
+        console.log(`[edge-tts install] pip exited with code ${code}`);
         if (code !== 0) {
-          const lastErr = stderrLines.slice(-10).join('\n');
-          console.error('[Coqui install] FAILED. Last stderr:\n', lastErr);
+          console.error('[edge-tts install] FAILED. Last stderr:\n', stderrLines.slice(-10).join('\n'));
         }
         resolve({ success: code === 0, exitCode: code, stderr: stderrLines.slice(-20).join('\n') });
       });
       proc.on('error', (err) => {
-        console.error('[Coqui install] spawn error:', err.message);
+        console.error('[edge-tts install] spawn error:', err.message);
         resolve({ success: false, error: err.message });
       });
     });

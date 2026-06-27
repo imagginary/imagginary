@@ -1,32 +1,34 @@
-// Phase 15 — Voice Layer (Part 1: Coqui TTS)
+// Phase 15 — Voice Layer (edge-tts)
 
 export interface VoiceProfile {
   id: string;
   name: string;
   description: string;
-  style: string;
   gender: 'male' | 'female';
-  age: 'young' | 'adult' | 'aged' | 'elderly';
-  accent: string;
-  samplePath: string;
-  isCustom: boolean;
-  tier: 'pro' | 'studio';
-  modelName?: string;
-  speakerId?: string;
+  language: string;    // BCP-47 locale, e.g. "en-US", "hi-IN"
+  edgeVoice: string;   // edge-tts voice name, e.g. "en-US-ChristopherNeural"
+  isCustom?: boolean;
+  tier?: 'pro' | 'studio';
 }
 
-export interface CoquiCheckResult {
+export interface EdgeVoice {
+  name: string;    // e.g. "en-US-ChristopherNeural"
+  gender: string;  // "Male" | "Female"
+  locale: string;  // e.g. "en-US"
+}
+
+export interface EdgeTtsCheckResult {
   available: boolean;
   version?: string;
-  installCommand?: string;
 }
+
+// Legacy alias so existing callers that import CoquiCheckResult still compile
+export type CoquiCheckResult = EdgeTtsCheckResult;
 
 export interface VoiceGenerationParams {
   text: string;
   voiceId: string;
-  modelName: string;
-  speakerId?: string;
-  outputPath?: string;
+  edgeVoice: string;
 }
 
 class VoiceService {
@@ -58,8 +60,7 @@ class VoiceService {
       const params: VoiceGenerationParams = {
         text,
         voiceId,
-        modelName: voiceProfile.modelName ?? 'tts_models/en/vctk/vits',
-        speakerId: voiceProfile.speakerId,
+        edgeVoice: voiceProfile.edgeVoice,
       };
 
       window.electronAPI?.generateVoice?.(params)
@@ -78,10 +79,21 @@ class VoiceService {
     });
   }
 
-  async previewVoice(voiceId: string): Promise<string> {
-    const result = await window.electronAPI?.getVoiceSample?.(voiceId);
-    if (result?.success && result.samplePath) return result.samplePath;
-    throw new Error(`No sample available for voice: ${voiceId}`);
+  /** Live-generate a short preview clip for any edge-tts voice name */
+  async previewVoice(edgeVoice: string): Promise<string> {
+    const result = await window.electronAPI?.previewVoice?.({ edgeVoice });
+    if (result?.success && result.previewPath) return result.previewPath;
+    throw new Error(`Preview failed for: ${edgeVoice}`);
+  }
+
+  /** Fetch the full ~320-voice catalogue from edge-tts */
+  async getAllEdgeVoices(): Promise<EdgeVoice[]> {
+    try {
+      const result = await window.electronAPI?.getEdgeTtsVoices?.();
+      return Array.isArray(result) ? result : [];
+    } catch {
+      return [];
+    }
   }
 
   async cloneVoice(audioSamplePath: string, name: string): Promise<VoiceProfile> {
@@ -90,9 +102,9 @@ class VoiceService {
     throw new Error(result?.error ?? 'Voice cloning failed');
   }
 
-  async checkCoquiTTS(): Promise<CoquiCheckResult> {
+  async checkCoquiTTS(): Promise<EdgeTtsCheckResult> {
     const result = await window.electronAPI?.checkCoquiTTS?.();
-    return result ?? { available: false, installCommand: 'pip install TTS' };
+    return result ?? { available: false };
   }
 
   async installCoquiTTS(onProgress?: (msg: string) => void): Promise<boolean> {
