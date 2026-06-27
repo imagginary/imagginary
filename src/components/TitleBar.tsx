@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Film, Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
+import { Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
 import { ServiceStatus } from '../types';
 
 interface TitleBarProps {
@@ -134,7 +134,15 @@ export default function TitleBar({
       >
         {/* Left — app identity */}
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <Film className="w-4 h-4 text-imagginary-400" />
+          {/* 32px mark — simplified for small sizes per brand guidelines */}
+          <svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="14" y="14" width="28" height="22" rx="2" fill="none" stroke="#ceaf82" strokeWidth="2" opacity="0.4"/>
+            <rect x="6" y="6" width="28" height="22" rx="2" fill="#080808" stroke="#ceaf82" strokeWidth="2.5"/>
+            <rect x="3" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+            <rect x="3" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+            <rect x="33" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+            <rect x="33" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+          </svg>
           <span className="text-xs font-semibold text-imagginary-400 tracking-widest uppercase">Imagginary</span>
           <span className="text-gray-600 text-xs">|</span>
           {editingTitle ? (
@@ -161,23 +169,8 @@ export default function TitleBar({
           )}
         </div>
 
-        {/* Center — service status */}
-        <div
-          className="flex items-center gap-4 text-xs"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <div className="flex items-center gap-1.5 text-gray-400">
-            <ConnectionDot status={serviceStatus.ollama} />
-            <span>Ollama</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-gray-400">
-            <ConnectionDot status={serviceStatus.comfyui} />
-            <span>ComfyUI</span>
-            {serviceStatus.comfyui === 'disconnected' && (
-              <span className="text-red-400 text-[10px]">— not running</span>
-            )}
-          </div>
-        </div>
+        {/* Center — empty, service status removed */}
+        <div />
 
         {/* Right — actions */}
         <div
@@ -314,7 +307,7 @@ export default function TitleBar({
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                 {exportProgress !== null && exportProgress > 0
-                  ? `${exportProgress}%`
+                  ? `${exportProgress.toFixed(1)}%`
                   : 'Encoding…'}
               </>
             ) : (
@@ -334,7 +327,7 @@ export default function TitleBar({
             {isExportingMotionComic ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                {motionComicProgress > 0 ? `${motionComicProgress}%` : 'Exporting…'}
+                {motionComicProgress > 0 ? `${motionComicProgress.toFixed(1)}%` : 'Exporting…'}
               </>
             ) : (
               <>

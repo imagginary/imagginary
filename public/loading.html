@@ -59,7 +59,7 @@
     }
 
     .step.done {
-      color: #4a4a4a;
+      color: #8a7a5a;
     }
 
     .step-dot {
@@ -197,12 +197,9 @@
   <div class="version">v1.0</div>
 
   <script>
-    const { ipcRenderer } = require('electron');
-
     const statusEl = document.getElementById('status');
     const barEl    = document.getElementById('bar');
 
-    // progress → step index (1-based)
     function progressToStep(p) {
       if (p < 20)  return 1;
       if (p < 55)  return 2;
@@ -223,28 +220,27 @@
     const errorMsg   = document.getElementById('error-msg');
     const retryBtn   = document.getElementById('retry-btn');
 
-    ipcRenderer.on('loading-update', (_event, { status, progress }) => {
+    window.loadingAPI.onLoadingUpdate(({ status, progress }) => {
       statusEl.textContent = status;
       barEl.style.width = Math.min(100, Math.max(0, progress)) + '%';
       updateSteps(progress);
     });
 
-    ipcRenderer.on('show-retry-button', (_event, message) => {
+    window.loadingAPI.onShowRetryButton((message) => {
       errorMsg.textContent = message || 'Model download failed. Please retry.';
       errorBlock.classList.add('visible');
     });
 
-    ipcRenderer.on('hide-retry-button', () => {
+    window.loadingAPI.onHideRetryButton(() => {
       errorBlock.classList.remove('visible');
       errorMsg.textContent = '';
     });
 
     retryBtn.addEventListener('click', () => {
       errorBlock.classList.remove('visible');
-      ipcRenderer.send('retry-model-pull');
+      window.loadingAPI.retryModelPull();
     });
 
-    // Kick off bar and first step immediately
     setTimeout(() => {
       barEl.style.width = '2%';
       updateSteps(2);

@@ -80,7 +80,10 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
       {/* Pricing cards */}
       <div className="grid grid-cols-2 gap-3">
         {/* Pro */}
-        <div className="rounded-xl border border-imagginary-800/50 bg-imagginary-950/30 p-4 flex flex-col gap-3">
+        <div
+          className="rounded-xl border border-imagginary-800/50 bg-imagginary-950/30 p-4 flex flex-col gap-3 cursor-pointer hover:border-imagginary-600 transition-colors"
+          onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'pro_annual' : 'pro')}
+        >
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <Zap className="w-3.5 h-3.5 text-imagginary-400" />
@@ -109,7 +112,7 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-imagginary-500 shrink-0 mt-px" />PDF + FCPXML export</li>
           </ul>
           <button
-            onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'pro_annual' : 'pro')}
+            onClick={(e) => e.stopPropagation()}
             className="mt-auto flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors"
           >
             <ExternalLink className="w-3 h-3" />
@@ -118,7 +121,10 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
         </div>
 
         {/* Studio */}
-        <div className="rounded-xl border border-violet-800/50 bg-violet-950/20 p-4 flex flex-col gap-3">
+        <div
+          className="rounded-xl border border-violet-800/50 bg-violet-950/20 p-4 flex flex-col gap-3 cursor-pointer hover:border-violet-600 transition-colors"
+          onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'studio_annual' : 'studio')}
+        >
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <Star className="w-3.5 h-3.5 text-violet-400" />
@@ -146,7 +152,7 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Brand LoRA training</li>
           </ul>
           <button
-            onClick={() => licenseService.openCheckout(billingCycle === 'annual' ? 'studio_annual' : 'studio')}
+            onClick={(e) => e.stopPropagation()}
             className="mt-auto flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-violet-700 hover:bg-violet-600 text-white transition-colors"
           >
             <ExternalLink className="w-3 h-3" />
@@ -249,6 +255,11 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           <TierBadge tier={tier} />
         </div>
         <p className="text-xs text-gray-500">{license.email}</p>
+      </div>
+
+      <div className="text-xs text-gray-400 bg-gray-800/50 rounded-lg p-3 mb-4">
+        <p className="text-amber-400 font-medium mb-1">✦ Cloud generation is active</p>
+        <p>Every panel now generates via FLUX.1 Schnell in the cloud — no downloads needed. Credits are spent per generation.</p>
       </div>
 
       {/* Credit balance */}

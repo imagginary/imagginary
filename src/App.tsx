@@ -43,6 +43,7 @@ import {
 import {
   STYLE_CLASSIC_STORYBOARD,
   STYLE_VAULT,
+  getStyleById,
 } from './data/StyleVault';
 import { getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from './data/AspectRatios';
 
@@ -158,6 +159,7 @@ export default function App() {
   const [motionComicProgress, setMotionComicProgress] = useState(0);
   const [exportError, setExportError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [cloudToast, setCloudToast] = useState<string | null>(null);
   // Phase 6B — Pose Engine
   const [showPoseEditor, setShowPoseEditor] = useState(false);
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
@@ -413,6 +415,14 @@ export default function App() {
         ? await ollamaService.parseShot(fullDescription)
         : panel!.structuredPrompt!;
 
+      // Always overwrite additionalDetails with the full raw prompt after a fresh parse
+      // so specific details are never lost even if parsing is imperfect.
+      // Skipped when reusing an existing structuredPrompt (needsReparse === false),
+      // which preserves any manual edits the user made to additionalDetails.
+      if (needsReparse) {
+        structuredPrompt.additionalDetails = fullDescription;
+      }
+
       // Preserve user's pre-set constraints — fall back to parsed values only if unset
       updatePanel(panelId, {
         shotDescription: description,
@@ -459,6 +469,15 @@ export default function App() {
         resolvedAngle || structuredPrompt.angle
       );
 
+      // One-time toast confirming cloud generation worked — shown on first successful Pro generate
+      if (licenseService.isPro() || licenseService.isStudio()) {
+        if (!localStorage.getItem('imagginary_first_cloud_gen_done')) {
+          localStorage.setItem('imagginary_first_cloud_gen_done', '1');
+          setCloudToast('✦ Generated via FLUX.1 Schnell in the cloud');
+          setTimeout(() => setCloudToast(null), 4000);
+        }
+      }
+
       let savedPath: string | null = null;
       if (window.electronAPI) {
         const b64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
@@ -477,10 +496,11 @@ export default function App() {
         updatePanel(panelId, {
           generatedImageData: imageData,
           generatedImagePath: savedPath,
+          styleProfileId: project.style.id,
           revisions: [...currentRevisions, newRevision].slice(-20),
         });
       } else {
-        updatePanel(panelId, { generatedImageData: imageData, generatedImagePath: savedPath });
+        updatePanel(panelId, { generatedImageData: imageData, generatedImagePath: savedPath, styleProfileId: project.style.id });
       }
       telemetryService.track('panel_generated', { style: project.style.id, hasCharacters: characterIds.length > 0 });
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
@@ -871,7 +891,7 @@ export default function App() {
 
       // Try Kling cloud first (Pro + Fal.ai key + sufficient credits)
       const falApiKey = settingsService.getKey('falApiKey') || '';
-      const useCloud = licenseService.isPro() && !!falApiKey && licenseService.hasCredits(CREDIT_COSTS.motionClip);
+      const useCloud = (licenseService.isPro() || licenseService.isStudio()) && !!falApiKey && licenseService.hasCredits(CREDIT_COSTS.motionClip);
 
       let base64Video: string | null = null;
 
@@ -916,7 +936,7 @@ export default function App() {
           progress: 0,
           message: 'Motion generation unavailable',
           error: 'Motion generation requires a powerful GPU (24GB+ VRAM). Pro users can use Kling cloud motion instead.',
-          errorLink: licenseService.isPro() ? undefined : { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
+          errorLink: (licenseService.isPro() || licenseService.isStudio()) ? undefined : { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
         });
         return;
       }
@@ -1206,7 +1226,11 @@ export default function App() {
                 <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
               </svg>
               <div className="min-w-0">
-                <div className="text-[11px] text-gray-400 truncate">{project.style.name}</div>
+                <div className="text-[11px] text-gray-400 truncate">
+                  {activePanel?.styleProfileId
+                    ? getStyleById(activePanel.styleProfileId).name
+                    : project.style.name}
+                </div>
                 <div className="text-[10px] text-gray-600">
                   {getAspectRatio(project.aspectRatioId ?? DEFAULT_ASPECT_RATIO_ID).label}
                 </div>
@@ -1237,7 +1261,7 @@ export default function App() {
               onCreateCharacter={handleCreateCharacter}
               onDeleteCharacter={deleteCharacter}
               generationProgress={charProgress}
-              isPro={licenseService.isPro()}
+              isPro={licenseService.isPro() || licenseService.isStudio()}
             />
           </div>
         </div>
@@ -1280,40 +1304,43 @@ export default function App() {
               )}
             </div>
           )}
-          {licenseService.isPro() && !proModelInstalled && !modelMissing && (
-            <div className="mx-3 mt-2 shrink-0 bg-amber-900/30 border border-amber-700 rounded-lg p-3 flex items-center justify-between gap-3">
-              <p className="text-xs text-amber-300">
-                ✨ Pro model available — RealVisXL V4.0 gives significantly better panel quality
-              </p>
-              {!proModelDownloading ? (
-                <button
-                  onClick={async () => {
-                    if (!window.electronAPI) return;
-                    setProModelDownloading(true);
-                    setProModelPct(0);
-                    const cleanup = window.electronAPI.onProModelProgress((data) => {
-                      setProModelPct(data.pct);
-                    });
-                    const result = await window.electronAPI.downloadProModel();
-                    cleanup();
-                    setProModelDownloading(false);
-                    if (result.success) setProModelInstalled(true);
-                  }}
-                  className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded shrink-0"
-                >
-                  Download (6.5GB)
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="w-32 bg-amber-900 rounded-full h-1.5">
-                    <div
-                      className="bg-amber-400 h-1.5 rounded-full transition-all"
-                      style={{ width: `${proModelPct}%` }}
-                    />
+          {(licenseService.isPro() || licenseService.isStudio()) && !proModelInstalled && !modelMissing && (
+            <div className="mx-3 mt-2 shrink-0 bg-amber-900/30 border border-amber-700 rounded-lg p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-amber-300">
+                  ✦ Optional: RealVisXL V4.0 for local generation (offline / no credits)
+                </p>
+                {!proModelDownloading ? (
+                  <button
+                    onClick={async () => {
+                      if (!window.electronAPI) return;
+                      setProModelDownloading(true);
+                      setProModelPct(0);
+                      const cleanup = window.electronAPI.onProModelProgress((data) => {
+                        setProModelPct(data.pct);
+                      });
+                      const result = await window.electronAPI.downloadProModel();
+                      cleanup();
+                      setProModelDownloading(false);
+                      if (result.success) setProModelInstalled(true);
+                    }}
+                    className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1 rounded shrink-0"
+                  >
+                    Download (6.5GB)
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="w-32 bg-amber-900 rounded-full h-1.5">
+                      <div
+                        className="bg-amber-400 h-1.5 rounded-full transition-all"
+                        style={{ width: `${proModelPct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-amber-400">{proModelPct}%</span>
                   </div>
-                  <span className="text-xs text-amber-400">{proModelPct}%</span>
-                </div>
-              )}
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Cloud generation via FLUX.1 is already active — this is for offline use only.</p>
             </div>
           )}
           <PanelViewer
@@ -1332,7 +1359,7 @@ export default function App() {
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
-            isPro={licenseService.isPro()}
+            isPro={licenseService.isPro() || licenseService.isStudio()}
           />
           <ShotInput
             value={shotInput}
@@ -1342,7 +1369,7 @@ export default function App() {
             isGenerating={isGenerating}
             serviceStatus={serviceStatus}
             disabled={false}
-            estimatedSeconds={licenseService.isPro() ? null : estimatedGenerationSeconds}
+            estimatedSeconds={(licenseService.isPro() || licenseService.isStudio()) ? null : estimatedGenerationSeconds}
             onUpgradeClick={() => setShowActivateLicense(true)}
           />
         </div>
@@ -1367,7 +1394,7 @@ export default function App() {
       {showPoseEditor && activePanel && (
         <PoseEditor
           panel={activePanel}
-          isPro={licenseService.isPro()}
+          isPro={licenseService.isPro() || licenseService.isStudio()}
           isGenerating={isPoseGenerating}
           onGenerate={handleGeneratePoseAnimation}
           onClose={() => setShowPoseEditor(false)}
@@ -1378,7 +1405,7 @@ export default function App() {
       {showMotionLibrary && activePanel && (
         <MotionLibrary
           panel={activePanel}
-          isPro={licenseService.isPro()}
+          isPro={licenseService.isPro() || licenseService.isStudio()}
           comfyuiConnected={serviceStatus.comfyui === 'connected'}
           onApply={handleApplyMotionClip}
           onClose={() => setShowMotionLibrary(false)}
@@ -1390,7 +1417,7 @@ export default function App() {
         <VideoTransfer
           panel={activePanel}
           characters={project.characters}
-          isPro={licenseService.isPro()}
+          isPro={licenseService.isPro() || licenseService.isStudio()}
           onComplete={handleVideoTransferComplete}
           onClose={() => setShowVideoTransfer(false)}
         />
@@ -1401,7 +1428,7 @@ export default function App() {
         <VoiceStudio
           panel={activePanel}
           characters={project.characters}
-          isPro={licenseService.isPro()}
+          isPro={licenseService.isPro() || licenseService.isStudio()}
           onComplete={handleVoiceComplete}
           onLipSyncComplete={handleLipSyncComplete}
           onOpenSettings={() => { setShowVoiceStudio(false); setShowSettings(true); }}
@@ -1412,7 +1439,7 @@ export default function App() {
       {/* Settings modal */}
       {showSettings && (
         <SettingsModal
-          isPro={licenseService.isPro()}
+          isPro={licenseService.isPro() || licenseService.isStudio()}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1427,6 +1454,13 @@ export default function App() {
           }}
           onClose={() => setShowActivateLicense(false)}
         />
+      )}
+
+      {/* First cloud generation toast — auto-dismisses after 4s */}
+      {cloudToast && (
+        <div className="fixed bottom-4 right-4 bg-gray-900/95 border border-amber-700/60 text-amber-300 text-xs px-4 py-2 rounded-lg z-50 max-w-sm">
+          {cloudToast}
+        </div>
       )}
 
       {/* Export error toast — auto-dismisses after 5s */}

@@ -138,6 +138,8 @@ export interface Panel {
   // Phase 15 Pt2 — Lip Sync
   lipSyncPath?: string | null;      // URL or path to generated lip-sync video
   lipSyncData?: string | null;      // base64 data URL for browser playback
+  // Style Vault — which StyleProfile was active when this panel was generated
+  styleProfileId?: string | null;
   // Aspect ratio override — null means inherit from project.aspectRatioId
   aspectRatioId?: string | null;
   createdAt: number;
