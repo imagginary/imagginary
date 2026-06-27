@@ -1982,19 +1982,13 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
 
   sendProgress(0);
 
-  // ── 1. ffmpeg availability ───────────────────────────────────────────────
-  const ffmpegAvailable = await new Promise((resolve) => {
-    const probe = spawn('ffmpeg', ['-version'], { stdio: 'ignore' });
-    probe.on('error', () => resolve(false));
-    probe.on('close', (code) => resolve(code === 0));
-  });
-  if (!ffmpegAvailable) {
-    return { success: false, error: 'ffmpeg not found — install via: brew install ffmpeg' };
-  }
+  // ── 1. Resolve ffmpeg (bundled binary first) ─────────────────────────────
+  const ffmpeg = resolveFfmpegBin();
+  console.log('[MotionComic] ffmpeg binary:', ffmpeg);
 
   // ── 2. Detect encoder ────────────────────────────────────────────────────
   const encoder = await new Promise((resolve) => {
-    const probe = spawn('ffmpeg', ['-hide_banner', '-encoders']);
+    const probe = spawn(ffmpeg, ['-hide_banner', '-encoders']);
     let out = '';
     probe.stdout.on('data', (d) => { out += d; });
     probe.stderr.on('data', (d) => { out += d; });
@@ -2061,7 +2055,7 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
             ];
 
       await new Promise((resolve, reject) => {
-        const ff = spawn('ffmpeg', args);
+        const ff = spawn(ffmpeg, args);
         ff.stderr.on('data', (d) => process.stderr.write(d));
         ff.on('error', reject);
         ff.on('close', (code) => {
@@ -2097,7 +2091,7 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
     assembleArgs.push('-c:v', encoder, ...pixFmtArgs, '-an', '-movflags', '+faststart', assembledPath);
 
     await new Promise((resolve, reject) => {
-      const ff = spawn('ffmpeg', assembleArgs);
+      const ff = spawn(ffmpeg, assembleArgs);
       ff.stderr.on('data', (data) => {
         process.stderr.write(data);
         const m = data.toString().match(/time=(\d+):(\d+):(\d+\.\d+)/);
@@ -2134,7 +2128,7 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
       ];
 
       await new Promise((resolve, reject) => {
-        const ff = spawn('ffmpeg', audioArgs);
+        const ff = spawn(ffmpeg, audioArgs);
         ff.stderr.on('data', (d) => process.stderr.write(d));
         ff.on('error', reject);
         ff.on('close', (code) => {
@@ -2294,11 +2288,8 @@ ipcMain.handle('extract-video-pose', async (event, videoPath) => {
   try {
     sendProgress({ pct: 10, msg: 'Extracting video frames…' });
 
-    // Find ffmpeg
-    const ffmpegBin = process.platform === 'win32'
-      ? path.join(__dirname, '..', 'resources', 'bin', 'ffmpeg.exe')
-      : path.join(__dirname, '..', 'resources', 'bin', 'ffmpeg');
-    const ffmpegPath = fs.existsSync(ffmpegBin) ? ffmpegBin : 'ffmpeg';
+    // Find ffmpeg (bundled binary)
+    const ffmpegPath = resolveFfmpegBin();
 
     // Get video duration
     const durationResult = await new Promise((resolve) => {
