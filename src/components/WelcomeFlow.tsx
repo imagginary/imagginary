@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Film, RefreshCw, ChevronRight, ChevronLeft, Clapperboard } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronLeft, Clapperboard, X } from 'lucide-react';
 import { ServiceStatus, StyleProfile } from '../types';
 import { telemetryService } from '../services/TelemetryService';
 import {
@@ -45,6 +45,8 @@ interface Props {
   comfyuiInstallMessage?: string;
   onRefreshServices: () => void;
   onComplete: (params: WelcomeCompleteParams) => void;
+  isDismissible?: boolean;
+  onDismiss?: () => void;
 }
 
 function ServiceRow({ label, status, statusText }: { label: string; status: string; statusText?: string }) {
@@ -63,7 +65,7 @@ function ServiceRow({ label, status, statusText }: { label: string; status: stri
   );
 }
 
-export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false, comfyuiInstallMessage = '', onRefreshServices, onComplete }: Props) {
+export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false, comfyuiInstallMessage = '', onRefreshServices, onComplete, isDismissible = false, onDismiss }: Props) {
   // Skip step 1 (service setup) entirely when the main process auto-started services.
   const [step, setStep] = useState(servicesAutoStarted ? 2 : 1);
   const [projectType, setProjectType] = useState<ProjectType | null>(null);
@@ -139,11 +141,28 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
       }`}
     >
       {/* Card */}
-      <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl shadow-2xl flex flex-col">
+      <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl shadow-2xl flex flex-col relative">
+        {isDismissible && onDismiss && (
+          <button
+            onClick={onDismiss}
+            className="absolute top-3 right-3 p-1.5 text-gray-600 hover:text-gray-300 transition-colors z-10"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
         {/* Header */}
         <div className="flex flex-col items-center pt-8 pb-5 px-8 border-b border-gray-800">
           <div className="flex items-center gap-2 mb-1">
-            <Film className="w-5 h-5 text-imagginary-400" />
+            {/* 32px mark — simplified for small sizes per brand guidelines */}
+            <svg width="28" height="28" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="14" y="14" width="28" height="22" rx="2" fill="none" stroke="#ceaf82" strokeWidth="2" opacity="0.4"/>
+              <rect x="6" y="6" width="28" height="22" rx="2" fill="#080808" stroke="#ceaf82" strokeWidth="2.5"/>
+              <rect x="3" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+              <rect x="3" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+              <rect x="33" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+              <rect x="33" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+            </svg>
             <span className="text-imagginary-400 text-sm font-semibold tracking-widest uppercase">Imagginary</span>
           </div>
           <p className="text-gray-500 text-xs">AI Storyboard Generator</p>

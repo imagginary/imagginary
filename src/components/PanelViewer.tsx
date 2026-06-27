@@ -813,7 +813,7 @@ export default function PanelViewer({
       {/* Animate panel — expands below toolbar when animateMode is active */}
       {animateMode && (
         <div className="w-full px-6 pb-3 flex flex-col gap-2">
-          {wanModelAvailable === false ? (
+          {wanModelAvailable === false && !isPro ? (
             /* No local model — show upgrade prompt */
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-center">
               <p className="text-sm text-gray-300 font-medium mb-1">Motion generation requires Pro</p>
@@ -824,16 +824,6 @@ export default function PanelViewer({
               <button className="px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors">
                 Upgrade to Pro — $19/month
               </button>
-              <p className="text-xs text-gray-600 mt-2">
-                Have a powerful GPU?{' '}
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); }}
-                  className="text-imagginary-600 underline"
-                >
-                  Set up local generation →
-                </a>
-              </p>
             </div>
           ) : (
             /* Local model available (or still checking) — show generation UI */

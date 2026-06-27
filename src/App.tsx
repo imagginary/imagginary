@@ -170,6 +170,7 @@ export default function App() {
   // Phase 15 — Voice Studio
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
+  const [welcomeDismissible, setWelcomeDismissible] = useState(false);
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
   // Phase 14 — true when the main process auto-started Ollama + ComfyUI successfully
@@ -1142,6 +1143,8 @@ export default function App() {
             checkServicesRef.current?.();
           }}
           onComplete={handleWelcomeComplete}
+          isDismissible={welcomeDismissible}
+          onDismiss={() => { setShowWelcome(false); setWelcomeDismissible(false); }}
         />
       )}
       <TitleBar
@@ -1154,7 +1157,7 @@ export default function App() {
         onGenerateAnimatic={handleGenerateAnimatic}
         onExportMotionComic={handleExportMotionComic}
         onOpenScriptReader={() => setShowScriptReader(true)}
-        onSetup={() => setShowWelcome(true)}
+        onSetup={() => { setShowWelcome(true); setWelcomeDismissible(true); }}
         onOpenSettings={() => setShowSettings(true)}
         onExportPDF={handleExportPDF}
         onExportXML={handleExportXML}

@@ -326,9 +326,17 @@ export default function VoiceStudio({
 
   if (!isPro) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 max-w-sm w-full mx-4 text-center">
-          <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-300">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+        onKeyDown={(e) => e.key === 'Escape' && onClose()}
+        tabIndex={-1}
+      >
+        <div
+          className="relative bg-gray-900 border border-gray-800 rounded-xl p-8 max-w-sm w-full mx-4 text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
           <Lock className="w-10 h-10 text-imagginary-500/60 mx-auto mb-4" />
