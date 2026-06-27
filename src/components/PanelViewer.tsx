@@ -19,6 +19,7 @@ interface PanelViewerProps {
   onOpenVideoTransfer?: () => void;
   onOpenVoiceStudio?: () => void;
   onOpenSettings?: () => void;
+  onClearError?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -68,6 +69,7 @@ export default function PanelViewer({
   onOpenVideoTransfer,
   onOpenVoiceStudio,
   onOpenSettings,
+  onClearError,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -585,18 +587,31 @@ export default function PanelViewer({
 
           {/* Error state */}
           {hasError && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 z-10">
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 z-10 cursor-pointer"
+              onClick={onClearError}
+            >
+              {onClearError && (
+                <button
+                  className="absolute top-2 right-2 p-1 rounded-full bg-gray-800/80 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                  onClick={(e) => { e.stopPropagation(); onClearError(); }}
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
               <AlertCircle className="w-10 h-10 text-red-500 mb-3" />
               <p className="text-sm text-red-400 font-medium">{progress?.message ?? 'Generation Failed'}</p>
               <p className="text-xs text-gray-500 mt-1 px-6 text-center">{progress?.error}</p>
               {progress?.errorLink && (
                 <button
                   className="mt-3 text-xs text-violet-400 hover:text-violet-300 underline underline-offset-2"
-                  onClick={() => (window as any).electronAPI?.openExternal(progress.errorLink!.url)}
+                  onClick={(e) => { e.stopPropagation(); (window as any).electronAPI?.openExternal(progress.errorLink!.url); }}
                 >
                   {progress.errorLink.label}
                 </button>
               )}
+              <p className="text-[10px] text-gray-600 mt-4">Click anywhere to dismiss</p>
             </div>
           )}
 

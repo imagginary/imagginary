@@ -942,6 +942,19 @@ export default function App() {
         return;
       }
       const msg = error instanceof Error ? error.message : 'Unknown error';
+      // Community users should never see technical Wan/ComfyUI errors — show upgrade prompt instead
+      const isProUser = licenseService.isPro() || licenseService.isStudio();
+      if (!isProUser && msg.includes('Wan 2.2')) {
+        setProgress({
+          panelId,
+          status: 'error',
+          progress: 0,
+          message: 'Motion generation requires Pro',
+          error: 'Upgrade to Pro to generate motion clips via Kling cloud — no local GPU required.',
+          errorLink: { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
+        });
+        return;
+      }
       setProgress({ panelId, status: 'error', progress: 0, message: 'Motion generation failed', error: msg });
     }
   }
@@ -1359,6 +1372,7 @@ export default function App() {
             onOpenMotionLibrary={() => setShowMotionLibrary(true)}
             onOpenVideoTransfer={() => setShowVideoTransfer(true)}
             onOpenVoiceStudio={() => setShowVoiceStudio(true)}
+            onClearError={() => setProgress(null)}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
