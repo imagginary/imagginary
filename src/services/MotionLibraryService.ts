@@ -8,7 +8,8 @@
 
 import { MotionClip } from '../types';
 import { PoseKeyframe } from '../data/PoseVocabulary';
-import { expandSequence, buildPoseControlNetWorkflow, renderPoseToDataURL } from './PoseEngineService';
+import { expandSequence, renderPoseToDataURL } from './PoseEngineService';
+import { comfyUIService } from './ComfyUIService';
 import { getOllamaUrl, getComfyUIUrl } from '../config/services';
 
 // ── Starter library index (bundled — works without Pexels API key) ────────────
@@ -194,41 +195,17 @@ class MotionLibraryService {
     panelImageData: string,
     onProgress?: (pct: number, msg: string) => void
   ): Promise<{ videoData: string; videoPath: string | null }> {
-    onProgress?.(5, 'Loading pose sequence…');
-    const keyframes = await this.getClipPoseSequence(clipId);
-    if (keyframes.length === 0) throw new Error('Empty pose sequence');
-
-    onProgress?.(15, 'Building animation frames…');
-    const frames = expandSequence(keyframes, 12);
-
     const clip = this.allClips.find((c) => c.id === clipId);
-    const prompt = clip
-      ? `${clip.description}, cinematic, high quality, smooth animation`
+    const motionPrompt = clip
+      ? `${clip.name}, ${clip.tags.join(', ')}`
       : 'smooth character animation, cinematic quality';
 
-    onProgress?.(20, 'Sending to ComfyUI…');
-    const imageDataB64 = panelImageData.replace(/^data:[^;]+;base64,/, '');
-    const workflow = buildPoseControlNetWorkflow({
-      imageDataB64,
-      poseFrames: frames,
-      prompt,
-    });
-
-    const baseUrl = await this.getComfyBaseUrl();
-
-    // Queue prompt
-    const queueRes = await fetch(`${baseUrl}/prompt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: workflow }),
-    });
-    if (!queueRes.ok) throw new Error(`ComfyUI queue failed: ${queueRes.status}`);
-    const { prompt_id: promptId } = await queueRes.json();
-
-    onProgress?.(25, 'Generating animation (Wan 2.2)…');
-
-    // Poll for completion
-    const videoData = await this.pollComfyResult(baseUrl, promptId, onProgress);
+    onProgress?.(5, 'Sending to Wan 2.2…');
+    const videoData = await comfyUIService.animatePanel(
+      panelImageData,
+      motionPrompt,
+      onProgress,
+    );
     onProgress?.(100, 'Animation complete');
     return { videoData, videoPath: null };
   }

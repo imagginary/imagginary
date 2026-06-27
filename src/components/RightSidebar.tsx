@@ -197,10 +197,13 @@ export default function RightSidebar({
         <textarea
           value={panel.notes}
           onChange={(e) => onUpdatePanel({ notes: e.target.value })}
-          placeholder="Add notes for this shot..."
+          placeholder="Add cinematic direction — influences generation (e.g. 'more dramatic shadows', 'tighter frame', 'rain outside window')"
           rows={3}
           className="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-2 text-xs text-gray-300 placeholder-gray-600 outline-none focus:border-imagginary-600 transition-colors resize-none"
         />
+        <p className="text-[9px] text-gray-700 mt-1">
+          Notes are included in the next generation for this panel.
+        </p>
       </Section>
 
       {/* LLM Parsed Prompt — inline editable */}
