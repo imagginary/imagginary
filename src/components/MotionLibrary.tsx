@@ -294,6 +294,7 @@ export default function MotionLibrary({
   }
 
   async function handleApply() {
+    if (!isPro) return; // gate enforced in UI; belt-and-suspenders guard
     if (!selectedClip || !panel.generatedImageData || !comfyuiConnected) return;
     setIsApplying(true);
     setApplyError(null);
@@ -337,7 +338,7 @@ export default function MotionLibrary({
 
   const expandedPreview = selectedPoseSeq.length > 0 ? expandSequence(selectedPoseSeq, 4) : [];
   const currentFrame = expandedPreview[previewFrame % Math.max(1, expandedPreview.length)];
-  const canApply = !!selectedClip && !!panel.generatedImageData && comfyuiConnected && !isApplying;
+  const canApply = isPro && !!selectedClip && !!panel.generatedImageData && comfyuiConnected && !isApplying;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -534,55 +535,76 @@ export default function MotionLibrary({
 
                 {/* Apply panel */}
                 <div className="flex flex-col gap-2 shrink-0">
-                  {applyError && (
-                    <div className="flex items-start gap-2 px-3 py-2 bg-red-950/50 border border-red-800/50 rounded text-xs text-red-400">
-                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      {applyError}
-                    </div>
-                  )}
-
-                  {isApplying && (
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between text-[10px] text-gray-500">
-                        <span>{applyMsg}</span>
-                        <span>{applyProgress}%</span>
+                  {!isPro ? (
+                    /* Community gate */
+                    <div className="rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 text-center space-y-2">
+                      <div className="flex items-center justify-center gap-1.5 text-violet-400">
+                        <Lock className="w-4 h-4" />
+                        <span className="text-sm font-semibold">Pro Feature</span>
                       </div>
-                      <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-violet-500 rounded-full transition-all duration-300"
-                          style={{ width: `${applyProgress}%` }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-gray-600">
-                        Wan 2.2 via ControlNet · ~3–5 min on Apple Silicon
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        Motion generation needs a 14B model (~14 GB) — Pro generates in the cloud in under 60 seconds.
                       </p>
+                      <button
+                        onClick={() => (window as any).electronAPI?.openExternal?.('https://imagginary.com/upgrade')}
+                        className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors"
+                      >
+                        Upgrade to Pro — $19/month
+                      </button>
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      {applyError && (
+                        <div className="flex items-start gap-2 px-3 py-2 bg-red-950/50 border border-red-800/50 rounded text-xs text-red-400">
+                          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          {applyError}
+                        </div>
+                      )}
 
-                  {!comfyuiConnected && (
-                    <p className="text-[10px] text-yellow-600 text-center">
-                      ComfyUI + ControlNet required to apply motion clips
-                    </p>
-                  )}
+                      {isApplying && (
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between text-[10px] text-gray-500">
+                            <span>{applyMsg}</span>
+                            <span>{applyProgress.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                              style={{ width: `${applyProgress}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-600">
+                            Wan 2.2 via ControlNet · ~3–5 min on Apple Silicon
+                          </p>
+                        </div>
+                      )}
 
-                  <button
-                    onClick={handleApply}
-                    disabled={!canApply}
-                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg text-sm font-semibold
-                      bg-violet-600 hover:bg-violet-500 text-white transition-colors
-                      disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isApplying ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-                    ) : (
-                      <><Film className="w-4 h-4" /> Apply to Panel</>
-                    )}
-                  </button>
+                      {!comfyuiConnected && (
+                        <p className="text-[10px] text-yellow-600 text-center">
+                          ComfyUI + ControlNet required to apply motion clips
+                        </p>
+                      )}
 
-                  {!panel.generatedImageData && (
-                    <p className="text-[10px] text-gray-600 text-center">
-                      Generate a panel image first to apply motion
-                    </p>
+                      <button
+                        onClick={handleApply}
+                        disabled={!canApply}
+                        className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg text-sm font-semibold
+                          bg-violet-600 hover:bg-violet-500 text-white transition-colors
+                          disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isApplying ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+                        ) : (
+                          <><Film className="w-4 h-4" /> Apply to Panel</>
+                        )}
+                      </button>
+
+                      {!panel.generatedImageData && (
+                        <p className="text-[10px] text-gray-600 text-center">
+                          Generate a panel image first to apply motion
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </>

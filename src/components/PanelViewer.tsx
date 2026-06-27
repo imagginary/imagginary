@@ -572,7 +572,7 @@ export default function PanelViewer({
                     style={{ width: `${progress?.progress ?? 0}%` }}
                   />
                 </div>
-                <p className="text-xs text-gray-600 font-mono">{progress?.progress ?? 0}%</p>
+                <p className="text-xs text-gray-600 font-mono">{(progress?.progress ?? 0).toFixed(1)}%</p>
                 {isAnimating && (
                   <p className="text-[10px] text-gray-600 text-center max-w-48">
                     Wan 2.2 generation takes 3–5 minutes locally.

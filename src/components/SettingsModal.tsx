@@ -217,7 +217,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                         <div className="w-full bg-gray-800 rounded-full h-1">
                           <div className="bg-amber-400 h-1 rounded-full transition-all" style={{ width: `${absPct}%` }} />
                         </div>
-                        <p className="text-[10px] text-gray-500">{absPct}% downloading…</p>
+                        <p className="text-[10px] text-gray-500">{Number(absPct).toFixed(1)}% downloading…</p>
                       </div>
                     ) : (
                       <button
@@ -265,7 +265,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                             style={{ width: `${proModelPct}%` }}
                           />
                         </div>
-                        <span className="text-[11px] text-amber-400">{proModelPct}%</span>
+                        <span className="text-[11px] text-amber-400">{Number(proModelPct).toFixed(1)}%</span>
                       </div>
                     ) : (
                       <button

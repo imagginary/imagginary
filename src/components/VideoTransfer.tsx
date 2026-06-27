@@ -544,7 +544,7 @@ export default function VideoTransfer({
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 text-violet-400 animate-spin shrink-0" />
                 <p className="text-sm text-gray-300">Extracting pose sequence…</p>
-                <span className="text-xs text-gray-500 font-mono ml-auto">{extractProgress}%</span>
+                <span className="text-xs text-gray-500 font-mono ml-auto">{Number(extractProgress).toFixed(1)}%</span>
               </div>
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div
@@ -564,7 +564,7 @@ export default function VideoTransfer({
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 text-violet-400 animate-spin shrink-0" />
                 <p className="text-sm text-gray-300">Applying to character via ComfyUI…</p>
-                <span className="text-xs text-gray-500 font-mono ml-auto">{applyProgress}%</span>
+                <span className="text-xs text-gray-500 font-mono ml-auto">{Number(applyProgress).toFixed(1)}%</span>
               </div>
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div

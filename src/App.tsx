@@ -1275,7 +1275,7 @@ export default function App() {
             <div className="mx-3 mt-2 shrink-0 bg-amber-900/30 border border-amber-700 rounded-lg p-3 flex items-center justify-between gap-3">
               <p className="text-xs text-amber-300">
                 {modelDownloading
-                  ? `Downloading storyboard model… ${modelDownloadPct}%`
+                  ? `Downloading storyboard model… ${Number(modelDownloadPct).toFixed(1)}%`
                   : 'Storyboard model not found. Download required to generate panels.'}
               </p>
               {!modelDownloading && (
@@ -1339,7 +1339,7 @@ export default function App() {
                         style={{ width: `${proModelPct}%` }}
                       />
                     </div>
-                    <span className="text-xs text-amber-400">{proModelPct}%</span>
+                    <span className="text-xs text-amber-400">{Number(proModelPct).toFixed(1)}%</span>
                   </div>
                 )}
               </div>
