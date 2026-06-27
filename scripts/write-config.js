@@ -14,6 +14,7 @@ const path = require('path');
 
 const cfg = {
   LICENSE_HMAC_SECRET:          process.env.LICENSE_HMAC_SECRET          || '',
+  DEEPSEEK_API_KEY:             process.env.DEEPSEEK_API_KEY             || '',
   DODO_API_KEY:                 process.env.DODO_API_KEY                 || '',
   DODO_API_BASE:                process.env.DODO_API_BASE                || 'https://live.dodopayments.com',
   DODO_PRO_CHECKOUT_URL:        process.env.DODO_PRO_CHECKOUT_URL        || 'https://checkout.dodopayments.com/buy/pdt_0NfSlPakjsXHejKSZgxND',

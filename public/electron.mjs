@@ -1364,7 +1364,7 @@ app.whenReady().then(async () => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*;",
         ],
       },
