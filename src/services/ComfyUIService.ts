@@ -1013,6 +1013,10 @@ export class ComfyUIService {
     const wanAvailable = await this.isNodeAvailable('WanVideoModelLoader');
     console.log('[animatePanel] step 2 - wan available:', wanAvailable);
     if (!wanAvailable) {
+      if (licenseService.isPro() || licenseService.isStudio()) {
+        console.log('[animatePanel] wan unavailable — routing Pro/Studio user to cloud (Kling via Fal.ai)');
+        return await this.animatePanelCloud(imageData, motionPrompt, onProgress) ?? '';
+      }
       throw new Error(
         'Wan 2.2 not installed in ComfyUI.\n' +
         'To install: follow the ComfyUI custom nodes setup guide in the project README.\n' +
