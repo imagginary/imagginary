@@ -52,6 +52,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('pose-animation-progress', handler);
     return () => ipcRenderer.removeListener('pose-animation-progress', handler);
   },
+  checkControlnetOpenpose: () => ipcRenderer.invoke('check-controlnet-openpose'),
+  downloadControlnetOpenpose: () => ipcRenderer.invoke('download-controlnet-openpose'),
+  onControlnetDownloadProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('controlnet-download-progress', handler);
+    return () => ipcRenderer.removeListener('controlnet-download-progress', handler);
+  },
 
   // ComfyUI integration
   deleteComfyInputFile: (filename) => ipcRenderer.invoke('delete-comfy-input-file', filename),

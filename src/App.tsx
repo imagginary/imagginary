@@ -18,6 +18,7 @@ import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
 import { licenseService, CREDIT_COSTS } from './services/LicenseService';
+import { getTier, TIER_COLORS } from './utils/tierColors';
 import { telemetryService } from './services/TelemetryService';
 import { settingsService } from './services/SettingsService';
 import { ollamaService } from './services/OllamaService';
@@ -177,6 +178,8 @@ export default function App() {
   const [servicesAutoStarted, setServicesAutoStarted] = useState(false);
   // License
   const [license, setLicense] = useState<License | null>(null);
+  const currentTier = getTier(licenseService);
+  const tierAccent = TIER_COLORS[currentTier].accent;
   const [showActivateLicense, setShowActivateLicense] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Model recovery banner
@@ -211,6 +214,13 @@ export default function App() {
   useEffect(() => {
     telemetryService.init();
   }, []);
+
+  // ── Tier accent CSS variables ─────────────────────────────────────────────────
+  useEffect(() => {
+    document.documentElement.style.setProperty('--tier-accent', tierAccent);
+    document.documentElement.style.setProperty('--tier-accent-20', `${tierAccent}20`);
+    document.documentElement.style.setProperty('--tier-accent-40', `${tierAccent}40`);
+  }, [tierAccent]);
 
   // ── Settings + License load ───────────────────────────────────────────────────
   useEffect(() => {
@@ -873,7 +883,11 @@ export default function App() {
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      setProgress({ panelId, status: 'error', progress: 0, message: 'Inpaint failed', error: msg });
+      const isProUser = licenseService.isPro() || licenseService.isStudio();
+      const message = !isProUser
+        ? 'Local inpainting requires ComfyUI to be running. Upgrade to Pro for cloud inpainting — no setup needed.'
+        : 'Edit failed. Please try again.';
+      setProgress({ panelId, status: 'error', progress: 0, message, error: isProUser ? msg : undefined });
     }
   }
 
@@ -891,8 +905,7 @@ export default function App() {
       }
 
       // Try Kling cloud first (Pro + Fal.ai key + sufficient credits)
-      const falApiKey = settingsService.getKey('falApiKey') || '';
-      const useCloud = (licenseService.isPro() || licenseService.isStudio()) && !!falApiKey && licenseService.hasCredits(CREDIT_COSTS.motionClip);
+      const useCloud = (licenseService.isPro() || licenseService.isStudio()) && licenseService.hasCredits(CREDIT_COSTS.motionClip);
 
       let base64Video: string | null = null;
 
@@ -903,6 +916,10 @@ export default function App() {
           motionPrompt,
           (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
         );
+        if (!base64Video) {
+          setCloudToast('Cloud motion failed — trying local generation…');
+          setTimeout(() => setCloudToast(null), 4000);
+        }
       }
 
       if (!base64Video) {
@@ -955,7 +972,7 @@ export default function App() {
         });
         return;
       }
-      setProgress({ panelId, status: 'error', progress: 0, message: 'Motion generation failed', error: msg });
+      setProgress({ panelId, status: 'error', progress: 0, message: 'Motion generation failed', error: `${msg} Please try again.` });
     }
   }
 
@@ -990,34 +1007,48 @@ export default function App() {
           setProgress({ panelId: activePanelId, status: 'animating', progress: pct, message: msg }),
       });
 
-      // Persist the video to disk
-      let clipPath: string | null = result.videoPath;
-      if (window.electronAPI?.saveVideo) {
-        const isMP4 = result.videoData.startsWith('data:video/mp4');
-        const ext = isMP4 ? 'mp4' : 'webp';
-        const b64 = result.videoData.replace(/^data:[^;]+;base64,/, '');
-        const saved = await window.electronAPI.saveVideo(
-          b64,
-          `pose_${activePanelId}_${Date.now()}.${ext}`
-        );
-        if (saved.success) clipPath = saved.filePath ?? null;
+      // Save posed image to disk
+      let savedPath: string | null = null;
+      if (window.electronAPI?.saveImage) {
+        const b64 = result.imageData.replace(/^data:[^;]+;base64,/, '');
+        const saved = await window.electronAPI.saveImage(b64, `pose_${activePanelId}_${Date.now()}.png`);
+        if (saved.success) savedPath = saved.filePath ?? null;
       }
 
+      // Push current image into history for undo
+      const currentHistory = panel.editHistory ?? [];
+      const newHistory = [...currentHistory, panel.generatedImageData].slice(-10);
+      const newRevision = {
+        id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        imageData: panel.generatedImageData,
+        prompt: panel.prompt ?? '',
+        timestamp: Date.now(),
+        label: 'Before pose',
+      };
+      const newRevisions = [...(panel.revisions ?? []), newRevision].slice(-20);
+
       updatePanel(activePanelId, {
-        poseClipData: result.videoData,
-        poseClipPath: clipPath,
+        generatedImageData: result.imageData,
+        generatedImagePath: savedPath ?? panel.generatedImagePath,
+        editHistory: newHistory,
+        revisions: newRevisions,
       });
 
       setProgress({
         panelId: activePanelId,
         status: 'complete',
         progress: 100,
-        message: 'Pose animation ready',
+        message: 'Pose applied',
       });
       setTimeout(() => setProgress(null), 2000);
       setShowPoseEditor(false);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
+      if (msg === 'CONTROLNET_NOT_INSTALLED') {
+        // PoseEditor handles this — re-throw so it can show download UI
+        setIsPoseGenerating(false);
+        throw error;
+      }
       setProgress({
         panelId: activePanelId,
         status: 'error',
@@ -1045,6 +1076,7 @@ export default function App() {
       motionClipData: videoData,
       motionClipPath: clipPath,
     });
+    await licenseService.spendCredits(CREDIT_COSTS.motionClip);
     setShowMotionLibrary(false);
   }
 
@@ -1131,13 +1163,23 @@ export default function App() {
   }
 
   async function handleExportPDF() {
-    await productionExporter.exportPDF(project.panels, project.title);
+    const result = await productionExporter.exportPDF(project.panels, project.title);
     telemetryService.track('pdf_exported');
+    if (result.success && result.droppedCount && result.droppedCount > 0) {
+      const n = result.droppedCount;
+      setExportError(`Note: ${n} panel${n > 1 ? 's were' : ' was'} excluded from the PDF — generate images for all panels first.`);
+      setTimeout(() => setExportError(null), 6000);
+    }
   }
 
   async function handleExportXML() {
-    await productionExporter.exportFCPXML(project.panels, project.title);
+    const result = await productionExporter.exportFCPXML(project.panels, project.title);
     telemetryService.track('fcpxml_exported');
+    if (result.success && result.droppedCount && result.droppedCount > 0) {
+      const n = result.droppedCount;
+      setExportError(`Note: ${n} panel${n > 1 ? 's were' : ' was'} excluded from the XML — save your project first to include all panels.`);
+      setTimeout(() => setExportError(null), 6000);
+    }
   }
 
   useEffect(() => {
@@ -1177,7 +1219,10 @@ export default function App() {
         isSaving={isSaving}
         isExporting={isExporting}
         exportProgress={exportProgress}
+        isPro={licenseService.isPro() || licenseService.isStudio()}
         isStudio={licenseService.isStudio()}
+        currentTier={currentTier}
+        tierAccent={tierAccent}
         onActivateLicense={() => setShowActivateLicense(true)}
         isExportingMotionComic={isExportingMotionComic}
         motionComicProgress={motionComicProgress}
@@ -1268,6 +1313,7 @@ export default function App() {
               onAddPanel={addPanel}
               onDeletePanel={deletePanel}
               onReorderPanels={reorderPanels}
+              tierAccent={tierAccent}
             />
           </div>
 
@@ -1377,6 +1423,7 @@ export default function App() {
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
             isPro={licenseService.isPro() || licenseService.isStudio()}
+            tierAccent={tierAccent}
           />
           <ShotInput
             value={shotInput}

@@ -14,6 +14,11 @@
   --imagginary-bg: #030712;
   --imagginary-surface: #111827;
   --imagginary-border: #1f2937;
+
+  /* Tier accent — updated dynamically via JS; defaults to Community gold */
+  --tier-accent: #ceaf82;
+  --tier-accent-20: #ceaf8220;
+  --tier-accent-40: #ceaf8240;
 }
 
 /* Base resets */

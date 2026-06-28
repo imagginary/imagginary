@@ -9,6 +9,7 @@ interface PanelListProps {
   onAddPanel: () => void;
   onDeletePanel: (id: string) => void;
   onReorderPanels: (panels: Panel[]) => void;
+  tierAccent?: string;
 }
 
 export default function PanelList({
@@ -18,6 +19,7 @@ export default function PanelList({
   onAddPanel,
   onDeletePanel,
   onReorderPanels,
+  tierAccent = '#ceaf82',
 }: PanelListProps) {
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
@@ -61,11 +63,16 @@ export default function PanelList({
             onDragEnd={handleDragEnd}
             onDragOver={(e) => e.preventDefault()}
             onClick={() => onSelectPanel(panel.id)}
-            className={`group relative flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors ${
+            className={`group relative flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors border ${
               activePanelId === panel.id
-                ? 'bg-imagginary-600/20 border border-imagginary-600/40'
-                : 'hover:bg-gray-800/60 border border-transparent'
+                ? 'hover:bg-gray-800/60'
+                : 'border-transparent hover:bg-gray-800/60'
             }`}
+            style={
+              activePanelId === panel.id
+                ? { backgroundColor: `${tierAccent}18`, borderColor: `${tierAccent}50` }
+                : undefined
+            }
           >
             {/* Drag handle */}
             <GripVertical className="w-3 h-3 text-gray-700 group-hover:text-gray-500 shrink-0 cursor-grab" />

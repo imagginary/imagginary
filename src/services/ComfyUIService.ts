@@ -404,7 +404,16 @@ export class ComfyUIService {
     if (licenseService.isPro() || licenseService.isStudio()) {
       if (licenseService.hasCredits(CREDIT_COSTS.panelCloud)) {
         onProgress?.(5, 'Generating with FLUX.1 Schnell…');
-        const positivePrompt = this.buildPositivePrompt(prompt);
+        let positivePrompt = this.buildPositivePrompt(prompt);
+        if (characterIds && characterIds.length > 0) {
+          const characterDescriptions = characterIds
+            .map(id => characterLibraryService.get(id)?.description)
+            .filter(Boolean)
+            .join(', ');
+          if (characterDescriptions) {
+            positivePrompt = `(solo, ${characterDescriptions}:1.2), ${positivePrompt}`;
+          }
+        }
         const result = await (window as any).electronAPI.falFluxSchnell({
           prompt: positivePrompt,
           width: aspectRatio.width,
@@ -435,16 +444,13 @@ export class ComfyUIService {
       await this.getAvailableCheckpoints();
     }
 
-    // Resolve character description for prompt injection (first character wins)
+    // Resolve character descriptions for prompt injection (all characters combined)
     let characterDescription: string | null = null;
     if (characterIds.length > 0) {
-      for (const cid of characterIds) {
-        const character = characterLibraryService.get(cid);
-        if (character?.description) {
-          characterDescription = character.description;
-          break;
-        }
-      }
+      const descriptions = characterIds
+        .map(id => characterLibraryService.get(id)?.description)
+        .filter(Boolean) as string[];
+      if (descriptions.length > 0) characterDescription = descriptions.join(', ');
     }
 
     // Phase 9 — IPAdapter reference image selection
@@ -452,7 +458,7 @@ export class ComfyUIService {
     // Upload it to ComfyUI input so it's available if IPAdapter nodes are present.
     let referenceImageFilename: string | null = null;
 
-    if (characterIds.length > 0 && shotAngle) {
+    if (characterIds.length > 0) {
       for (const charId of characterIds) {
         const ref = characterLibraryService.getBestAngleReference(charId, shotAngle);
         if (ref) {

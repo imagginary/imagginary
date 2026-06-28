@@ -5,6 +5,7 @@ export interface ProductionExportResult {
   success: boolean;
   message: string;
   error?: string;
+  droppedCount?: number;
 }
 
 type ProductionElectronAPI = {
@@ -48,6 +49,7 @@ export class ProductionExporter {
     if (panelsWithImages.length === 0) {
       return { success: false, message: 'No generated panels to export', error: 'Generate at least one panel before exporting' };
     }
+    const droppedCount = panels.length - panelsWithImages.length;
 
     // A4 landscape layout constants (mm)
     const PAGE_W = 297;
@@ -77,9 +79,9 @@ export class ProductionExporter {
         const imgData = panel.generatedImageData!;
         const imgFormat = imgData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         const ar = await getAspectRatio(imgData);
-        // Cap image height so text area always fits
-        const maxImgH = PAGE_H - TOP - FOOTER_LINE_Y - 38;
-        const imgH = Math.min(PANEL_W / ar, maxImgH > 0 ? maxImgH : 80);
+        const FOOTER_HEIGHT = 11; // mm reserved for footer area
+        const maxImgH = PAGE_H - TOP - FOOTER_HEIGHT - 38;
+        const imgH = Math.min(PANEL_W / ar, maxImgH);
 
         // Panel image
         doc.addImage(imgData, imgFormat, x, y, PANEL_W, imgH);
@@ -137,7 +139,7 @@ export class ProductionExporter {
     try {
       const result = await api.exportPDF(base64);
       if (result.canceled) return { success: false, message: 'Export cancelled' };
-      if (result.success) return { success: true, message: 'PDF exported successfully' };
+      if (result.success) return { success: true, message: 'PDF exported successfully', droppedCount };
       return { success: false, message: 'PDF export failed', error: result.error };
     } catch (err) {
       return { success: false, message: 'PDF export failed', error: err instanceof Error ? err.message : 'Unknown error' };
@@ -156,6 +158,7 @@ export class ProductionExporter {
         error: 'Panels must be generated and saved before exporting XML. If running outside Electron, image paths are unavailable.',
       };
     }
+    const droppedCount = panels.filter((p) => p.generatedImageData).length - panelsWithImages.length;
 
     const FPS = 24;
 
@@ -214,7 +217,7 @@ export class ProductionExporter {
     try {
       const result = await api.exportFCPXML(xml);
       if (result.canceled) return { success: false, message: 'Export cancelled' };
-      if (result.success) return { success: true, message: 'FCPXML exported successfully' };
+      if (result.success) return { success: true, message: 'FCPXML exported successfully', droppedCount };
       return { success: false, message: 'FCPXML export failed', error: result.error };
     } catch (err) {
       return { success: false, message: 'FCPXML export failed', error: err instanceof Error ? err.message : 'Unknown error' };

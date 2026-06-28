@@ -21,6 +21,7 @@ import {
 import { MotionClip, MotionCategory, Panel } from '../types';
 import { PoseKeyframe, SKELETON_CONNECTIONS } from '../data/PoseVocabulary';
 import { motionLibraryService } from '../services/MotionLibraryService';
+import { licenseService } from '../services/LicenseService';
 import { renderPoseToDataURL, expandSequence } from '../services/PoseEngineService';
 
 // ── Category list ─────────────────────────────────────────────────────────────
@@ -294,12 +295,21 @@ export default function MotionLibrary({
   }
 
   async function handleApply() {
-    if (!isPro) return; // gate enforced in UI; belt-and-suspenders guard
-    if (!selectedClip || !panel.generatedImageData || !comfyuiConnected) return;
+    if (!isPro) return;
+    const needsComfyUI = !(licenseService.isPro() || licenseService.isStudio());
+    if (!selectedClip || !panel.generatedImageData || (needsComfyUI && !comfyuiConnected)) return;
     setIsApplying(true);
     setApplyError(null);
     setApplyProgress(0);
     setApplyMsg('Starting…');
+    const cleanupProgress = (window as any).electronAPI?.onCloudProgress?.(
+      (data: { handler: string; pct: number; msg: string }) => {
+        if (data.handler === 'fal-kling') {
+          setApplyProgress(data.pct);
+          setApplyMsg(data.msg);
+        }
+      }
+    );
     try {
       const { videoData } = await motionLibraryService.applyClipToCharacter(
         selectedClip.id,
@@ -310,6 +320,7 @@ export default function MotionLibrary({
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
+      cleanupProgress?.();
       setIsApplying(false);
     }
   }

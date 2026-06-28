@@ -24,6 +24,7 @@ interface PanelViewerProps {
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
   isPro?: boolean;
+  tierAccent?: string;
 }
 
 const BRUSH_SIZES = [8, 16, 28, 44];
@@ -74,6 +75,7 @@ export default function PanelViewer({
   wanModelAvailable,
   wanModelWarning,
   isPro = false,
+  tierAccent = '#ceaf82',
 }: PanelViewerProps) {
   const aspectRatio = effectiveAspectRatio ?? getAspectRatio(DEFAULT_ASPECT_RATIO_ID);
   const isGenerating =
@@ -555,9 +557,12 @@ export default function PanelViewer({
                 />
               )}
               <div className="relative z-20 flex flex-col items-center gap-4">
-                <Loader2 className={`w-10 h-10 animate-spin ${isAnimating ? 'text-violet-400' : 'text-imagginary-400'}`} />
+                <Loader2
+                  className="w-10 h-10 animate-spin"
+                  style={{ color: isAnimating ? '#9B6DFF' : tierAccent }}
+                />
                 <div className="text-center">
-                  <p className={`text-sm font-medium ${isAnimating ? 'text-violet-400' : 'text-imagginary-400'}`}>
+                  <p className="text-sm font-medium" style={{ color: isAnimating ? '#9B6DFF' : tierAccent }}>
                     {progress?.message}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
@@ -570,8 +575,8 @@ export default function PanelViewer({
                 </div>
                 <div className="w-48 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${isAnimating ? 'bg-violet-500' : 'bg-imagginary-500'}`}
-                    style={{ width: `${progress?.progress ?? 0}%` }}
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ width: `${progress?.progress ?? 0}%`, backgroundColor: isAnimating ? '#9B6DFF' : tierAccent }}
                   />
                 </div>
                 <p className="text-xs text-gray-600 font-mono">{(progress?.progress ?? 0).toFixed(1)}%</p>
@@ -695,10 +700,13 @@ export default function PanelViewer({
             <button
               onClick={() => { setAnimateMode((v) => !v); setEditMode(false); setHasMask(false); }}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
-                animateMode
-                  ? 'bg-violet-600/20 text-violet-400 border border-violet-600/40 hover:bg-violet-600/30'
-                  : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                animateMode ? '' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
               }`}
+              style={animateMode ? {
+                backgroundColor: `${tierAccent}20`,
+                color: tierAccent,
+                border: `1px solid ${tierAccent}40`,
+              } : undefined}
               title={
                 hasClip
                   ? 'View or regenerate the motion clip for this panel'
@@ -797,12 +805,16 @@ export default function PanelViewer({
             onKeyDown={(e) => e.key === 'Enter' && handleApplyEdit()}
             placeholder="What should change here?"
             autoFocus
-            className="flex-1 bg-gray-800 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none transition-colors"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none transition-colors"
+            style={{ '--tw-border-opacity': '1' } as React.CSSProperties}
+            onFocus={(e) => { e.currentTarget.style.borderColor = tierAccent; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = ''; }}
           />
           <button
             onClick={handleApplyEdit}
             disabled={!hasMask || !editDescription.trim()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded text-xs font-semibold bg-imagginary-600 hover:bg-imagginary-500 text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 rounded text-xs font-semibold text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ backgroundColor: tierAccent }}
             title="Apply edit"
           >
             <Check className="w-3.5 h-3.5" />
@@ -822,6 +834,11 @@ export default function PanelViewer({
       {editMode && isPro && !inpaintsExhausted && !settingsService.getKey('falApiKey') && (
         <p className="text-[10px] text-gray-600 px-6 pb-1">
           Add a Fal.ai key in Settings for best-quality inpainting (FLUX.1 Fill).
+        </p>
+      )}
+      {editMode && !isPro && (
+        <p className="text-xs text-gray-500 text-center px-6 pb-1">
+          ✦ Upgrade to Pro for cloud inpainting via FLUX.1 — faster and higher quality
         </p>
       )}
 

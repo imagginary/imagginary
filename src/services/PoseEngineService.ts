@@ -12,7 +12,6 @@ import {
   POSE_VOCABULARY,
   PoseTemplate,
   PoseKeyframe,
-  Joint,
   SKELETON_CONNECTIONS,
   searchPoses,
 } from '../data/PoseVocabulary';
@@ -23,19 +22,19 @@ import { getComfyUIUrl } from '../config/services';
 export interface PoseGenerationParams {
   /** Base image data URL (the storyboard panel). */
   imageData: string;
-  /** User's natural-language description, e.g. "character runs then falls". */
+  /** User's natural-language description, e.g. "character raises arm defiantly". */
   description: string;
   /** Selected pose template IDs (in order). */
   poseTemplateIds: string[];
-  /** How many frames to interpolate between each keyframe pair (8–24). */
+  /** Unused — kept for call-site compatibility. */
   framesPerSegment?: number;
   /** Progress callback — 0-100. */
   onProgress?: (pct: number, msg: string) => void;
 }
 
 export interface PoseGenerationResult {
-  videoData: string;   // base64 data URL (video/mp4 or video/webp)
-  videoPath: string | null;
+  /** Base64 PNG data URL of the posed panel image. */
+  imageData: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,118 +171,83 @@ export function renderPoseToDataURL(
 // ── ComfyUI Workflow Builder ─────────────────────────────────────────────────
 
 /**
- * Build a ComfyUI workflow JSON for pose-controlled animation via Wan 2.2 + OpenPose ControlNet.
- *
- * Requires the following ComfyUI custom nodes:
- *   - ComfyUI-AnimateDiff-Evolved
- *   - comfyui_controlnet_aux (DWPose / OpenPose preprocessor)
- *   - ComfyUI-VideoHelperSuite (VHS)
- *
- * The workflow:
- *   1. Load the source image
- *   2. For each keyframe, encode pose as a conditioning map
- *   3. Run AnimateDiff with ControlNet guidance
- *   4. Output video via VHS
+ * Render a single PoseKeyframe as an OpenPose-format PNG data URL.
+ * Black background, colored joints and limb lines — compatible with
+ * control_v11p_sd15_openpose.pth ControlNet.
  */
-export function buildPoseControlNetWorkflow(params: {
-  imageDataB64: string;
-  poseFrames: PoseKeyframe[];
-  prompt: string;
-  negativePrompt?: string;
-  width?: number;
-  height?: number;
-  steps?: number;
-  cfg?: number;
-  seed?: number;
-}): object {
-  const {
-    imageDataB64,
-    poseFrames,
-    prompt,
-    negativePrompt = 'blurry, distorted, watermark, text, bad anatomy',
-    width = 512,
-    height = 512,
-    steps = 20,
-    cfg = 7,
-    seed = Math.floor(Math.random() * 2 ** 32),
-  } = params;
+export function renderPoseToOpenposePNG(
+  keyframe: PoseKeyframe,
+  width: number,
+  height: number,
+): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
 
-  // Build pose conditioning maps as simple tensors described in JSON.
-  // The actual tensor construction happens in the ComfyUI Python nodes —
-  // we pass normalised joint coordinates and the node rebuilds the heatmap.
-  const poseKeypoints = poseFrames.map((kf) => ({
-    keypoints: kf.joints.map((j) => (j ? [j.x, j.y, 1.0] : [0, 0, 0])),
-  }));
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height);
+
+  // COCO 17-joint color palette (matches OpenPose convention)
+  const JOINT_COLORS = [
+    '#FF0000', '#FF5500', '#FFAA00', '#FFE600', '#AAFF00',
+    '#00FF00', '#00FFAA', '#00FFFF', '#00AAFF', '#0055FF',
+    '#5500FF', '#AA00FF', '#FF00AA', '#FF0055', '#FF6600',
+    '#FF9900', '#FFCC00',
+  ];
+
+  // Draw limb lines first so joint circles render on top
+  ctx.lineWidth = Math.max(2, Math.round(width / 150));
+  SKELETON_CONNECTIONS.forEach(([a, b]) => {
+    const ja = keyframe.joints[a];
+    const jb = keyframe.joints[b];
+    if (!ja || !jb) return;
+    ctx.strokeStyle = JOINT_COLORS[a] ?? '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(ja.x * width, ja.y * height);
+    ctx.lineTo(jb.x * width, jb.y * height);
+    ctx.stroke();
+  });
+
+  // Draw joint circles
+  const r = Math.max(3, Math.round(width / 100));
+  keyframe.joints.forEach((joint, i) => {
+    if (!joint) return;
+    ctx.fillStyle = JOINT_COLORS[i] ?? '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(joint.x * width, joint.y * height, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  return canvas.toDataURL('image/png');
+}
+
+/**
+ * Build a ComfyUI workflow for single-image pose-controlled generation.
+ * Uses DreamShaper 8 (SD1.5) + ControlNet OpenPose — no custom nodes required.
+ * Outputs a still image via SaveImage, not video.
+ */
+export function buildPoseControlNetWorkflow(
+  panelImageB64: string,
+  poseImageB64: string,
+  prompt: string,
+  seed = Math.floor(Math.random() * 2 ** 32),
+): object {
+  const panelB64 = panelImageB64.replace(/^data:[^;]+;base64,/, '');
+  const poseB64 = poseImageB64.replace(/^data:[^;]+;base64,/, '');
 
   return {
-    '1': {
-      class_type: 'LoadImageBase64',
-      inputs: { image: imageDataB64 },
-    },
-    '2': {
-      class_type: 'CLIPTextEncode',
-      inputs: {
-        text: prompt,
-        clip: ['4', 1],
-      },
-    },
-    '3': {
-      class_type: 'CLIPTextEncode',
-      inputs: {
-        text: negativePrompt,
-        clip: ['4', 1],
-      },
-    },
-    '4': {
-      class_type: 'CheckpointLoaderSimple',
-      inputs: { ckpt_name: 'wan2.2_t2v_1.3B_bf16.safetensors' },
-    },
-    '5': {
-      class_type: 'VAEEncode',
-      inputs: { pixels: ['1', 0], vae: ['4', 2] },
-    },
-    '6': {
-      class_type: 'PoseKeyframeConditioningNode',
-      inputs: {
-        keypoints_json: JSON.stringify(poseKeypoints),
-        width,
-        height,
-        model: ['4', 0],
-        controlnet_name: 'control_v11p_sd15_openpose.pth',
-        strength: 0.8,
-      },
-    },
-    '7': {
-      class_type: 'KSampler',
-      inputs: {
-        model: ['6', 0],
-        positive: ['6', 1],
-        negative: ['3', 0],
-        latent_image: ['5', 0],
-        seed,
-        steps,
-        cfg,
-        sampler_name: 'euler_ancestral',
-        scheduler: 'karras',
-        denoise: 0.75,
-      },
-    },
-    '8': {
-      class_type: 'VAEDecode',
-      inputs: { samples: ['7', 0], vae: ['4', 2] },
-    },
-    '9': {
-      class_type: 'VHS_VideoCombine',
-      inputs: {
-        images: ['8', 0],
-        frame_rate: 8,
-        loop_count: 0,
-        filename_prefix: 'pose_anim',
-        format: 'video/h264-mp4',
-        pingpong: false,
-        save_output: true,
-      },
-    },
+    '1':  { class_type: 'LoadImageBase64',      inputs: { image: panelB64 } },
+    '2':  { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'dreamshaper_8.safetensors' } },
+    '3':  { class_type: 'CLIPTextEncode',        inputs: { text: prompt, clip: ['2', 1] } },
+    '4':  { class_type: 'CLIPTextEncode',        inputs: { text: 'blurry, bad anatomy, watermark, worst quality, low quality', clip: ['2', 1] } },
+    '5':  { class_type: 'VAEEncode',             inputs: { pixels: ['1', 0], vae: ['2', 2] } },
+    '6':  { class_type: 'LoadImageBase64',        inputs: { image: poseB64 } },
+    '7':  { class_type: 'ControlNetLoader',      inputs: { control_net_name: 'control_v11p_sd15_openpose.pth' } },
+    '8':  { class_type: 'ControlNetApply',       inputs: { conditioning: ['3', 0], control_net: ['7', 0], image: ['6', 0], strength: 0.8 } },
+    '9':  { class_type: 'KSampler',              inputs: { model: ['2', 0], positive: ['8', 0], negative: ['4', 0], latent_image: ['5', 0], seed, steps: 20, cfg: 7, sampler_name: 'euler_ancestral', scheduler: 'karras', denoise: 0.75 } },
+    '10': { class_type: 'VAEDecode',             inputs: { samples: ['9', 0], vae: ['2', 2] } },
+    '11': { class_type: 'SaveImage',             inputs: { filename_prefix: 'imagginary_pose', images: ['10', 0] } },
   };
 }
 
@@ -294,8 +258,8 @@ class PoseEngineService {
 
   private async getComfyBaseUrl(): Promise<string> {
     if (this.comfyBaseUrl) return this.comfyBaseUrl;
-    if (window.electronAPI?.getComfyUIProxyPort) {
-      const port = await window.electronAPI.getComfyUIProxyPort();
+    if ((window as any).electronAPI?.getComfyUIProxyPort) {
+      const port = await (window as any).electronAPI.getComfyUIProxyPort();
       if (port) {
         this.comfyBaseUrl = `http://127.0.0.1:${port}`;
         return this.comfyBaseUrl;
@@ -304,38 +268,21 @@ class PoseEngineService {
     return getComfyUIUrl();
   }
 
-  /** Check whether the required ComfyUI nodes are available. */
-  async checkPoseNodes(): Promise<{ available: boolean; missing: string[] }> {
-    try {
-      const baseUrl = await this.getComfyBaseUrl();
-      const res = await fetch(`${baseUrl}/object_info`);
-      if (!res.ok) return { available: false, missing: ['ComfyUI not reachable'] };
-      const info = await res.json() as Record<string, unknown>;
-      const required = ['PoseKeyframeConditioningNode', 'VHS_VideoCombine', 'LoadImageBase64'];
-      const missing = required.filter((n) => !info[n]);
-      return { available: missing.length === 0, missing };
-    } catch {
-      return { available: false, missing: ['ComfyUI not reachable'] };
-    }
-  }
-
   /**
-   * Primary method — generate a pose-animated video clip.
+   * Generate a posed panel image via DreamShaper 8 + ControlNet OpenPose.
+   * Returns a still image that replaces the panel's generatedImageData.
    */
   async generatePoseAnimation(params: PoseGenerationParams): Promise<PoseGenerationResult> {
-    const {
-      imageData,
-      description,
-      poseTemplateIds,
-      framesPerSegment = 12,
-      onProgress,
-    } = params;
-
+    const { imageData, description, poseTemplateIds, onProgress } = params;
     const progress = (pct: number, msg: string) => onProgress?.(pct, msg);
 
-    progress(0, 'Building keyframe sequence…');
+    progress(5, 'Checking ControlNet model…');
+    const { installed } = await (window as any).electronAPI.checkControlnetOpenpose();
+    if (!installed) {
+      throw new Error('CONTROLNET_NOT_INSTALLED');
+    }
 
-    // 1. Resolve templates → keyframes
+    // Resolve templates
     const selectedIds = poseTemplateIds.length > 0
       ? poseTemplateIds
       : matchPoseTemplates(description).map((t) => t.id);
@@ -344,37 +291,27 @@ class PoseEngineService {
       throw new Error('No matching pose templates found. Try describing the pose differently.');
     }
 
-    const baseKeyframes = buildKeyframeSequence(selectedIds);
-    const denseFrames = expandSequence(baseKeyframes, framesPerSegment);
+    progress(10, 'Rendering pose image…');
 
-    progress(10, `${denseFrames.length} animation frames prepared…`);
+    // Use the first selected template's keyframe for the ControlNet pose image
+    const firstTemplate = POSE_VOCABULARY.find((p) => p.id === selectedIds[0]);
+    if (!firstTemplate) throw new Error('Pose template not found.');
 
-    // 2. Build prompt from description + template tags
+    const poseImageDataUrl = renderPoseToOpenposePNG(firstTemplate.keyframe, 512, 512);
+
+    // Build prompt
     const templateNames = selectedIds
       .map((id) => POSE_VOCABULARY.find((p) => p.id === id)?.name ?? '')
       .filter(Boolean)
       .join(', ');
+    const prompt = [description, templateNames, 'cinematic storyboard, film style']
+      .filter(Boolean)
+      .join(', ');
 
-    const enhancedPrompt = [
-      description,
-      `pose sequence: ${templateNames}`,
-      'smooth motion, cinematic, storyboard style',
-    ].join(', ');
+    progress(20, 'Building ComfyUI workflow…');
+    const workflow = buildPoseControlNetWorkflow(imageData, poseImageDataUrl, prompt);
 
-    progress(15, 'Building ComfyUI workflow…');
-
-    // 3. Strip the data:... prefix from the image
-    const imageDataB64 = imageData.replace(/^data:[^;]+;base64,/, '');
-
-    const workflow = buildPoseControlNetWorkflow({
-      imageDataB64,
-      poseFrames: denseFrames,
-      prompt: enhancedPrompt,
-    });
-
-    progress(20, 'Sending to ComfyUI…');
-
-    // 4. Queue the prompt
+    progress(25, 'Sending to ComfyUI…');
     const baseUrl = await this.getComfyBaseUrl();
     const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
@@ -388,66 +325,62 @@ class PoseEngineService {
     }
 
     const { prompt_id } = await queueRes.json() as { prompt_id: string };
-    progress(25, 'Pose animation queued…');
+    progress(30, 'Pose generation queued…');
 
-    // 5. Poll for completion
-    const videoData = await this.pollForResult(prompt_id, baseUrl, progress);
-
-    progress(100, 'Pose animation complete');
-
-    return { videoData, videoPath: null };
+    const imageResult = await this.pollForImage(prompt_id, baseUrl, progress);
+    progress(100, 'Pose complete');
+    return { imageData: imageResult };
   }
 
-  /** Poll /history until the prompt is done and return the video data URL. */
-  private async pollForResult(
+  /** Poll /history until SaveImage output is ready, return as base64 PNG data URL. */
+  private async pollForImage(
     promptId: string,
     baseUrl: string,
-    onProgress: (pct: number, msg: string) => void
+    onProgress: (pct: number, msg: string) => void,
   ): Promise<string> {
-    const POLL_INTERVAL = 2000;
-    const MAX_WAIT = 5 * 60 * 1000; // 5 minutes
+    const POLL_MS = 2000;
+    const MAX_WAIT = 3 * 60 * 1000;
     const start = Date.now();
-    let pct = 25;
+    let pct = 30;
 
     while (Date.now() - start < MAX_WAIT) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+      await new Promise((r) => setTimeout(r, POLL_MS));
 
       const histRes = await fetch(`${baseUrl}/history/${promptId}`);
       if (!histRes.ok) continue;
-      const hist = await histRes.json() as Record<string, { outputs?: Record<string, { videos?: { filename: string; subfolder: string; type: string }[] }> }>;
+
+      const hist = await histRes.json() as Record<string, {
+        outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }>;
+      }>;
 
       const entry = hist[promptId];
       if (!entry?.outputs) {
-        // Still running — advance progress indicator
-        pct = Math.min(pct + 3, 90);
-        onProgress(pct, 'Rendering pose animation…');
+        pct = Math.min(pct + 4, 90);
+        onProgress(pct, 'Rendering posed panel…');
         continue;
       }
 
-      // Find the video output from VHS_VideoCombine (node '9')
-      const videoOutput = entry.outputs['9']?.videos?.[0];
-      if (!videoOutput) {
-        throw new Error('ComfyUI returned no video output. Check that VHS is installed.');
-      }
+      // Node '11' is SaveImage
+      const imageOutput = entry.outputs['11']?.images?.[0];
+      if (!imageOutput) throw new Error('ComfyUI returned no image output.');
 
-      // Fetch the video file
-      onProgress(93, 'Downloading video…');
-      const { filename, subfolder, type } = videoOutput;
+      onProgress(93, 'Downloading result…');
+      const { filename, subfolder, type } = imageOutput;
       const viewUrl = `${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
 
-      const videoRes = await fetch(viewUrl);
-      if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.statusText}`);
+      const imgRes = await fetch(viewUrl);
+      if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.statusText}`);
 
-      const blob = await videoRes.blob();
+      const blob = await imgRes.blob();
       return await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Failed to read video blob'));
+        reader.onerror = () => reject(new Error('Failed to read image blob'));
         reader.readAsDataURL(blob);
       });
     }
 
-    throw new Error('Pose animation timed out after 5 minutes');
+    throw new Error('Pose generation timed out after 3 minutes.');
   }
 }
 

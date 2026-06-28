@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
 import { ServiceStatus } from '../types';
+import type { Tier } from '../utils/tierColors';
 
 interface TitleBarProps {
   projectTitle: string;
@@ -19,7 +20,10 @@ interface TitleBarProps {
   isSaving: boolean;
   isExporting: boolean;
   exportProgress: number | null;
+  isPro?: boolean;
   isStudio?: boolean;
+  currentTier?: Tier;
+  tierAccent?: string;
   onActivateLicense?: () => void;
   isSharedSession?: boolean;
   onStartSharedSession?: () => void;
@@ -57,7 +61,7 @@ function StudioUpgradeModal({ onClose }: { onClose: () => void }) {
         <FileText className="w-8 h-8 text-imagginary-400 mx-auto mb-3" />
         <p className="text-sm text-gray-200 font-semibold mb-2">Production Pack</p>
         <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-          PDF storyboard export and Premiere Pro XML export are Studio features. Export your boards straight into your edit.
+          Pro feature — upgrade to Pro or Studio to export PDF and XML. Export your boards straight into your edit.
         </p>
         <button className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors mb-3">
           Upgrade to Studio
@@ -90,7 +94,10 @@ export default function TitleBar({
   isSaving,
   isExporting,
   exportProgress,
+  isPro = false,
   isStudio = false,
+  currentTier = 'community' as Tier,
+  tierAccent = '#ceaf82',
   onActivateLicense,
   isExportingMotionComic,
   motionComicProgress,
@@ -117,12 +124,12 @@ export default function TitleBar({
   }
 
   function handleExportPDF() {
-    if (!isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
+    if (!isPro && !isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
     onExportPDF();
   }
 
   function handleExportXML() {
-    if (!isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
+    if (!isPro && !isStudio) { onActivateLicense ? onActivateLicense() : setShowUpgrade(true); return; }
     onExportXML();
   }
 
@@ -136,14 +143,26 @@ export default function TitleBar({
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {/* 32px mark — simplified for small sizes per brand guidelines */}
           <svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="14" y="14" width="28" height="22" rx="2" fill="none" stroke="#ceaf82" strokeWidth="2" opacity="0.4"/>
-            <rect x="6" y="6" width="28" height="22" rx="2" fill="#080808" stroke="#ceaf82" strokeWidth="2.5"/>
-            <rect x="3" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
-            <rect x="3" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
-            <rect x="33" y="10" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
-            <rect x="33" y="16" width="4" height="3" rx="0.75" fill="#ceaf82" opacity="0.7"/>
+            <rect x="14" y="14" width="28" height="22" rx="2" fill="none" stroke={tierAccent} strokeWidth="2" opacity="0.4"/>
+            <rect x="6" y="6" width="28" height="22" rx="2" fill="#080808" stroke={tierAccent} strokeWidth="2.5"/>
+            <rect x="3" y="10" width="4" height="3" rx="0.75" fill={tierAccent} opacity="0.7"/>
+            <rect x="3" y="16" width="4" height="3" rx="0.75" fill={tierAccent} opacity="0.7"/>
+            <rect x="33" y="10" width="4" height="3" rx="0.75" fill={tierAccent} opacity="0.7"/>
+            <rect x="33" y="16" width="4" height="3" rx="0.75" fill={tierAccent} opacity="0.7"/>
           </svg>
-          <span className="text-xs font-semibold text-imagginary-400 tracking-widest uppercase">Imagginary</span>
+          <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: tierAccent }}>Imagginary</span>
+          {currentTier !== 'community' && (
+            <span
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1"
+              style={{
+                backgroundColor: `${tierAccent}20`,
+                color: tierAccent,
+                border: `1px solid ${tierAccent}40`,
+              }}
+            >
+              {currentTier.toUpperCase()}
+            </span>
+          )}
           <span className="text-gray-600 text-xs">|</span>
           {editingTitle ? (
             <input
@@ -257,10 +276,20 @@ export default function TitleBar({
           {isStudio ? (
             <button
               onClick={onActivateLicense}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase text-violet-300 hover:text-violet-200 hover:bg-violet-900/20 transition-colors"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase transition-colors"
+              style={{ color: tierAccent }}
               title="Studio — manage license"
             >
               <Star className="w-3 h-3" /> Studio
+            </button>
+          ) : isPro ? (
+            <button
+              onClick={onActivateLicense}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase transition-colors"
+              style={{ color: tierAccent }}
+              title="Pro — manage license"
+            >
+              <Zap className="w-3 h-3" /> Pro
             </button>
           ) : (
             <button
@@ -278,21 +307,21 @@ export default function TitleBar({
           <button
             onClick={handleExportPDF}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
-            title={isStudio ? 'Export PDF storyboard' : 'Export PDF — Studio feature'}
+            title={(isPro || isStudio) ? 'Export PDF storyboard' : 'Export PDF — Pro feature'}
           >
             <FileText className="w-3.5 h-3.5" />
             PDF
-            {!isStudio && <Lock className="w-2.5 h-2.5 text-imagginary-500/60" />}
+            {!isPro && !isStudio && <Lock className="w-2.5 h-2.5 text-imagginary-500/60" />}
           </button>
 
           <button
             onClick={handleExportXML}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
-            title={isStudio ? 'Export Premiere Pro XML' : 'Export XML — Studio feature'}
+            title={(isPro || isStudio) ? 'Export Premiere Pro XML' : 'Export XML — Pro feature'}
           >
             <FileCode className="w-3.5 h-3.5" />
             XML
-            {!isStudio && <Lock className="w-2.5 h-2.5 text-imagginary-500/60" />}
+            {!isPro && !isStudio && <Lock className="w-2.5 h-2.5 text-imagginary-500/60" />}
           </button>
 
           <div className="w-px h-4 bg-gray-700 mx-1" />

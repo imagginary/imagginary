@@ -60,7 +60,7 @@ interface PoseEditorProps {
     poseTemplateIds: string[];
     description: string;
     framesPerSegment: number;
-  }) => void;
+  }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -252,6 +252,11 @@ export default function PoseEditor({
   const [description, setDescription] = useState('');
   const [framesPerSegment, setFramesPerSegment] = useState(12);
   const [autoMatchDone, setAutoMatchDone] = useState(false);
+  const [showControlnetDownload, setShowControlnetDownload] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadMb, setDownloadMb] = useState('0');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Derive filtered library
   const filteredPoses = React.useMemo(() => {
@@ -315,9 +320,44 @@ export default function PoseEditor({
     setSelectedIds(matches.map((m) => m.id));
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (selectedIds.length === 0) return;
-    onGenerate({ poseTemplateIds: selectedIds, description, framesPerSegment });
+    try {
+      await onGenerate({ poseTemplateIds: selectedIds, description, framesPerSegment });
+    } catch (err) {
+      if (err instanceof Error && err.message === 'CONTROLNET_NOT_INSTALLED') {
+        setShowControlnetDownload(true);
+      }
+    }
+  };
+
+  const handleDownloadControlnet = async () => {
+    setIsDownloading(true);
+    setDownloadError(null);
+    setDownloadProgress(0);
+
+    const cleanup = (window as any).electronAPI?.onControlnetDownloadProgress?.(
+      (data: { pct: number; mb: string }) => {
+        setDownloadProgress(data.pct);
+        setDownloadMb(data.mb);
+      }
+    );
+
+    try {
+      const result = await (window as any).electronAPI?.downloadControlnetOpenpose?.();
+      if (result?.success) {
+        setShowControlnetDownload(false);
+        // Retry generation automatically
+        await onGenerate({ poseTemplateIds: selectedIds, description, framesPerSegment });
+      } else {
+        setDownloadError(result?.error ?? 'Download failed. Please try again.');
+      }
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      cleanup?.();
+      setIsDownloading(false);
+    }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -523,7 +563,7 @@ export default function PoseEditor({
               </div>
             </div>
 
-            {/* Pro gate / Generate button */}
+            {/* Pro gate / ControlNet download / Generate button */}
             {!isPro ? (
               <div className="shrink-0 bg-gray-900 border border-gray-700 rounded-xl p-4 text-center space-y-2">
                 <div className="flex items-center justify-center gap-1.5 text-violet-400">
@@ -531,12 +571,47 @@ export default function PoseEditor({
                   <span className="text-sm font-semibold">Pro Feature</span>
                 </div>
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Pose Engine generates ControlNet-guided animations.
-                  Upgrade to Pro to unlock pose-driven clips.
+                  Pose Engine generates ControlNet-guided posed panels.
+                  Upgrade to Pro to unlock pose-driven image generation.
                 </p>
                 <button className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors">
                   Upgrade to Pro — $19/month
                 </button>
+              </div>
+            ) : showControlnetDownload ? (
+              <div className="shrink-0 bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-200">OpenPose ControlNet required</p>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Pose Engine needs the OpenPose ControlNet model (~1.4 GB).
+                  Downloads once and is stored locally for all future sessions.
+                </p>
+                {downloadError && (
+                  <p className="text-xs text-red-400 flex items-center gap-1.5">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    {downloadError}
+                  </p>
+                )}
+                {isDownloading ? (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] text-gray-500 font-mono">
+                      <span>Downloading… {downloadMb} MB</span>
+                      <span>{downloadProgress}%</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                        style={{ width: `${downloadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleDownloadControlnet}
+                    className="w-full px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    Download OpenPose Model (~1.4 GB)
+                  </button>
+                )}
               </div>
             ) : (
               <button
@@ -556,7 +631,7 @@ export default function PoseEditor({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    {selectedIds.length === 0 ? 'Select at least one pose' : 'Generate Pose Animation'}
+                    {selectedIds.length === 0 ? 'Select at least one pose' : 'Generate Posed Panel'}
                   </>
                 )}
               </button>

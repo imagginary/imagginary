@@ -160,8 +160,8 @@ export default function VideoTransfer({
 }: VideoTransferProps) {
   const [step, setStep] = useState<Step>('upload');
   const [dragOver, setDragOver] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string>('');
+  const [fileName, setFileName] = useState<string>('');
   const [validation, setValidation] = useState<VideoValidationResult | null>(null);
   const [poseSequence, setPoseSequence] = useState<PoseKeyframe[]>([]);
   const [tempDir, setTempDir] = useState('');
@@ -172,7 +172,6 @@ export default function VideoTransfer({
   );
   const [motionPrompt, setMotionPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedChar = characters.find((c) => c.id === selectedCharId) ?? null;
 
@@ -205,16 +204,26 @@ export default function VideoTransfer({
 
   // ── File handling ─────────────────────────────────────────────────────────────
 
-  function handleFileSelect(file: File) {
-    setSelectedFile(file);
-    // Electron File objects have a path property
-    const filePath = (file as any).path ?? '';
+  async function handleFileSelect(filePath: string) {
+    if (!filePath) return;
     setSelectedFilePath(filePath);
+    setFileName(filePath.split('/').pop() ?? filePath.split('\\').pop() ?? filePath);
     setValidation(null);
     setPoseSequence([]);
     setError(null);
     setStep('validating');
-    runValidation(filePath);
+    await runValidation(filePath);
+  }
+
+  async function handleBrowseFile() {
+    const result = await (window as any).electronAPI.showOpenDialog({
+      title: 'Select Reference Video',
+      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'avi', 'webm'] }],
+      properties: ['openFile'],
+    });
+    if (!result.canceled && result.filePaths?.length > 0) {
+      await handleFileSelect(result.filePaths[0]);
+    }
   }
 
   async function runValidation(filePath: string) {
@@ -228,16 +237,17 @@ export default function VideoTransfer({
     }
   }
 
-  function handleDrop(e: React.DragEvent) {
+  async function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
-  }
-
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) handleFileSelect(file);
+    if (!file) return;
+    const filePath = (file as any).path;
+    if (filePath) {
+      await handleFileSelect(filePath);
+    } else {
+      await handleBrowseFile();
+    }
   }
 
   // ── Step 1: Extract poses ─────────────────────────────────────────────────────
@@ -293,8 +303,8 @@ export default function VideoTransfer({
 
   function handleReset() {
     setStep('upload');
-    setSelectedFile(null);
     setSelectedFilePath('');
+    setFileName('');
     setValidation(null);
     setPoseSequence([]);
     setExtractProgress(0);
@@ -360,7 +370,7 @@ export default function VideoTransfer({
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleBrowseFile}
                 className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-3 cursor-pointer transition-colors ${
                   dragOver
                     ? 'border-violet-500 bg-violet-950/20'
@@ -381,13 +391,6 @@ export default function VideoTransfer({
                     </div>
                   </>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".mp4,.mov,.avi,.webm,video/mp4,video/quicktime,video/x-msvideo,video/webm"
-                  className="hidden"
-                  onChange={handleInputChange}
-                />
               </div>
             </div>
           )}
@@ -400,7 +403,7 @@ export default function VideoTransfer({
                 <div className="flex items-center gap-2 min-w-0">
                   <Film className="w-4 h-4 text-gray-500 shrink-0" />
                   <span className="text-xs text-gray-300 truncate font-medium">
-                    {selectedFile?.name ?? 'Video file'}
+                    {fileName || 'Video file'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">

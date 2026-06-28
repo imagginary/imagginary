@@ -10,6 +10,7 @@ import { MotionClip } from '../types';
 import { PoseKeyframe } from '../data/PoseVocabulary';
 import { expandSequence, renderPoseToDataURL } from './PoseEngineService';
 import { comfyUIService } from './ComfyUIService';
+import { licenseService } from './LicenseService';
 import { getOllamaUrl, getComfyUIUrl } from '../config/services';
 
 // ── Starter library index (bundled — works without Pexels API key) ────────────
@@ -200,7 +201,19 @@ class MotionLibraryService {
       ? `${clip.name}, ${clip.tags.join(', ')}`
       : 'smooth character animation, cinematic quality';
 
-    onProgress?.(5, 'Sending to Wan 2.2…');
+    if (licenseService.isPro() || licenseService.isStudio()) {
+      onProgress?.(5, 'Sending to Kling cloud…');
+      const cloudVideo = await comfyUIService.animatePanelCloud(
+        panelImageData, motionPrompt, onProgress
+      );
+      if (cloudVideo) {
+        onProgress?.(100, 'Animation complete');
+        return { videoData: cloudVideo, videoPath: null };
+      }
+      onProgress?.(10, 'Cloud unavailable — trying local…');
+    }
+
+    onProgress?.(15, 'Sending to Wan 2.2…');
     const videoData = await comfyUIService.animatePanel(
       panelImageData,
       motionPrompt,

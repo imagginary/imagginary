@@ -3447,7 +3447,7 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
       );
       if (!pollRes.ok) continue;
       const status = await pollRes.json();
-      const pct = Math.min(15 + i * 1.3, 90);
+      const pct = Math.min(15 + Math.pow(i / 20, 0.6) * 70, 88);
       send(pct, `Generating motion… ${status.status ?? ''}`);
 
       if (status.status === 'COMPLETED') {
@@ -3620,3 +3620,46 @@ function generateSyntheticPoseSequence(frameCount, duration) {
   }
   return sequence;
 }
+
+// ── ControlNet OpenPose model — check + download ─────────────────────────────
+
+ipcMain.handle('check-controlnet-openpose', async () => {
+  const modelPath = path.join(os.homedir(), 'ComfyUI', 'models', 'controlnet', 'control_v11p_sd15_openpose.pth');
+  return { installed: fs.existsSync(modelPath) };
+});
+
+ipcMain.handle('download-controlnet-openpose', async (event) => {
+  const controlnetDir = path.join(os.homedir(), 'ComfyUI', 'models', 'controlnet');
+  const modelPath = path.join(controlnetDir, 'control_v11p_sd15_openpose.pth');
+
+  if (fs.existsSync(modelPath)) {
+    return { success: true, alreadyInstalled: true };
+  }
+
+  fs.mkdirSync(controlnetDir, { recursive: true });
+
+  const url = 'https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_openpose.pth';
+
+  try {
+    await streamDownload(url, modelPath, (downloaded, total) => {
+      const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+      const mb = (downloaded / 1024 / 1024).toFixed(1);
+      try { event.sender.send('controlnet-download-progress', { pct, mb }); } catch { /* ignore */ }
+    });
+
+    // Validate — a valid .pth file is binary, not an HTML error page
+    const fd = fs.openSync(modelPath, 'r');
+    const firstByte = Buffer.alloc(1);
+    fs.readSync(fd, firstByte, 0, 1, 0);
+    fs.closeSync(fd);
+    if (firstByte[0] === 0x3c) {
+      fs.unlinkSync(modelPath);
+      return { success: false, error: 'Download failed — server returned an error page. Please try again.' };
+    }
+
+    return { success: true, alreadyInstalled: false };
+  } catch (err) {
+    try { if (fs.existsSync(modelPath + '.download')) fs.unlinkSync(modelPath + '.download'); } catch { /* ignore */ }
+    return { success: false, error: err.message };
+  }
+});
