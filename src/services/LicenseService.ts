@@ -183,6 +183,7 @@ class LicenseService {
           lastCreditedAt: Date.now(),
         };
         await this.initBalance();
+        console.log('[LicenseService] validate complete — this.license.tier:', this.license?.tier, '— isPro:', this.isPro());
       }
       return result;
     } catch (err: any) {

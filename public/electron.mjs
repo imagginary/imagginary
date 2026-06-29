@@ -2851,6 +2851,7 @@ ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => 
       lastCreditedAt:  existing?.lastCreditedAt  ?? Date.now(),
     };
     fs.writeFileSync(getLicensePath(), JSON.stringify(signLicense(license), null, 2), 'utf8');
+    console.log('[License] tier detected:', tier, '— isPro will return:', tier === 'pro' || tier === 'studio');
     return { valid: true, tier, email, expiresAt };
   } catch (err) {
     console.error('[License] validate error:', err.message);
@@ -3341,6 +3342,7 @@ async function fetchToBase64(url) {
 }
 
 ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => {
+  console.log('[Fal] fal-flux-schnell called — isPro check passed, attempting cloud generation');
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
