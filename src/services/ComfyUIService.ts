@@ -1015,12 +1015,9 @@ export class ComfyUIService {
   ): Promise<string> {
     onProgress?.(3, 'Checking Wan 2.2 nodes...');
 
-    console.log('[animatePanel] step 1 - checking WanVideoModelLoader');
     const wanAvailable = await this.isNodeAvailable('WanVideoModelLoader');
-    console.log('[animatePanel] step 2 - wan available:', wanAvailable);
     if (!wanAvailable) {
       if (licenseService.isPro() || licenseService.isStudio()) {
-        console.log('[animatePanel] wan unavailable — routing Pro/Studio user to cloud (Kling via Fal.ai)');
         return await this.animatePanelCloud(imageData, motionPrompt, onProgress) ?? '';
       }
       throw new Error(
@@ -1032,18 +1029,15 @@ export class ComfyUIService {
 
     onProgress?.(5, 'Checking Wan 2.2 model files...');
     const models = await this.discoverWanModels();
-    console.log('[animatePanel] step 3 - models:', JSON.stringify(models));
     if (!models.available) {
       throw new Error('WAN_MODEL_UNAVAILABLE');
     }
 
     onProgress?.(8, 'Uploading source image to ComfyUI...');
     const imageName = await this.uploadImageToComfyUI(imageData, `imagginary_wan_src_${Date.now()}.png`);
-    console.log('[animatePanel] step 4 - uploaded filename:', imageName);
 
     onProgress?.(10, 'Submitting workflow to ComfyUI...');
     const workflow = this.buildAnimaticWorkflow({ imageName, motionPrompt, ...models });
-    console.log('[animatePanel] step 5 - submitting workflow:', JSON.stringify(workflow));
 
     const submitRes = await fetch(`${await getComfyBaseUrl()}/prompt`, {
       method: 'POST',

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, ScrollText, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
 import { ScriptShot, Character } from '../types';
 import { ollamaService } from '../services/OllamaService';
@@ -39,6 +39,14 @@ export default function ScriptReader({
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // ── Parsing ──────────────────────────────────────────────────────────────────
 
@@ -140,7 +148,7 @@ export default function ScriptReader({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/95">
-      <div className="w-full max-w-2xl mx-4 flex flex-col bg-gray-950 border border-gray-800 rounded-xl shadow-2xl max-h-[90vh]">
+      <div className="w-full max-w-5xl mx-4 flex flex-col bg-gray-950 border border-gray-800 rounded-xl shadow-2xl max-h-[90vh] min-h-[60vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0">

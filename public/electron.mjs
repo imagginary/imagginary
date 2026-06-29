@@ -2743,18 +2743,31 @@ ipcMain.handle('set-credits', (_, { subscriptionCredits, topUpCredits, lastCredi
 ipcMain.handle('reset-credits', () => setCredits(creditDefaults));
 
 /** Detect tier from Dodo response — checks metadata.tier first, then product name. */
+// Known Dodo product IDs — must match the checkout URL slugs configured above.
+const PRODUCT_IDS = {
+  pro:    ['pdt_0NfSlPakjsXHejKSZgxND'],
+  studio: ['pdt_0NfSlpx2ktThlKQivLq6X'],
+};
+
 function detectTier(data) {
+  // Primary: match product_id — most reliable for /license_keys responses
+  const pid = data?.product_id ?? '';
+  if (PRODUCT_IDS.studio.includes(pid)) return 'studio';
+  if (PRODUCT_IDS.pro.includes(pid))    return 'pro';
+  // Fallback: explicit metadata.tier (useful if set manually in Dodo dashboard)
   const meta = data?.metadata?.tier?.toLowerCase();
   if (meta === 'studio') return 'studio';
-  if (meta === 'pro') return 'pro';
+  if (meta === 'pro')    return 'pro';
+  // Last resort: product name string match
   const name = (data?.product_name ?? data?.name ?? '').toLowerCase();
   if (name.includes('studio')) return 'studio';
-  return 'pro';
+  if (name.includes('pro'))    return 'pro';
+  return 'pro'; // safe default — better to over-grant than lock out a paying user
 }
 
 // Two-step license validation:
 // 1. Public /licenses/validate confirms the key is valid.
-// 2. Authenticated /licenses?license_key= fetches full details (tier, email, expiry).
+// 2. Authenticated GET /license_keys?license_key= fetches full details (tier, email, expiry).
 ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => {
   if (!key) return { valid: false, error: 'No key provided.' };
 
@@ -2785,7 +2798,7 @@ ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => 
 
     if (DODO_API_KEY) {
       const detailRes = await fetch(
-        `${DODO_API_BASE}/licenses?license_key=${encodeURIComponent(key.trim())}`,
+        `${DODO_API_BASE}/license_keys?license_key=${encodeURIComponent(key.trim())}`,
         {
           headers: {
             'Authorization': `Bearer ${DODO_API_KEY}`,
@@ -2793,16 +2806,23 @@ ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => 
           },
         }
       );
-      if (detailRes.ok) {
-        const detailData = await detailRes.json();
-        console.log('[License] detail response:', JSON.stringify(detailData));
-        const item = detailData.items?.[0] ?? detailData;
-        tier      = detectTier(item);
-        email     = item.customer?.email ?? item.email ?? '';
-        expiresAt = item.expires_at ? new Date(item.expires_at).getTime() : null;
+      const detailText = await detailRes.text().catch(() => '');
+      let detailData = null;
+      try { detailData = JSON.parse(detailText); } catch { /* ignore */ }
+      console.log('[License] detail fetch status:', detailRes.status);
+      console.log('[License] detail response:', JSON.stringify(detailData));
+      if (detailRes.ok && detailData) {
+        // /license_keys returns { items: [{ id, key, status, product_id, expires_at, ... }] }
+        const item = detailData.items?.[0] ?? null;
+        if (item) {
+          tier      = detectTier(item);
+          // /license_keys does not return email — preserve from stored license or leave empty
+          expiresAt = item.expires_at ? new Date(item.expires_at).getTime() : null;
+        } else {
+          console.warn('[License] detail response contained no items — using selectedTier');
+        }
       } else {
-        const text = await detailRes.text().catch(() => '');
-        console.warn('[License] detail fetch failed:', detailRes.status, text);
+        console.warn('[License] detail fetch failed:', detailRes.status, detailText.slice(0, 500));
         // Fall through — use stored tier if available, else selectedTier.
       }
     } else {
