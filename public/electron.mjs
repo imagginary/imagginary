@@ -507,6 +507,7 @@ function httpsDownload(url, destPath) {
     function get(u) {
       https.get(u, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume(); // drain and release the socket before following redirect
           return get(res.headers.location);
         }
         if (res.statusCode !== 200) {
@@ -609,14 +610,18 @@ async function ensureWindowsPython(setInstallMsg) {
   return WIN_PYTHON_EXE;
 }
 
+// Pinned ComfyUI release — update this when testing against a newer version.
+// Using a tag prevents a master-HEAD breakage from silently affecting new installs.
+const COMFYUI_PINNED_REF = 'v0.3.12';
+
 /**
  * Download ComfyUI as a ZIP (no git required).
  * Used on Windows where git is rarely pre-installed.
  */
 function downloadComfyUIZip(comfyPath, setInstallMsg) {
   return new Promise((resolve, reject) => {
-    const zipUrl = 'https://github.com/comfyanonymous/ComfyUI/archive/refs/heads/master.zip';
-    const zipDest = path.join(os.tmpdir(), 'comfyui-master.zip');
+    const zipUrl = `https://github.com/comfyanonymous/ComfyUI/archive/refs/tags/${COMFYUI_PINNED_REF}.zip`;
+    const zipDest = path.join(os.tmpdir(), `comfyui-${COMFYUI_PINNED_REF}.zip`);
     const extractDir = path.dirname(comfyPath);
 
     setInstallMsg('Downloading ComfyUI… (first launch, ~150 MB)');
@@ -625,13 +630,26 @@ function downloadComfyUIZip(comfyPath, setInstallMsg) {
     httpsDownload(zipUrl, zipDest).then(() => {
       setInstallMsg('Extracting ComfyUI…');
       console.log('[ComfyUI] Extracting', zipDest, 'to', extractDir);
-      const tar = spawn('tar', ['-xf', zipDest, '-C', extractDir], { stdio: 'pipe' });
+      // Use PowerShell Expand-Archive on Windows — tar's zip support is unreliable
+      // across Windows versions. On macOS/Linux, tar handles zip natively.
+      let extractor, extractArgs;
+      if (process.platform === 'win32') {
+        extractor = 'powershell';
+        extractArgs = ['-NoProfile', '-NonInteractive', '-Command',
+          `Expand-Archive -LiteralPath '${zipDest}' -DestinationPath '${extractDir}' -Force`];
+      } else {
+        extractor = 'tar';
+        extractArgs = ['-xf', zipDest, '-C', extractDir];
+      }
+      const tar = spawn(extractor, extractArgs, { stdio: 'pipe' });
       tar.stderr.on('data', (d) => console.log('[ComfyUI extract]', d.toString().trim()));
       tar.on('error', reject);
       tar.on('close', (code) => {
         fs.unlink(zipDest, () => {});
         if (code !== 0) return reject(new Error(`Extraction failed (code ${code})`));
-        const extracted = path.join(extractDir, 'ComfyUI-master');
+        // GitHub tag archives extract to ComfyUI-<version> (strips leading 'v')
+        const tagFolder = COMFYUI_PINNED_REF.replace(/^v/, '');
+        const extracted = path.join(extractDir, `ComfyUI-${tagFolder}`);
         try { fs.renameSync(extracted, comfyPath); } catch (e) { return reject(e); }
         console.log('[ComfyUI] Extracted to', comfyPath);
         resolve();
@@ -704,10 +722,18 @@ async function installComfyUI(loadingWin) {
   try {
     // 1. Fetch ComfyUI source — git clone on macOS/Linux, ZIP download on Windows
     if (gitBin) {
+      // Clean up any partial/broken clone so `git clone` doesn't fail on existing dir
+      if (fs.existsSync(comfyPath) && !fs.existsSync(path.join(comfyPath, '.git'))) {
+        console.warn('[ComfyUI] Detected incomplete installation at', comfyPath, '— removing before retry');
+        fs.rmSync(comfyPath, { recursive: true, force: true });
+      }
       setInstallMsg('Cloning ComfyUI (first launch, ~2 min)…');
       console.log('[ComfyUI] Cloning to', comfyPath);
       await new Promise((resolve, reject) => {
-        const git = spawn(gitBin, ['clone', 'https://github.com/comfyanonymous/ComfyUI', comfyPath], {
+        const git = spawn(gitBin, [
+          'clone', '--branch', COMFYUI_PINNED_REF, '--depth', '1',
+          'https://github.com/comfyanonymous/ComfyUI', comfyPath,
+        ], {
           stdio: 'pipe',
           env: spawnEnv,
         });
@@ -872,7 +898,9 @@ async function startComfyUI(loadingWin) {
         cwd: comfyPath,
         stdio: 'pipe',
         detached: false,
-        env: { ...process.env, PATH: ENRICHED_PATH, HOME: os.homedir(), PYTHONPATH: comfyPath },
+        // No PYTHONPATH override — the venv interpreter already knows its own site-packages.
+        // Setting PYTHONPATH to comfyPath would shadow venv packages with system ones.
+        env: { ...process.env, PATH: ENRICHED_PATH, HOME: os.homedir() },
       }
     );
 
@@ -1047,8 +1075,13 @@ function streamDownload(url, destPath, onProgress, redirectCount = 0) {
 
       res.pipe(out);
       out.on('finish', () => {
-        fs.renameSync(tmpPath, destPath);
-        resolve();
+        try {
+          fs.renameSync(tmpPath, destPath);
+          resolve();
+        } catch (err) {
+          // renameSync can fail with EXDEV (cross-device) or EPERM (Windows file lock)
+          reject(new Error(`Failed to finalise download: ${err.message}`));
+        }
       });
       out.on('error', (err) => {
         fs.unlink(tmpPath, () => {});
@@ -1487,7 +1520,11 @@ function getAllowedRoots() {
 const userApprovedPaths = new Set();
 
 function assertSafePath(filePath) {
-  const resolved = path.resolve(filePath);
+  // Resolve symlinks for existing paths so a crafted symlink in temp/downloads
+  // can't escape the allowed roots. Non-existent paths use path.resolve only.
+  const resolved = fs.existsSync(filePath)
+    ? fs.realpathSync(filePath)
+    : path.resolve(filePath);
   const roots = getAllowedRoots();
   const ok = roots.some((r) => resolved.startsWith(r + path.sep) || resolved === r) ||
              [...userApprovedPaths].some((approved) => resolved.startsWith(approved + path.sep) || resolved === approved);
@@ -1680,7 +1717,10 @@ ipcMain.handle('save-project', async (_event, projectData, filePath) => {
 // safeJoin prevents traversal — the renderer can only name a file, not choose a directory.
 ipcMain.handle('delete-comfy-input-file', async (_event, filename) => {
   try {
-    const comfyInputDir = path.join(os.homedir(), 'ComfyUI', 'input');
+    // Use the same path-resolution logic as the rest of the app rather than hardcoding ~/ComfyUI,
+    // since ComfyUI may be installed at /opt/ComfyUI or another candidate path.
+    const comfyBase = await findComfyUIPath() ?? path.join(os.homedir(), 'ComfyUI');
+    const comfyInputDir = path.join(comfyBase, 'input');
     const filePath = safeJoin(comfyInputDir, filename); // throws if filename contains '..'
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -1890,6 +1930,7 @@ ipcMain.handle('export-panel-with-voice', async (_event, { imagePath, voicePath,
 
 ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
   console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
+  try { assertSafePath(outputPath); } catch (e) { return { success: false, error: e.message }; }
 
   // Resolve ffmpeg: bundled binary first, then system PATH
   const platformBinary = process.platform === 'win32' ? 'ffmpeg-win.exe'
@@ -1940,7 +1981,7 @@ ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
     // Build concat demuxer file — duplicate last entry to avoid ffmpeg trimming it
     const lines = [];
     for (const { imagePath, duration } of resolved) {
-      lines.push(`file '${imagePath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`);
+      lines.push(`file '${imagePath.replace(/\\/g, '/').replace(/'/g, "\\'")}'`);
       lines.push(`duration ${duration}`);
     }
     const last = resolved[resolved.length - 1];
@@ -2367,6 +2408,10 @@ ipcMain.handle('get-motion-clip-sequence', async (_event, clipId) => {
   if (!clipId || typeof clipId !== 'string') {
     return { success: false, error: 'Invalid clip ID' };
   }
+  // Reject anything that isn't a safe identifier — prevents path traversal via ../
+  if (!/^[a-zA-Z0-9_-]+$/.test(clipId)) {
+    return { success: false, error: 'Invalid clip ID format' };
+  }
   try {
     const candidates = [
       path.join(__dirname, '..', 'resources', 'motion_library', 'clips', clipId, 'pose_sequence.json'),
@@ -2421,10 +2466,11 @@ ipcMain.handle('extract-video-pose', async (event, videoPath) => {
     const ffmpegPath = resolveFfmpegBin();
 
     // Get video duration
-    const durationResult = await new Promise((resolve) => {
+    const durationResult = await new Promise((resolve, reject) => {
       const proc = spawn(ffmpegPath, ['-i', videoPath, '-f', 'null', '-'], { stdio: 'pipe' });
       let stderr = '';
       proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('error', (err) => reject(new Error(`Failed to probe video duration: ${err.message}`)));
       proc.on('close', () => {
         const match = stderr.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
         if (match) {
@@ -3066,21 +3112,33 @@ ipcMain.handle('open-topup-checkout', (_event, pack) => {
 });
 
 ipcMain.handle('validate-topup', async (_event, code) => {
-  if (!code || !DODO_API_KEY) return { valid: false, error: 'Invalid code.' };
+  if (!code) return { valid: false, error: 'Invalid code.' };
   try {
-    const res = await fetch(
-      `${DODO_API_BASE}/licenses/${encodeURIComponent(code.trim())}/validate`,
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${DODO_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }
+    // Step 1: Confirm the key is valid via the same public endpoint used by validate-license.
+    // The previous /licenses/{id}/validate path-param form used a different response shape
+    // (status vs valid) and required the key to be a Dodo license ID, not a key string.
+    const validateRes = await fetch(`${DODO_API_BASE}/licenses/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: code.trim() }),
+    });
+    if (!validateRes.ok) return { valid: false, error: 'Invalid top-up code.' };
+    const validateData = await validateRes.json();
+    if (!validateData.valid) return { valid: false, error: 'Top-up code is not valid or has expired.' };
+
+    // Step 2: Fetch full details to read the credits from metadata.
+    if (!DODO_API_KEY) return { valid: false, error: 'Server configuration error.' };
+    const detailRes = await fetch(
+      `${DODO_API_BASE}/license_keys?license_key=${encodeURIComponent(code.trim())}`,
+      { headers: { 'Authorization': `Bearer ${DODO_API_KEY}`, 'Content-Type': 'application/json' } }
     );
-    if (!res.ok) return { valid: false, error: 'Invalid top-up code.' };
-    const data = await res.json();
-    if (data.status !== 'active') return { valid: false, error: 'Top-up code already used.' };
-    const credits = parseInt(data.metadata?.credits ?? '0');
-    if (!credits) return { valid: false, error: 'Invalid top-up code.' };
+    if (!detailRes.ok) return { valid: false, error: 'Could not read top-up code details.' };
+    const detailData = await detailRes.json();
+    const item = detailData.items?.[0];
+    if (!item) return { valid: false, error: 'Top-up code not found.' };
+    if (item.status !== 'active') return { valid: false, error: 'Top-up code already used.' };
+    const credits = parseInt(item.metadata?.credits ?? '0');
+    if (!credits) return { valid: false, error: 'Top-up code carries no credits.' };
     return { valid: true, credits };
   } catch {
     return { valid: false, error: 'Could not validate code. Check your connection.' };
@@ -3835,7 +3893,8 @@ ipcMain.handle('syncso-lipsync', async (event, { imageBase64, audioBase64 }) => 
       body: JSON.stringify({
         model: 'lipsync-2',
         input: [
-          { type: 'video', url: `data:image/png;base64,${imageBase64}` },
+          // Sync.so lipsync-2 accepts type:"image" for still-image inputs (not type:"video")
+          { type: 'image', url: `data:image/png;base64,${imageBase64}` },
           { type: 'audio', url: `data:audio/wav;base64,${audioBase64}` },
         ],
         options: { output_format: 'mp4', sync_mode: 'bounce' },
@@ -4027,6 +4086,10 @@ ipcMain.handle('upload-training-images', async (event, { imagePaths }) => {
   try {
     for (let i = 0; i < imagePaths.length; i++) {
       const filePath = assertSafePath(imagePaths[i]);
+      const stat = fs.statSync(filePath);
+      if (stat.size > MAX_FILE_SIZE) {
+        return { success: false, error: `Image ${path.basename(filePath)} exceeds the 50 MB size limit` };
+      }
       const fileBuffer = fs.readFileSync(filePath);
       const fileName = path.basename(filePath);
       const mimeType = fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
@@ -4240,11 +4303,17 @@ ipcMain.handle('delete-custom-style', (_event, { styleId }) => {
 
   // Also remove the copy from ComfyUI's models/loras/ directory
   if (target?.loraName) {
-    const comfyLoraPath = path.join(os.homedir(), 'ComfyUI', 'models', 'loras', `${target.loraName}.safetensors`);
-    try {
-      if (fs.existsSync(comfyLoraPath)) fs.unlinkSync(comfyLoraPath);
-    } catch (err) {
-      console.warn('[LoRA] Could not delete ComfyUI copy:', comfyLoraPath, err.message);
+    // Sanitize loraName before joining into a path — the store is renderer-writable
+    // so a crafted loraName with ../ could traverse outside models/loras/
+    if (!/^[a-zA-Z0-9_-]+$/.test(target.loraName)) {
+      console.warn('[LoRA] Refusing to delete invalid loraName:', target.loraName);
+    } else {
+      const comfyLoraPath = path.join(os.homedir(), 'ComfyUI', 'models', 'loras', `${target.loraName}.safetensors`);
+      try {
+        if (fs.existsSync(comfyLoraPath)) fs.unlinkSync(comfyLoraPath);
+      } catch (err) {
+        console.warn('[LoRA] Could not delete ComfyUI copy:', comfyLoraPath, err.message);
+      }
     }
   }
 
