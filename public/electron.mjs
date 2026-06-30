@@ -1650,7 +1650,23 @@ ipcMain.handle('download-absolute-reality', async (event) => {
 // Project persistence
 ipcMain.handle('save-project', async (_event, projectData, filePath) => {
   try {
+    assertSafePath(filePath);
     fs.writeFileSync(filePath, JSON.stringify(projectData, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Delete a file from ComfyUI's input directory by filename (no path components allowed).
+// safeJoin prevents traversal — the renderer can only name a file, not choose a directory.
+ipcMain.handle('delete-comfy-input-file', async (_event, filename) => {
+  try {
+    const comfyInputDir = path.join(os.homedir(), 'ComfyUI', 'input');
+    const filePath = safeJoin(comfyInputDir, filename); // throws if filename contains '..'
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -3576,6 +3592,22 @@ async function fetchToBase64(url) {
   return buf.toString('base64');
 }
 
+// Atomically deduct credits from the main-process store.
+// Must be called AFTER a successful API response and BEFORE returning the result
+// so the deduction is guaranteed even if the renderer crashes or closes.
+function deductCredits(cost) {
+  const bal = getCredits();
+  let { subscriptionCredits, topUpCredits } = bal;
+  if (subscriptionCredits >= cost) {
+    subscriptionCredits -= cost;
+  } else {
+    const remainder = cost - subscriptionCredits;
+    subscriptionCredits = 0;
+    topUpCredits = Math.max(0, topUpCredits - remainder);
+  }
+  setCredits({ ...bal, subscriptionCredits, topUpCredits });
+}
+
 ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => {
   console.log('[Fal] fal-flux-schnell called — isPro check passed, attempting cloud generation');
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
@@ -3600,6 +3632,7 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
     const base64 = await fetchToBase64(imageUrl);
+    deductCredits(CREDIT_COST.panelCloud);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3627,7 +3660,9 @@ ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
     const data = await res.json();
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
-    return { imageUrl };
+    const base64 = await fetchToBase64(imageUrl);
+    deductCredits(CREDIT_COST.characterPanel);
+    return { base64 };
   } catch (err) {
     return { error: err.message };
   }
@@ -3658,6 +3693,7 @@ ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
     const base64 = await fetchToBase64(imageUrl);
+    deductCredits(CREDIT_COST.inpaint);
     return { base64 };
   } catch (err) {
     return { error: err.message };

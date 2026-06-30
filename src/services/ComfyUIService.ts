@@ -430,7 +430,7 @@ export class ComfyUIService {
           height: aspectRatio.height,
         });
         if (result?.base64 && !result.error) {
-          await licenseService.spendCredits(CREDIT_COSTS.panelCloud);
+          // Credits are deducted atomically in the main process before the result is returned.
           telemetryService.track('panel_generated_cloud', { provider: 'flux_schnell' });
           onProgress?.(100, 'Done');
           return `data:image/png;base64,${result.base64}`;
@@ -526,24 +526,10 @@ export class ComfyUIService {
               prompt: positivePrompt,
               faceImageData: refData,
             });
-            if (result?.imageUrl && !result.error) {
-              await licenseService.spendCredits(CREDIT_COSTS.characterPanel);
-              // Fetch and convert to base64 data URL so downstream callers
-              // (uploadImageToComfyUI, animatePanel, etc.) always receive a
-              // consistent data:image/... format — never a raw https:// URL.
-              try {
-                const fetchRes = await fetch(result.imageUrl);
-                const blob = await fetchRes.blob();
-                const b64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(blob);
-                });
-                return b64;
-              } catch {
-                // If CDN fetch fails, fall through to local generation
-              }
+            if (result?.base64 && !result.error) {
+              // Main process fetches the CDN URL, converts to base64, and deducts
+              // credits atomically before returning — no renderer-side work needed.
+              return `data:image/png;base64,${result.base64}`;
             }
           }
         } catch {
@@ -726,7 +712,7 @@ export class ComfyUIService {
             strength:    0.75,
           });
           if (result?.base64 && !result.error) {
-            await licenseService.spendCredits(CREDIT_COSTS.inpaint);
+            // Credits deducted atomically in main process.
             onProgress?.(100, 'Done');
             telemetryService.track('inpaint_flux_fill');
             return `data:image/png;base64,${result.base64}`;
@@ -1049,7 +1035,11 @@ export class ComfyUIService {
     const wanAvailable = await this.isNodeAvailable('WanVideoModelLoader');
     if (!wanAvailable) {
       if (licenseService.isPro() || licenseService.isStudio()) {
-        return await this.animatePanelCloud(imageData, motionPrompt, onProgress) ?? '';
+        const cloudResult = await this.animatePanelCloud(imageData, motionPrompt, onProgress);
+        if (cloudResult === null) {
+          throw new Error('Insufficient credits for cloud animation. Add credits or upgrade your plan.');
+        }
+        return cloudResult;
       }
       throw new Error(
         'Wan 2.2 not installed in ComfyUI.\n' +

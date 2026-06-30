@@ -1364,7 +1364,7 @@ export default function App() {
   }
 
   async function handleExportPanelWithVoice() {
-    if (!activePanel?.imagePath || !activePanel?.voicePath || !window.electronAPI) return;
+    if (!activePanel?.generatedImagePath || !activePanel?.voicePath || !window.electronAPI) return;
     const padded = (activePanel.order + 1).toString().padStart(2, '0');
     const result = await window.electronAPI.showSaveDialog({
       title: 'Export Panel with Voice',
@@ -1373,7 +1373,7 @@ export default function App() {
     });
     if (result.canceled || !result.filePath) return;
     const exportResult = await (window.electronAPI as any).exportPanelWithVoice({
-      imagePath: activePanel.imagePath,
+      imagePath: activePanel.generatedImagePath,
       voicePath: activePanel.voicePath,
       outputPath: result.filePath,
     });
@@ -1706,7 +1706,7 @@ export default function App() {
             onGenerate={handleRegenerate}
             onRegenerate={handleRegenerate}
             onExportPanel={handleExportPanel}
-            onExportPanelWithVoice={activePanel?.voicePath && activePanel?.imagePath ? handleExportPanelWithVoice : undefined}
+            onExportPanelWithVoice={activePanel?.voicePath && activePanel?.generatedImagePath ? handleExportPanelWithVoice : undefined}
             isGenerating={activePanelId ? isPanelGenerating(activePanelId) : false}
             activeStyleProfile={project.style}
           />
