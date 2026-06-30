@@ -14,6 +14,7 @@ import {
   PoseKeyframe,
   SKELETON_CONNECTIONS,
   searchPoses,
+  Joint,
 } from '../data/PoseVocabulary';
 import { getComfyUIUrl } from '../config/services';
 
@@ -254,16 +255,12 @@ export function buildPoseControlNetWorkflow(
 // ── Main Service ─────────────────────────────────────────────────────────────
 
 class PoseEngineService {
-  private comfyBaseUrl: string | null = null;
-
+  // No URL cache — re-fetch the proxy port on every call so a ComfyUI restart
+  // on a different port is picked up immediately without a session restart.
   private async getComfyBaseUrl(): Promise<string> {
-    if (this.comfyBaseUrl) return this.comfyBaseUrl;
     if (window.electronAPI?.getComfyUIProxyPort) {
       const port = await window.electronAPI!.getComfyUIProxyPort();
-      if (port) {
-        this.comfyBaseUrl = `http://127.0.0.1:${port}`;
-        return this.comfyBaseUrl;
-      }
+      if (port) return `http://127.0.0.1:${port}`;
     }
     return getComfyUIUrl();
   }
@@ -354,6 +351,18 @@ class PoseEngineService {
       }>;
 
       const entry = hist[promptId];
+      if (!entry) {
+        pct = Math.min(pct + 4, 90);
+        onProgress(pct, 'Rendering posed panel…');
+        continue;
+      }
+
+      // Surface ComfyUI-reported errors immediately rather than polling to timeout
+      if ((entry as any).status?.status_str === 'error') {
+        const messages: string[] | undefined = (entry as any).status?.messages;
+        throw new Error(`ComfyUI error: ${messages?.join(' ') ?? 'unknown error'}`);
+      }
+
       if (!entry?.outputs) {
         pct = Math.min(pct + 4, 90);
         onProgress(pct, 'Rendering posed panel…');

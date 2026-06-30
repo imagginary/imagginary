@@ -1,16 +1,23 @@
 import { Character, MultiViewPaths, MultiViewAngle } from '../types';
 
-// Maps shot angle labels to the best MultiView angle key
+// Maps shot angle labels to the best MultiView angle key.
+// ORDER MATTERS — first match wins. More specific patterns must come before general ones.
+// In particular, frontLeft/frontRight checks must precede bare `left`/`right` checks
+// so that e.g. "frontLeft" doesn't accidentally match the /\bleft\b/ entry.
 const ANGLE_MAP: Array<{ patterns: RegExp; view: MultiViewAngle }> = [
-  { patterns: /front|eye.?level|neutral|straight/i,    view: 'front' },
-  { patterns: /3\/4|three.quarter|medium.left/i,        view: 'frontLeft' },
-  { patterns: /side|profile|left/i,                     view: 'left' },
-  { patterns: /back|rear|behind/i,                      view: 'back' },
-  { patterns: /right/i,                                 view: 'right' },
-  { patterns: /over.the.shoulder|ots/i,                 view: 'frontLeft' },
-  { patterns: /low.angle|worm/i,                        view: 'front' },
-  { patterns: /high.angle|bird/i,                       view: 'front' },
+  // Compound / specific patterns first
+  { patterns: /front.?left|3\/4.?left|medium.?left/i,  view: 'frontLeft' },
+  { patterns: /front.?right|3\/4.?right/i,              view: 'right' },
+  { patterns: /3\/4|three.?quarter|over.the.shoulder|ots/i, view: 'frontLeft' },
   { patterns: /dutch/i,                                 view: 'frontLeft' },
+  // Simple directional — word boundaries prevent matching inside compound words
+  { patterns: /\bfront\b|\beye.?level\b|\bneutral\b|\bstraight\b/i, view: 'front' },
+  { patterns: /\bback\b|\brear\b|\bbehind\b/i,          view: 'back' },
+  { patterns: /\bright\b/i,                             view: 'right' },
+  { patterns: /\bside\b|\bprofile\b|\bleft\b/i,         view: 'left' },
+  // Camera angle descriptors — default to front view
+  { patterns: /low.?angle|worm/i,                       view: 'front' },
+  { patterns: /high.?angle|bird/i,                      view: 'front' },
 ];
 
 export class CharacterLibraryService {
@@ -25,7 +32,9 @@ export class CharacterLibraryService {
 
   /** Migrate legacy Character shapes (referenceImages map) to new schema */
   private migrate(c: Character): Character {
-    if (c.referenceImagePath) return c; // already new shape
+    // Check for field presence, not truthiness — a new-schema character with no
+    // image set will have referenceImagePath: null, which is falsy but correct.
+    if ('referenceImagePath' in c) return c; // already new shape
     const legacy = c as Character & { referenceImages?: Record<string, string> };
     const firstImg = Object.values(legacy.referenceImages ?? {})[0] ?? null;
     return {

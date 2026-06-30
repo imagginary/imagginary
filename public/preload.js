@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Service health checks — proxied through main process to bypass renderer CSP/CORS
   checkOllama: () => ipcRenderer.invoke('check-ollama'),
+  // Returns { models: string[] } — proxied for the same CSP reason as checkOllama
+  ollamaListModels: () => ipcRenderer.invoke('ollama-list-models'),
   checkComfyUI: () => ipcRenderer.invoke('check-comfyui'),
   getComfyUIProxyPort: () => ipcRenderer.invoke('get-comfyui-proxy-port'),
 

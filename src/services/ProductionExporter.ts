@@ -167,7 +167,7 @@ export class ProductionExporter {
       const assetId = `a${idx + 1}`;
       const src = pathToFileURL(panel.generatedImagePath!);
       const durationSec = panel.duration || 3;
-      const durationFrames = durationSec * FPS;
+      const durationFrames = Math.round(durationSec * FPS);
       const durationStr = `${durationFrames}/${FPS}s`;
       const name = escapeXml(`Panel ${String(panel.order + 1).padStart(2, '0')}: ${panel.shotDescription || ''}`.slice(0, 80));
       return { panel, assetId, src, durationSec, durationFrames, durationStr, name };

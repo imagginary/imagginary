@@ -153,28 +153,42 @@ export class OllamaService {
 
   private async discoverAvailableModel(): Promise<void> {
     try {
-      const response = await fetch(`${getOllamaUrl()}/api/tags`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!response.ok) return;
-      const data = await response.json() as { models: Array<{ name: string }> };
-      const installed = data.models?.map((m) => m.name) ?? [];
-      // Exact match only — prefix matching caused qwen2.5:7b to satisfy qwen2.5:3b
-      // User preference is checked first, then qwen2.5:3b default, then fallbacks
+      // Route through the main-process IPC handler — renderer fetch() from file://
+      // is blocked by CSP in packaged Electron (see checkConnection comment above).
+      const installed = await this.listInstalledModels();
+      if (installed.length === 0) {
+        console.log('[OllamaService] No models installed.');
+        this.availableModel = null;
+        return;
+      }
+
+      // Priority: user preference → known-good fallbacks → any installed model
       const userPref = settingsService.getKey('ollamaModel');
       const priorityList = userPref
         ? [userPref, 'qwen2.5:3b', ...FALLBACK_MODELS]
         : ['qwen2.5:3b', ...FALLBACK_MODELS];
-      const found = installed.find((name) => priorityList.includes(name)) ?? null;
-      this.availableModel = found;
-      console.log('[OllamaService] Installed models:', installed.join(', ') || '(none)');
-      console.log('[OllamaService] Using model:', this.availableModel ?? '(none found)');
+      const preferred = installed.find((name) => priorityList.includes(name));
+      // Last resort: use whatever is installed rather than leaving availableModel null
+      this.availableModel = preferred ?? installed[0];
+      console.log('[OllamaService] Installed models:', installed.join(', '));
+      console.log('[OllamaService] Using model:', this.availableModel);
     } catch {
-      // Leave availableModel unchanged if the tags request fails
+      // Leave availableModel unchanged if discovery fails
     }
   }
 
-  async getAvailableModels(): Promise<string[]> {
+  /**
+   * Returns the list of installed Ollama model names.
+   * In packaged Electron, routes through IPC to avoid renderer CSP blocks on fetch().
+   * Falls back to a direct fetch for browser dev mode.
+   */
+  private async listInstalledModels(): Promise<string[]> {
+    // IPC path (packaged Electron)
+    if (window.electronAPI?.ollamaListModels) {
+      const result = await window.electronAPI.ollamaListModels();
+      return result?.models ?? [];
+    }
+    // Browser dev-mode fallback
     try {
       const response = await fetch(`${getOllamaUrl()}/api/tags`, {
         signal: AbortSignal.timeout(5000),
@@ -185,6 +199,10 @@ export class OllamaService {
     } catch {
       return [];
     }
+  }
+
+  async getAvailableModels(): Promise<string[]> {
+    return this.listInstalledModels();
   }
 
   async parseShot(description: string): Promise<StructuredPrompt> {
@@ -363,8 +381,13 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
         return null;
       }
       const parsed = JSON.parse(result.content);
-      // DeepSeek may return { shots: [...] } or directly [...]
-      const shots = Array.isArray(parsed) ? parsed : (parsed.shots ?? parsed.result ?? []);
+      // DeepSeek may return a bare array or wrap it in an object with any key
+      // (json_object mode has been removed from the handler, but be defensive anyway)
+      const shots = Array.isArray(parsed)
+        ? parsed
+        : (parsed.shots ?? parsed.result ?? parsed.data ?? parsed.screenplay ?? parsed.items
+            ?? Object.values(parsed as Record<string, unknown>).find((v) => Array.isArray(v))
+            ?? []);
       if (!Array.isArray(shots) || shots.length === 0) return null;
       return this.parseScreenplayJSON(JSON.stringify(shots), scriptText);
     } catch (err) {
@@ -501,7 +524,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
         subject: parsed.subject ?? 'figure in scene',
         background: parsed.background ?? 'environment',
         mood: parsed.mood ?? 'dramatic',
-        lighting: parsed.angle ?? 'natural lighting',
+        lighting: parsed.lighting ?? 'natural lighting',
         angle: parsed.angle ?? 'eye level',
         shotType: parsed.shotType ?? 'medium shot',
         timeOfDay: parsed.timeOfDay ?? 'day',

@@ -10,13 +10,18 @@ class CustomStyleService {
     if (!window.electronAPI?.getCustomStyles) return;
     try {
       const result = await window.electronAPI.getCustomStyles();
-      if (result.success) {
+      if (result?.success) {
         this.customStyles = result.styles ?? [];
+        this.loaded = true;
+      } else {
+        // IPC returned but reported failure — do not mark as loaded so callers
+        // can distinguish "not yet loaded" from "loaded successfully"
+        console.warn('[CustomStyleService] getCustomStyles returned failure:', result);
       }
-    } catch {
-      // Not running in Electron (tests / storybook) — stay empty
+    } catch (err) {
+      // Not running in Electron (tests / storybook), or IPC threw — stay empty
+      console.warn('[CustomStyleService] Failed to load custom styles:', err);
     }
-    this.loaded = true;
   }
 
   isLoaded(): boolean {
@@ -36,7 +41,11 @@ class CustomStyleService {
   }
 
   async saveCustomStyle(style: StyleProfile): Promise<void> {
-    await window.electronAPI.saveCustomStyle({ style });
+    const result = await window.electronAPI?.saveCustomStyle?.({ style });
+    if (!result?.success) {
+      throw new Error(`Failed to save custom style "${style.id}": ${result?.error ?? 'unknown error'}`);
+    }
+    // Update in-memory state only after a confirmed successful write
     this.customStyles = [
       ...this.customStyles.filter((s) => s.id !== style.id),
       style,
@@ -44,7 +53,11 @@ class CustomStyleService {
   }
 
   async deleteCustomStyle(styleId: string): Promise<void> {
-    await window.electronAPI.deleteCustomStyle({ styleId });
+    const result = await window.electronAPI?.deleteCustomStyle?.({ styleId });
+    if (!result?.success) {
+      throw new Error(`Failed to delete custom style "${styleId}": ${result?.error ?? 'unknown error'}`);
+    }
+    // Update in-memory state only after a confirmed successful deletion
     this.customStyles = this.customStyles.filter((s) => s.id !== styleId);
     // Invalidate so the deleted LoRA doesn't appear in stale cache during this session
     comfyUIService.invalidateLoraCache();

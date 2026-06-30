@@ -1572,6 +1572,22 @@ ipcMain.handle('check-ollama', async () => {
   }
 });
 
+// Returns the list of installed Ollama model names.
+// Runs in the main process so it bypasses the renderer CSP block on fetch() from file://.
+ipcMain.handle('ollama-list-models', async () => {
+  try {
+    const res = await fetch('http://127.0.0.1:11434/api/tags', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { models: [] };
+    const data = await res.json();
+    const models = (data.models ?? []).map((m) => m.name).filter(Boolean);
+    return { models };
+  } catch {
+    return { models: [] };
+  }
+});
+
 ipcMain.handle('interrupt-comfyui', async () => {
   try {
     await fetch('http://127.0.0.1:8188/interrupt', { method: 'POST' });
@@ -4006,7 +4022,8 @@ ipcMain.handle('deepseek-parse-screenplay', async (_event, { scriptText, systemP
         ],
         temperature: 0.3,
         max_tokens: 2000,
-        response_format: { type: 'json_object' },
+        // No response_format constraint — the prompt asks for a bare JSON array,
+        // and json_object mode would force an object wrapper that conflicts with that.
       }),
     });
     if (!res.ok) return { error: `DeepSeek: ${res.status}` };
