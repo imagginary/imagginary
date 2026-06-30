@@ -25,6 +25,7 @@ interface TitleBarProps {
   currentTier?: Tier;
   tierAccent?: string;
   onActivateLicense?: () => void;
+  onUpgradeToStudio?: () => void;
   isSharedSession?: boolean;
   onStartSharedSession?: () => void;
   onCopyInviteLink?: () => void;
@@ -44,7 +45,7 @@ function ConnectionDot({ status }: { status: 'checking' | 'connected' | 'disconn
   return <span className={`w-2 h-2 rounded-full inline-block ${color}`} />;
 }
 
-function StudioUpgradeModal({ onClose }: { onClose: () => void }) {
+function StudioUpgradeModal({ onClose, onUpgrade }: { onClose: () => void; onUpgrade?: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80"
@@ -65,7 +66,10 @@ function StudioUpgradeModal({ onClose }: { onClose: () => void }) {
         <p className="text-xs text-gray-500 mb-4 leading-relaxed">
           Pro feature — upgrade to Pro or Studio to export PDF and XML. Export your boards straight into your edit.
         </p>
-        <button className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors mb-3">
+        <button
+          onClick={onUpgrade}
+          className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors mb-3"
+        >
           Upgrade to Studio
         </button>
         <button
@@ -101,6 +105,7 @@ export default function TitleBar({
   currentTier = 'community' as Tier,
   tierAccent = '#ceaf82',
   onActivateLicense,
+  onUpgradeToStudio,
   isExportingMotionComic,
   motionComicProgress,
   hasMotionClips,
@@ -384,7 +389,7 @@ export default function TitleBar({
         </div>
       </div>
 
-      {showUpgrade && <StudioUpgradeModal onClose={() => setShowUpgrade(false)} />}
+      {showUpgrade && <StudioUpgradeModal onClose={() => setShowUpgrade(false)} onUpgrade={onUpgradeToStudio} />}
     </>
   );
 }

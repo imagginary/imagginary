@@ -8,7 +8,7 @@ export interface ExportResult {
 }
 
 type ElectronAPI = {
-  exportAnimatic: (panelList: { imagePath: string | null; imageData: string | null; duration: number }[], outputPath: string) => Promise<{ success: boolean; outputPath?: string; error?: string }>;
+  exportAnimatic: (panelList: { imagePath: string | null; imageData: string | null; duration: number; voicePath?: string | null }[], outputPath: string) => Promise<{ success: boolean; outputPath?: string; error?: string }>;
   onAnimaticProgress: (callback: (percent: number) => void) => () => void;
   showExportDialog: (options: object) => Promise<{ canceled: boolean; filePath?: string }>;
 };
@@ -39,6 +39,7 @@ export class AnimaticExporter {
       imagePath: p.generatedImagePath,
       imageData: p.generatedImageData,
       duration: p.duration,
+      voicePath: p.voicePath ?? null,
     }));
 
     let removeListener: (() => void) | null = null;

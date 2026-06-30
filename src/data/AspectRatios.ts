@@ -70,3 +70,18 @@ export const DEFAULT_ASPECT_RATIO_ID = '16:9';
 export function getAspectRatio(id: string | null | undefined): AspectRatio {
   return ASPECT_RATIOS.find((r) => r.id === id) ?? ASPECT_RATIOS[0];
 }
+
+/**
+ * Like getAspectRatio, but enforces tier restrictions.
+ * If the resolved ratio is Studio-only and the user is not a Studio subscriber,
+ * falls back to the standard 16:9 ratio so non-Studio users can never accidentally
+ * generate at a restricted resolution (e.g. when opening a project shared by a
+ * Studio user that has 16:9-broadcast set as the aspect ratio).
+ */
+export function safeGetAspectRatio(id: string | null | undefined, isStudio: boolean): AspectRatio {
+  const ratio = getAspectRatio(id);
+  if (ratio.studioOnly && !isStudio) {
+    return ASPECT_RATIOS.find((r) => r.id === DEFAULT_ASPECT_RATIO_ID) ?? ASPECT_RATIOS[0];
+  }
+  return ratio;
+}

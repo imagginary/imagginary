@@ -7,6 +7,7 @@ import CreditUsageBar from './CreditUsageBar';
 
 interface Props {
   isPro: boolean;
+  isStudio?: boolean;
   onClose: () => void;
 }
 
@@ -90,7 +91,7 @@ function KeyInput({
   );
 }
 
-export default function SettingsModal({ isPro, onClose }: Props) {
+export default function SettingsModal({ isPro, isStudio = false, onClose }: Props) {
   const settings = settingsService.get();
   const [availableCheckpoints, setAvailableCheckpoints] = useState<string[]>([]);
   const [activeCheckpoint, setActiveCheckpoint] = useState(settings.activeCheckpoint ?? '');
@@ -351,7 +352,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
             <p className="text-[11px] text-gray-500 leading-relaxed">
               Collaborate in real-time with your team. Create a free Supabase project at supabase.com and paste your credentials below.
             </p>
-            {isPro ? (
+            {isStudio ? (
               <>
                 {/* Project URL */}
                 <div className="space-y-1.5">
@@ -433,7 +434,7 @@ export default function SettingsModal({ isPro, onClose }: Props) {
           <div className="border-t border-gray-800" />
 
           {/* ── ElevenLabs BYOK ── */}
-          {isPro && (
+          {isStudio && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Voice Cloning — ElevenLabs</p>

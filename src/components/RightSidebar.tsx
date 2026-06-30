@@ -2,7 +2,7 @@ import React from 'react';
 import { RefreshCw, Download, Zap, Mic } from 'lucide-react';
 import { Panel, Character, StructuredPrompt, StyleProfile } from '../types';
 import { FILM_DICTIONARY } from '../data/FilmLanguageDictionary';
-import { ASPECT_RATIOS, DEFAULT_ASPECT_RATIO_ID, getAspectRatio } from '../data/AspectRatios';
+import { ASPECT_RATIOS, DEFAULT_ASPECT_RATIO_ID, getAspectRatio, safeGetAspectRatio } from '../data/AspectRatios';
 import { licenseService } from '../services/LicenseService';
 
 interface RightSidebarProps {
@@ -186,7 +186,7 @@ export default function RightSidebar({
           className="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 outline-none focus:border-imagginary-600 transition-colors"
         >
           <option value="">
-            Project default ({getAspectRatio(projectAspectRatioId ?? DEFAULT_ASPECT_RATIO_ID).label})
+            Project default ({safeGetAspectRatio(projectAspectRatioId ?? DEFAULT_ASPECT_RATIO_ID, licenseService.isStudio()).label})
           </option>
           {ASPECT_RATIOS.filter(r => !r.studioOnly || licenseService.isStudio()).map((r) => (
             <option key={r.id} value={r.id}>

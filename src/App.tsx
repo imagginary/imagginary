@@ -48,7 +48,7 @@ import {
   STYLE_CLASSIC_STORYBOARD,
   STYLE_VAULT,
 } from './data/StyleVault';
-import { getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from './data/AspectRatios';
+import { getAspectRatio, safeGetAspectRatio, DEFAULT_ASPECT_RATIO_ID } from './data/AspectRatios';
 
 const DEFAULT_STYLE: StyleProfile = STYLE_CLASSIC_STORYBOARD;
 
@@ -371,8 +371,9 @@ export default function App() {
       progress.status !== 'complete' &&
       progress.status !== 'error') ||
     voiceGeneratingPanelId === panelId;
-  const effectiveAspectRatio = getAspectRatio(
-    activePanel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID
+  const effectiveAspectRatio = safeGetAspectRatio(
+    activePanel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID,
+    licenseService.isStudio()
   );
 
   // ── Panel operations ─────────────────────────────────────────────────────────
@@ -536,10 +537,23 @@ export default function App() {
       // when panels are batch-created before sequential generation begins.
       const characterIds = overrideCharacterIds ?? panel?.characters ?? [];
 
-      // Resolve effective aspect ratio: panel override → project default → global default
-      const effectiveAspectRatio = getAspectRatio(
+      // Resolve effective aspect ratio: panel override → project default → global default.
+      // safeGetAspectRatio enforces tier restrictions — if the stored ratio is Studio-only
+      // and the current user isn't Studio (e.g. they received a shared project), it falls
+      // back to the standard 16:9 ratio so the restricted resolution is never sent to ComfyUI.
+      const requestedAspectRatio = getAspectRatio(
         panel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID
       );
+      const effectiveAspectRatio = safeGetAspectRatio(
+        panel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID,
+        licenseService.isStudio()
+      );
+      if (effectiveAspectRatio.id !== requestedAspectRatio.id) {
+        setCloudToast(
+          `Broadcast HD (${requestedAspectRatio.label}) is Studio-only — generating at ${effectiveAspectRatio.label} instead.`
+        );
+        setTimeout(() => setCloudToast(null), 5000);
+      }
 
       // Inject Director's Notes into the prompt if present
       const notesText = panel?.notes?.trim();
@@ -1431,6 +1445,7 @@ export default function App() {
         currentTier={currentTier}
         tierAccent={tierAccent}
         onActivateLicense={() => setShowActivateLicense(true)}
+        onUpgradeToStudio={() => licenseService.openCheckout('studio')}
         isExportingMotionComic={isExportingMotionComic}
         motionComicProgress={motionComicProgress}
         hasMotionClips={hasMotionClips}
@@ -1528,7 +1543,7 @@ export default function App() {
                     : project.style.name}
                 </div>
                 <div className="text-[10px] text-gray-600">
-                  {getAspectRatio(project.aspectRatioId ?? DEFAULT_ASPECT_RATIO_ID).label}
+                  {safeGetAspectRatio(project.aspectRatioId ?? DEFAULT_ASPECT_RATIO_ID, licenseService.isStudio()).label}
                 </div>
               </div>
             </div>
@@ -1558,7 +1573,6 @@ export default function App() {
               onCreateCharacter={handleCreateCharacter}
               onDeleteCharacter={deleteCharacter}
               generationProgress={charProgress}
-              isPro={licenseService.isPro() || licenseService.isStudio()}
             />
           </div>
         </div>
@@ -1738,6 +1752,7 @@ export default function App() {
           panel={activePanel}
           characters={project.characters}
           isPro={licenseService.isPro() || licenseService.isStudio()}
+          isStudio={licenseService.isStudio()}
           isVoiceGenerating={isVoiceGenerating(activePanel.id)}
           onComplete={handleVoiceComplete}
           onLipSyncComplete={handleLipSyncComplete}
@@ -1752,6 +1767,7 @@ export default function App() {
       {showSettings && (
         <SettingsModal
           isPro={licenseService.isPro() || licenseService.isStudio()}
+          isStudio={licenseService.isStudio()}
           onClose={() => setShowSettings(false)}
         />
       )}

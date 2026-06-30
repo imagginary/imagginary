@@ -21,7 +21,18 @@ interface SelectedImage {
 
 const TRAINING_COST = CREDIT_COSTS.loraTraining;
 
-export default function LoRATrainer({ onClose, onStyleCreated }: LoRATrainerProps) {
+export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRATrainerProps) {
+  if (!isStudio) {
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+        <div className="bg-gray-950 border border-gray-800 rounded-xl p-6 max-w-sm w-full text-center">
+          <p className="text-white font-medium mb-2">Studio feature</p>
+          <p className="text-gray-400 text-sm mb-4">Brand LoRA training requires a Studio subscription.</p>
+          <button onClick={onClose} className="text-sm text-gray-400 hover:text-white transition-colors">Close</button>
+        </div>
+      </div>
+    );
+  }
   const [step, setStep] = useState<Step>('upload');
 
   // Upload step state

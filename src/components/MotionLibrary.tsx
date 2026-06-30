@@ -21,7 +21,6 @@ import {
 import { MotionClip, MotionCategory, Panel } from '../types';
 import { PoseKeyframe, SKELETON_CONNECTIONS } from '../data/PoseVocabulary';
 import { motionLibraryService } from '../services/MotionLibraryService';
-import { licenseService } from '../services/LicenseService';
 import { renderPoseToDataURL, expandSequence } from '../services/PoseEngineService';
 
 // ── Category list ─────────────────────────────────────────────────────────────
@@ -303,7 +302,7 @@ export default function MotionLibrary({
 
   async function handleApply() {
     if (!isPro) return;
-    const needsComfyUI = !(licenseService.isPro() || licenseService.isStudio());
+    const needsComfyUI = !isPro;
     if (!selectedClip || !panel.generatedImageData || (needsComfyUI && !comfyuiConnected)) return;
     setIsApplying(true);
     setApplyError(null);
@@ -358,7 +357,7 @@ export default function MotionLibrary({
   const currentFrame = expandedPreview[previewFrame % Math.max(1, expandedPreview.length)];
   // Pro/Studio always use Kling cloud — comfyuiConnected only required for Community users
   const canApply = isPro && !!selectedClip && !!panel.generatedImageData && !isApplying
-    && (licenseService.isPro() || licenseService.isStudio() || comfyuiConnected);
+    && (isPro || comfyuiConnected);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -369,9 +368,9 @@ export default function MotionLibrary({
           <Film className="w-4 h-4 text-violet-400" />
           <h2 className="text-sm font-semibold text-gray-200">Motion Library</h2>
           <span className="text-[10px] text-gray-600 font-mono">
-            {clips.length} clips{!comfyuiConnected && !(licenseService.isPro() || licenseService.isStudio()) && ' · GPU needed to apply'}
+            {clips.length} clips{!comfyuiConnected && !isPro && ' · GPU needed to apply'}
           </span>
-          {!comfyuiConnected && !(licenseService.isPro() || licenseService.isStudio()) && (
+          {!comfyuiConnected && !isPro && (
             <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-950/50 border border-yellow-700/40 rounded text-[10px] text-yellow-400">
               <AlertCircle className="w-3 h-3" />
               ControlNet + GPU required to apply clips

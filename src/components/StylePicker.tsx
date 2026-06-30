@@ -50,6 +50,10 @@ export default function StylePicker({
   }
 
   function handleApply() {
+    if (selected.tier === 'pro' && !licenseService.isPro() && !licenseService.isStudio()) {
+      setProMessage(PRO_STYLE_UNAVAILABLE_MESSAGE);
+      return;
+    }
     onApply(selected);
     onApplyAspectRatio?.(selectedRatioId);
     onClose();
@@ -222,7 +226,8 @@ export default function StylePicker({
             </button>
             <button
               onClick={handleApply}
-              className="px-4 py-1.5 rounded text-xs font-semibold bg-imagginary-500 hover:bg-imagginary-400 text-black transition-colors"
+              disabled={selected?.tier === 'pro' && !licenseService.isPro() && !licenseService.isStudio()}
+              className="px-4 py-1.5 rounded text-xs font-semibold bg-imagginary-500 hover:bg-imagginary-400 text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-imagginary-500"
             >
               Apply
             </button>

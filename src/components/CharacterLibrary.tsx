@@ -7,7 +7,6 @@ interface CharacterLibraryProps {
   onCreateCharacter: (name: string, description: string) => void;
   onDeleteCharacter: (id: string) => void;
   generationProgress: CharacterGenerationProgress | null;
-  isPro?: boolean;
 }
 
 function CharacterRow({
