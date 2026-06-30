@@ -99,7 +99,7 @@ class VoiceService {
   async previewVoice(edgeVoice: string): Promise<string> {
     const result = await window.electronAPI?.previewVoice?.({ edgeVoice });
     if (result?.success && result.previewPath) return result.previewPath;
-    throw new Error(`Preview failed for: ${edgeVoice}`);
+    throw new Error(result?.error ?? `Preview failed for: ${edgeVoice}`);
   }
 
   /** Fetch the full ~320-voice catalogue from edge-tts */
@@ -114,8 +114,11 @@ class VoiceService {
 
   async cloneVoice(audioSamplePath: string, name: string): Promise<{ voiceId: string; name: string; provider: 'cartesia' | 'elevenlabs' }> {
     const result = await window.electronAPI?.cloneVoice?.({ audioSamplePath, name });
-    if (result?.success && result.voiceId) return { voiceId: result.voiceId, name: result.name, provider: result.provider };
-    throw new Error(result?.error ?? 'Voice cloning failed');
+    if (!result?.success || !result.voiceId) throw new Error(result?.error ?? 'Voice cloning failed');
+    if (result.provider !== 'cartesia' && result.provider !== 'elevenlabs') {
+      throw new Error('Voice cloning returned an unexpected provider format');
+    }
+    return { voiceId: result.voiceId, name: result.name, provider: result.provider };
   }
 
   async checkCoquiTTS(): Promise<EdgeTtsCheckResult> {
