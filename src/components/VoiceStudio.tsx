@@ -244,6 +244,8 @@ export default function VoiceStudio({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloneInputRef = useRef<HTMLInputElement>(null);
+  const generatingRef = useRef(false);
+  const selectingRef = useRef(false);
 
   // ── Boot ────────────────────────────────────────────────────────────────────
 
@@ -285,10 +287,24 @@ export default function VoiceStudio({
 
   useEffect(() => {
     return () => {
-      audioRef.current?.pause();
-      previewAudioRef.current?.pause();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current = null;
+      }
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.src = '';
+        previewAudioRef.current = null;
+      }
     };
   }, []);
+
+  // Reset generation state when switching panels so stale errors don't show on re-open
+  useEffect(() => {
+    setGenState('idle');
+    setGenError(null);
+  }, [panel.id]);
 
   // ── Install ─────────────────────────────────────────────────────────────────
 
@@ -323,18 +339,24 @@ export default function VoiceStudio({
   // ── Select featured profile ─────────────────────────────────────────────────
 
   const handleSelectProfile = useCallback((profile: VoiceProfile) => {
+    if (selectingRef.current) return;
+    selectingRef.current = true;
     setSelectedVoiceId(profile.id);
     setActiveEdgeVoice(profile.edgeVoice || null);
     setActiveVoiceLabel(profile.name);
     setActiveVoiceProfile(profile);
+    requestAnimationFrame(() => { selectingRef.current = false; });
   }, []);
 
   // ── Select voice from browser ───────────────────────────────────────────────
 
   const handleSelectBrowserVoice = useCallback((voice: EdgeVoice) => {
+    if (selectingRef.current) return;
+    selectingRef.current = true;
     setSelectedVoiceId(null); // deselect featured
     setActiveEdgeVoice(voice.name);
     setActiveVoiceLabel(voice.name);
+    requestAnimationFrame(() => { selectingRef.current = false; });
   }, []);
 
   // ── Browser filter ──────────────────────────────────────────────────────────
@@ -357,7 +379,8 @@ export default function VoiceStudio({
 
   const handleGenerate = useCallback(async () => {
     const canGenerate = dialogue.trim() && (activeEdgeVoice || (activeVoiceProfile?.elevenLabsVoiceId || activeVoiceProfile?.cartesiaVoiceId));
-    if (!canGenerate || isVoiceGenerating) return; // app-level lock prevents remount bypass
+    if (!canGenerate || isVoiceGenerating || generatingRef.current) return;
+    generatingRef.current = true;
     setGenState('generating');
     setGenProgress(0);
     setGenError(null);
@@ -381,6 +404,7 @@ export default function VoiceStudio({
       setGenError(err instanceof Error ? err.message : 'Generation failed');
       setGenState('error');
     } finally {
+      generatingRef.current = false;
       onVoiceGenerationEnd?.(panel.id);
     }
   }, [activeEdgeVoice, activeVoiceProfile, activeVoiceLabel, dialogue, isVoiceGenerating, panel.id, onVoiceGenerationStart, onVoiceGenerationEnd]);

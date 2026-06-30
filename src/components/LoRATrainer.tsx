@@ -51,6 +51,15 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
   const triggerSuffix = useRef(Math.random().toString(36).substring(2, 6).toUpperCase());
   const triggerWord = triggerWordBase ? `${triggerWordBase}_${triggerSuffix.current}` : '';
 
+  const trainingInFlight = useRef(false);
+  const selectedImagesRef = useRef(selectedImages);
+  useEffect(() => { selectedImagesRef.current = selectedImages; }, [selectedImages]);
+  useEffect(() => {
+    return () => {
+      selectedImagesRef.current.forEach(img => URL.revokeObjectURL(img.previewUrl));
+    };
+  }, []);
+
   // Training step state
   const [trainingMessage, setTrainingMessage] = useState('');
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -103,6 +112,8 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
   }
 
   const handleStartTraining = useCallback(async () => {
+    if (trainingInFlight.current) return;
+    trainingInFlight.current = true;
     setStep('training');
     setTrainingError(null);
     setTrainingProgress(0);
@@ -112,8 +123,10 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       setTrainingMessage('Uploading reference images…');
       const imagePaths = selectedImages.map((img) => img.path);
       const uploadResult = await window.electronAPI!.uploadTrainingImages({ imagePaths });
-      if (!uploadResult.success) throw new Error(uploadResult.error);
-      const uploadedUrls: string[] = uploadResult.urls ?? [];
+      if (!uploadResult?.success || !uploadResult?.urls) {
+        throw new Error(uploadResult?.error ?? 'Image upload failed with an unknown error');
+      }
+      const uploadedUrls: string[] = uploadResult.urls;
 
       // 2. Submit training job
       setTrainingMessage('Submitting training job to Fal.ai…');
@@ -149,6 +162,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       // 3. Poll for completion (max 80 × 15 s = 20 min)
       setTrainingMessage('Training in progress — this takes ~15 minutes…');
       let loraUrl: string | null = null;
+      let lastKnownStatus: string | null = null;
 
       for (let i = 0; i < 80; i++) {
         await new Promise<void>((r) => setTimeout(r, 15_000));
@@ -156,6 +170,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
         const statusResult = await window.electronAPI!.pollLoraTraining({ requestId });
         if (!statusResult.success) throw new Error(statusResult.error);
 
+        lastKnownStatus = statusResult.status ?? null;
         const elapsed = Math.round((i + 1) * 15 / 60);
         setTrainingMessage(`Training in progress — ${elapsed} min elapsed…`);
         setTrainingProgress(Math.min(90, Math.round(((i + 1) / 80) * 90)));
@@ -169,7 +184,10 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
         }
       }
 
-      if (!loraUrl) throw new Error('Training timed out after 20 minutes');
+      if (!loraUrl) {
+        console.error('[LoRA Training] Polling timed out. Last known status:', lastKnownStatus, 'Job ID:', requestId);
+        throw new Error(`Training timed out after 20 minutes. Last status: ${lastKnownStatus ?? 'unknown'}`);
+      }
 
       // 4. Download and install LoRA
       setTrainingMessage('Downloading trained LoRA…');
@@ -198,12 +216,13 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       setStep('complete');
 
       // Best-effort cleanup of uploaded training images from Fal.ai storage (fire-and-forget)
-      window.electronAPI?.cleanupTrainingUploads?.({ imageUrls: uploadedUrls }).catch(() => {});
+      window.electronAPI?.cleanupTrainingUploads?.({ imageUrls: uploadedUrls })
+        .catch(err => console.warn('[LoRA Training] Cleanup of uploaded images failed (non-critical):', err));
     } catch (err: any) {
       setTrainingError(err?.message ?? 'Unknown error');
       setTrainingMessage('Training failed');
-      // Update persisted style to failed if we had a requestId
-      // (best-effort; ignore errors)
+    } finally {
+      trainingInFlight.current = false;
     }
   }, [selectedImages, styleName, triggerWord, promptSuffix, loraStrength, onStyleCreated]);
 
