@@ -1765,8 +1765,6 @@ ipcMain.handle('read-image', async (_event, filePath) => {
 
 ipcMain.handle('get-app-data-path', async () => app.getPath('userData'));
 
-ipcMain.on('open-download-page', () => shell.openExternal('https://imagginary.com'));
-
 ipcMain.handle('open-folder', async (_event, folderPath) => {
   const resolvedPath = assertSafePath(folderPath);
   shell.openPath(resolvedPath);
@@ -3700,6 +3698,14 @@ ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt
   }
 });
 
+// Per-request cancel flags for fal-kling. Each active request registers its own flag
+// object here. cancel-fal-kling sets all active flags so concurrent requests are all
+// cancellable, even if two requests are running simultaneously.
+const activeKlingFlags = new Set();
+ipcMain.on('cancel-fal-kling', () => {
+  for (const flag of activeKlingFlags) flag.cancelled = true;
+});
+
 ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = '5', aspectRatio = '16:9' }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
@@ -3711,9 +3717,8 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
     try { event.sender.send('cloud-progress', { handler: 'fal-kling', pct, msg }); } catch {}
   };
 
-  let cancelled = false;
-  const cancelHandler = () => { cancelled = true; };
-  ipcMain.once('cancel-fal-kling', cancelHandler);
+  const flag = { cancelled: false };
+  activeKlingFlags.add(flag);
 
   try {
     const base64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
@@ -3737,9 +3742,9 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
     send(15, 'Sending to Kling AI…\nKling queue can take longer during peak hours');
 
     for (let i = 0; i < 60; i++) {
-      if (cancelled) return { error: 'cancelled' };
+      if (flag.cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
-      if (cancelled) return { error: 'cancelled' };
+      if (flag.cancelled) return { error: 'cancelled' };
       const pollRes = await fetch(
         `https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video/requests/${requestId}`,
         { headers: { 'Authorization': `Key ${key}` } }
@@ -3767,7 +3772,7 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
   } catch (err) {
     return { error: err.message };
   } finally {
-    ipcMain.removeListener('cancel-fal-kling', cancelHandler);
+    activeKlingFlags.delete(flag);
   }
 });
 

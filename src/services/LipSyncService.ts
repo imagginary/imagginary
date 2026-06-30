@@ -1,4 +1,3 @@
-import { settingsService } from './SettingsService';
 import { licenseService, CREDIT_COSTS } from './LicenseService';
 
 export interface LipSyncResult {
@@ -9,8 +8,10 @@ export interface LipSyncResult {
 
 class LipSyncService {
   async isAvailable(): Promise<boolean> {
-    // BYOK key still works; baked-in key presence is checked in main process
-    return !!(settingsService.getKey('syncsoApiKey') || (window as any).electronAPI?.syncsoLipSync);
+    // Sync.so uses a baked-in API key (SYNCSO_API_KEY from config.json); availability
+    // is confirmed by checking whether the IPC handler is exposed by the main process.
+    // There is no BYOK option for Sync.so, so no settings key check is needed here.
+    return !!(window as any).electronAPI?.syncsoLipSync;
   }
 
   async generateLipSync(

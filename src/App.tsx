@@ -274,7 +274,7 @@ export default function App() {
     for (let i = 0; i < 80; i++) {
       await new Promise<void>(r => setTimeout(r, 15000));
       try {
-        const result = await (window as any).electronAPI.pollLoraTraining({ requestId: style.trainingJobId });
+        const result = await (window as any).electronAPI?.pollLoraTraining?.({ requestId: style.trainingJobId });
         if (!result.success) continue;
 
         if (result.status === 'COMPLETED') {

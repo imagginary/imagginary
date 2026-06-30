@@ -93,19 +93,23 @@ class SharedStudioService {
     return this.client;
   }
 
-  /** Strip binary fields and local-only history before broadcasting.
-   *  Supabase Realtime has a 32KB per-message limit on free tier. */
+  /** Strip large binary fields before broadcasting to stay within Supabase Realtime's
+   *  32KB per-message limit (free tier). Only base64 data blobs are stripped.
+   *  Path/URL strings (voicePath, lipSyncPath) are kept so collaborators know that
+   *  voice and lip-sync assets exist for a panel, even if they can't access the files. */
   private stripBinaryFields(project: Project): Project {
     return {
       ...project,
       panels: project.panels.map(panel => ({
         ...panel,
-        generatedImageData: undefined,
-        motionClipData: undefined,
-        voiceClipData: undefined,
-        poseClipData: undefined,
-        editHistory: [],
-        revisions: [],
+        generatedImageData: undefined,  // base64 PNG — large
+        motionClipData: undefined,      // base64 video — large
+        poseClipData: undefined,        // base64 video — large
+        lipSyncData: undefined,         // base64 video — large
+        editHistory: [],                // array of base64 strings — large
+        revisions: [],                  // cross-session history — potentially large
+        // voicePath:   kept — absolute file path string, tiny
+        // lipSyncPath: kept — URL/path string, tiny
       })),
     };
   }

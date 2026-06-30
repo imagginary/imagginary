@@ -8,21 +8,18 @@ import { getComfyUIUrl } from '../config/services';
 
 // In packaged Electron the renderer runs from file:// (null origin) and ComfyUI rejects
 // those requests with 403. The main process runs a transparent local HTTP proxy that
-// injects the correct Origin header. We resolve the proxy port once via IPC and cache it.
-let resolvedBaseUrl: string | null = null;
-
+// injects the correct Origin header. We look up the current proxy port on every call
+// (no caching) because the OS-assigned port can change if the main process restarts
+// without a renderer reload (common in dev with hot-reload). The IPC call is a cheap
+// synchronous store lookup in the main process, so the overhead is negligible.
 async function getComfyBaseUrl(): Promise<string> {
-  if (resolvedBaseUrl) return resolvedBaseUrl;
   if ((window as any).electronAPI?.getComfyUIProxyPort) {
     try {
       const port = await (window as any).electronAPI.getComfyUIProxyPort();
-      if (port) {
-        resolvedBaseUrl = `http://127.0.0.1:${port}`;
-        return resolvedBaseUrl;
-      }
+      if (port) return `http://127.0.0.1:${port}`;
     } catch { /* fall through to direct URL */ }
   }
-  // Direct dev-mode / custom URL — read from settings, do not cache
+  // Direct dev-mode / custom URL — read from settings
   return getComfyUIUrl();
 }
 

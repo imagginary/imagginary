@@ -43,7 +43,7 @@ class LicenseService {
       if (legacy) {
         try {
           const old = JSON.parse(legacy);
-          await (window as any).electronAPI.setCredits({
+          await (window as any).electronAPI?.setCredits?.({
             subscriptionCredits: old.subscriptionCredits ?? 0,
             topUpCredits:        old.topUpCredits        ?? 0,
             lastCreditedAt:      old.lastCreditedAt      ?? 0,
@@ -53,15 +53,17 @@ class LicenseService {
       }
 
       // ── Load balance from main process ────────────────────────────────────
-      const bal = await (window as any).electronAPI.getCredits();
-      this._cache = {
-        subscriptionCredits: bal.subscriptionCredits ?? 0,
-        topUpCredits:        bal.topUpCredits        ?? 0,
-        lastCreditedAt:      bal.lastCreditedAt      ?? 0,
-      };
+      const bal = await (window as any).electronAPI?.getCredits?.();
+      if (bal) {
+        this._cache = {
+          subscriptionCredits: bal.subscriptionCredits ?? 0,
+          topUpCredits:        bal.topUpCredits        ?? 0,
+          lastCreditedAt:      bal.lastCreditedAt      ?? 0,
+        };
+      }
 
       // ── Load license ──────────────────────────────────────────────────────
-      const stored = await (window as any).electronAPI.getLicense();
+      const stored = await (window as any).electronAPI?.getLicense?.();
       if (stored) {
         this.license = stored as License;
         await this.checkAndAddMonthlyCredits();
