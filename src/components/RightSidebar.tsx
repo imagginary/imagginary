@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { RefreshCw, Download, Zap, Mic } from 'lucide-react';
 import { Panel, Character, StructuredPrompt, StyleProfile } from '../types';
 import { FILM_DICTIONARY } from '../data/FilmLanguageDictionary';
@@ -77,6 +77,12 @@ export default function RightSidebar({
   isGenerating,
   activeStyleProfile,
 }: RightSidebarProps) {
+  // Recompute when studio tier changes so newly unlocked ratios appear immediately
+  const availableRatios = useMemo(
+    () => ASPECT_RATIOS.filter(r => !r.studioOnly || licenseService.isStudio()),
+    [licenseService.isStudio()], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   if (!panel) {
     return (
       <div className="h-full flex items-center justify-center text-gray-700 text-xs px-4 text-center">
@@ -86,12 +92,19 @@ export default function RightSidebar({
   }
 
   function toggleCharacter(characterId: string) {
-    if (!panel) return;
-    const current = panel.characters ?? [];
+    const current = panel!.characters ?? [];
     const updated = current.includes(characterId)
       ? current.filter((id) => id !== characterId)
       : [...current, characterId];
-    onUpdatePanel({ characters: updated });
+    handleUpdatePanel({ characters: updated });
+  }
+
+  function handleUpdatePanel(updates: Partial<Panel>) {
+    try { onUpdatePanel(updates); } catch (err) { console.error('[RightSidebar] Failed to update panel:', err); }
+  }
+
+  function handleUpdateStructuredPrompt(panelId: string, updates: Partial<StructuredPrompt>) {
+    try { onUpdateStructuredPrompt?.(panelId, updates); } catch (err) { console.error('[RightSidebar] Failed to update structured prompt:', err); }
   }
 
   return (
@@ -105,7 +118,7 @@ export default function RightSidebar({
             <SelectField
               value={panel.shotType}
               options={SHOT_TYPES}
-              onChange={(v) => onUpdatePanel({ shotType: v })}
+              onChange={(v) => handleUpdatePanel({ shotType: v })}
               placeholder="Shot type"
             />
           </div>
@@ -114,7 +127,7 @@ export default function RightSidebar({
             <SelectField
               value={panel.angle}
               options={ANGLES}
-              onChange={(v) => onUpdatePanel({ angle: v })}
+              onChange={(v) => handleUpdatePanel({ angle: v })}
               placeholder="Camera angle"
             />
           </div>
@@ -123,7 +136,7 @@ export default function RightSidebar({
             <SelectField
               value={panel.mood}
               options={MOODS}
-              onChange={(v) => onUpdatePanel({ mood: v })}
+              onChange={(v) => handleUpdatePanel({ mood: v })}
               placeholder="Mood"
             />
           </div>
@@ -170,7 +183,7 @@ export default function RightSidebar({
             min={1}
             max={10}
             value={panel.duration}
-            onChange={(e) => onUpdatePanel({ duration: Number(e.target.value) })}
+            onChange={(e) => handleUpdatePanel({ duration: Number(e.target.value) })}
             className="flex-1 accent-imagginary-500"
           />
           <span className="text-xs text-imagginary-400 font-mono w-8 text-right">{panel.duration}s</span>
@@ -182,13 +195,13 @@ export default function RightSidebar({
       <Section title="Aspect Ratio">
         <select
           value={panel.aspectRatioId ?? ''}
-          onChange={(e) => onUpdatePanel({ aspectRatioId: e.target.value === '' ? null : e.target.value })}
+          onChange={(e) => handleUpdatePanel({ aspectRatioId: e.target.value === '' ? null : e.target.value })}
           className="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 outline-none focus:border-imagginary-600 transition-colors"
         >
           <option value="">
             Project default ({safeGetAspectRatio(projectAspectRatioId ?? DEFAULT_ASPECT_RATIO_ID, licenseService.isStudio()).label})
           </option>
-          {ASPECT_RATIOS.filter(r => !r.studioOnly || licenseService.isStudio()).map((r) => (
+          {availableRatios.map((r) => (
             <option key={r.id} value={r.id}>
               {r.label} — {r.description.split('—')[0].trim()}
             </option>
@@ -201,7 +214,7 @@ export default function RightSidebar({
       <Section title="Director's Notes">
         <textarea
           value={panel.notes}
-          onChange={(e) => onUpdatePanel({ notes: e.target.value })}
+          onChange={(e) => handleUpdatePanel({ notes: e.target.value })}
           placeholder="Add cinematic direction — influences generation (e.g. 'more dramatic shadows', 'tighter frame', 'rain outside window')"
           rows={3}
           className="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-2 text-xs text-gray-300 placeholder-gray-600 outline-none focus:border-imagginary-600 transition-colors resize-none"
@@ -227,7 +240,7 @@ export default function RightSidebar({
                                text-[10px] font-mono"
                     value={String(value)}
                     onChange={(e) =>
-                      onUpdateStructuredPrompt?.(panel.id, { [key]: e.target.value })
+                      handleUpdateStructuredPrompt(panel.id, { [key]: e.target.value })
                     }
                   />
                 </div>

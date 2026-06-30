@@ -79,7 +79,14 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
   useEffect(() => {
-    window.electronAPI?.getSystemMemory?.().then(setSystemInfo).catch(() => {});
+    window.electronAPI?.getSystemMemory?.().then(setSystemInfo).catch((err) => {
+      console.warn('[WelcomeFlow] Failed to get system memory:', err);
+    });
+  }, []);
+
+  // Reset auto-advance flag on unmount so a remounted instance advances again if services reconnect
+  useEffect(() => {
+    return () => { autoAdvancedRef.current = false; };
   }, []);
 
   // Auto-advance from step 1 to step 2 if both services become green
@@ -92,13 +99,22 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
     }
   }, [serviceStatus, step]);
 
-  // Auto-poll every 10 s in packaged mode while services are still starting up
+  // Mirror serviceStatus into a ref so the polling interval can read it without being recreated
+  const serviceStatusRef = useRef(serviceStatus);
+  useEffect(() => { serviceStatusRef.current = serviceStatus; }, [serviceStatus]);
+
+  // Auto-poll every 10 s in packaged mode while services are still starting up.
+  // Interval is created once; status is read via ref to avoid teardown/recreation on every change.
   useEffect(() => {
     if (!servicesAutoStarted) return;
-    if (serviceStatus.ollama === 'connected' && serviceStatus.comfyui === 'connected') return;
-    const interval = setInterval(() => { onRefreshServices(); }, 10000);
+    const interval = setInterval(() => {
+      const s = serviceStatusRef.current;
+      if (s.ollama !== 'connected' || s.comfyui !== 'connected') {
+        onRefreshServices();
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [servicesAutoStarted, serviceStatus.ollama, serviceStatus.comfyui]);
+  }, [servicesAutoStarted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bothReady = serviceStatus.ollama === 'connected' && serviceStatus.comfyui === 'connected';
 
@@ -109,7 +125,7 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
       setStep(4);
       return;
     }
-    localStorage.setItem('imagginary_onboarded', '1');
+    try { localStorage.setItem('imagginary_onboarded', '1'); } catch (err) { console.warn('[WelcomeFlow] Failed to persist welcome state:', err); }
     onComplete({
       title: projectTitle.trim() || 'Untitled Project',
       style: STYLE_BY_PROJECT_TYPE[projectType],
@@ -120,7 +136,7 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
   function handleConsentAndComplete(grant: boolean) {
     if (grant) telemetryService.grant();
     else telemetryService.deny();
-    localStorage.setItem('imagginary_onboarded', '1');
+    try { localStorage.setItem('imagginary_onboarded', '1'); } catch (err) { console.warn('[WelcomeFlow] Failed to persist welcome state:', err); }
     onComplete({
       title: projectTitle.trim() || 'Untitled Project',
       style: STYLE_BY_PROJECT_TYPE[projectType!],

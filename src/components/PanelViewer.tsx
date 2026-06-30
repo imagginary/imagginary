@@ -149,6 +149,14 @@ export default function PanelViewer({
     }
   }, [editMode]);
 
+  // Reset drawing refs on unmount so a remounted instance starts clean
+  useEffect(() => {
+    return () => {
+      isDrawing.current = false;
+      lastPos.current = null;
+    };
+  }, []);
+
   function getCanvasPos(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -549,7 +557,7 @@ export default function PanelViewer({
             </div>
           )}
           {/* Motion clip — shown in main viewport when animate mode is active and clip exists */}
-          {animateMode && hasClip && !isGenerating && (panel?.motionClipData || panel?.motionClipPath) && (
+          {animateMode && hasClip && !isGenerating && (
             <>
               <video
                 key={panel?.motionClipData ?? panel?.motionClipPath ?? ''}
