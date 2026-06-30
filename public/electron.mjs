@@ -763,6 +763,9 @@ async function installComfyUI(loadingWin) {
     // 3. Install requirements into the venv — full output captured for debugging
     setInstallMsg('Installing ComfyUI dependencies (this takes a few minutes)…');
     console.log('[ComfyUI] Installing requirements with venv pip:', venvPip);
+    if (!fs.existsSync(venvPip)) {
+      throw new Error(`Python virtual environment is incomplete (pip not found at ${venvPip}). Try deleting the venv folder and restarting the app.`);
+    }
     await new Promise((resolve, reject) => {
       const pip = spawn(venvPip, ['install', '-r', 'requirements.txt'], {
         cwd: comfyPath,
@@ -995,10 +998,13 @@ async function checkAndDownloadModel(loadingWin, comfyPath) {
     });
 
     // Validate — an HTML error page starts with '<' (0x3C); a safetensors file never does
-    const fd = fs.openSync(modelPath, 'r');
     const firstByte = Buffer.alloc(1);
-    fs.readSync(fd, firstByte, 0, 1, 0);
-    fs.closeSync(fd);
+    const fd = fs.openSync(modelPath, 'r');
+    try {
+      fs.readSync(fd, firstByte, 0, 1, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (firstByte[0] === 0x3c) {
       fs.unlinkSync(modelPath);
       console.error('[Model] Downloaded file is an HTML page — removing corrupt file');
@@ -1026,10 +1032,13 @@ function cleanupCorruptModels(checkpointsDir) {
   for (const file of files) {
     const filePath = path.join(checkpointsDir, file);
     try {
-      const fd = fs.openSync(filePath, 'r');
       const buf = Buffer.alloc(1);
-      fs.readSync(fd, buf, 0, 1, 0);
-      fs.closeSync(fd);
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        fs.readSync(fd, buf, 0, 1, 0);
+      } finally {
+        fs.closeSync(fd);
+      }
       if (buf[0] === 0x3c) {
         fs.unlinkSync(filePath);
         console.log('[Model] Removed corrupt model (HTML page):', file);
@@ -1635,10 +1644,13 @@ ipcMain.handle('download-pro-model', async (event) => {
     });
 
     // Validate — an HTML error page starts with '<' (0x3C); a safetensors file never does
-    const fd = fs.openSync(proModelPath, 'r');
     const firstByte = Buffer.alloc(1);
-    fs.readSync(fd, firstByte, 0, 1, 0);
-    fs.closeSync(fd);
+    const fd = fs.openSync(proModelPath, 'r');
+    try {
+      fs.readSync(fd, firstByte, 0, 1, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (firstByte[0] === 0x3c) {
       fs.unlinkSync(proModelPath);
       console.error('[ProModel] Downloaded file is an HTML page — removing corrupt file');
@@ -1661,8 +1673,11 @@ ipcMain.handle('download-absolute-reality', async (event) => {
     try {
       const buf = Buffer.alloc(1);
       const fd = fs.openSync(modelPath, 'r');
-      fs.readSync(fd, buf, 0, 1, 0);
-      fs.closeSync(fd);
+      try {
+        fs.readSync(fd, buf, 0, 1, 0);
+      } finally {
+        fs.closeSync(fd);
+      }
       if (buf[0] !== 0x3c) return { success: true, cached: true };
       fs.unlinkSync(modelPath); // corrupt file — re-download
     } catch { /* proceed with download */ }
@@ -1679,8 +1694,11 @@ ipcMain.handle('download-absolute-reality', async (event) => {
     // Validate — reject HTML error pages
     const buf = Buffer.alloc(1);
     const fd = fs.openSync(modelPath, 'r');
-    fs.readSync(fd, buf, 0, 1, 0);
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buf, 0, 1, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (buf[0] === 0x3c) {
       fs.unlinkSync(modelPath);
       return { success: false, error: 'Model download failed — server returned an unexpected response. Please try again or download manually from CivitAI.' };
@@ -1805,8 +1823,11 @@ ipcMain.handle('read-image', async (_event, filePath) => {
     };
     const buf = Buffer.alloc(8);
     const fd = fs.openSync(resolvedPath, 'r');
-    fs.readSync(fd, buf, 0, 8, 0);
-    fs.closeSync(fd);
+    try {
+      fs.readSync(fd, buf, 0, 8, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     const isJpeg = MAGIC.jpeg.every((b, i) => buf[i] === b);
     const isPng  = MAGIC.png.every((b, i) => buf[i] === b);
     const isWebp = MAGIC.webp.every((b, i) => buf[i] === b);
@@ -2218,10 +2239,6 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
 
       // Progress 5–60% across all panel conversions
       sendProgress(5 + Math.round(55 * (i + 1) / validPanels.length));
-
-      for (const tmp of tempImageFiles) {
-        try { fs.unlinkSync(tmp); } catch { /* ignore */ }
-      }
     }
 
     // ── 4. Assemble with xfade transitions ───────────────────────────────
@@ -2346,6 +2363,9 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
     return { success: false, error: err.message };
   } finally {
     for (const tmp of tempClips) {
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    }
+    for (const tmp of tempImageFiles) {
       try { fs.unlinkSync(tmp); } catch { /* ignore */ }
     }
   }
@@ -2488,7 +2508,7 @@ ipcMain.handle('extract-video-pose', async (event, videoPath) => {
 
     // Extract frames at 8fps (capped at 60 frames)
     const maxFrames = Math.min(Math.ceil(duration * 8), 60);
-    const fps = maxFrames / duration;
+    const fps = duration > 0 ? maxFrames / duration : 8;
 
     await new Promise((resolve, reject) => {
       const proc = spawn(ffmpegPath, [
@@ -4058,10 +4078,13 @@ ipcMain.handle('download-controlnet-openpose', async (event) => {
     });
 
     // Validate — a valid .pth file is binary, not an HTML error page
-    const fd = fs.openSync(modelPath, 'r');
     const firstByte = Buffer.alloc(1);
-    fs.readSync(fd, firstByte, 0, 1, 0);
-    fs.closeSync(fd);
+    const fd = fs.openSync(modelPath, 'r');
+    try {
+      fs.readSync(fd, firstByte, 0, 1, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (firstByte[0] === 0x3c) {
       fs.unlinkSync(modelPath);
       return { success: false, error: 'Download failed — server returned an error page. Please try again.' };
@@ -4131,9 +4154,9 @@ ipcMain.handle('start-lora-training', async (_event, { imageUrls, styleName, tri
   if (!isStudio()) return { success: false, error: 'Studio subscription required' };
   if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
 
-  const bal = getCredits();
-  if (bal.subscriptionCredits + bal.topUpCredits < CREDIT_COST.loraTraining) {
-    return { success: false, error: 'insufficient credits' };
+  const deductResult = deductCreditsAtomic(CREDIT_COST.loraTraining);
+  if (!deductResult.success) {
+    return { success: false, error: deductResult.error || 'Insufficient credits for training' };
   }
 
   try {
@@ -4162,18 +4185,6 @@ ipcMain.handle('start-lora-training', async (_event, { imageUrls, styleName, tri
 
     const data = await res.json();
     if (!data.request_id) return { success: false, error: 'No request_id in response' };
-
-    // Deduct credits on successful submission (subscription first, top-up preserved longest)
-    const newBal = { ...bal };
-    let toSpend = CREDIT_COST.loraTraining;
-    if (newBal.subscriptionCredits >= toSpend) {
-      newBal.subscriptionCredits -= toSpend;
-    } else {
-      toSpend -= newBal.subscriptionCredits;
-      newBal.subscriptionCredits = 0;
-      newBal.topUpCredits -= toSpend;
-    }
-    setCredits(newBal);
 
     return { success: true, requestId: data.request_id };
   } catch (err) {
@@ -4324,12 +4335,11 @@ ipcMain.handle('delete-custom-style', (_event, { styleId }) => {
 // Best-effort cleanup of training images uploaded to Fal.ai storage.
 // Fal.ai's storage API supports DELETE on uploaded file URLs.
 ipcMain.handle('cleanup-training-uploads', async (_event, { imageUrls }) => {
-  const falApiKey = _cfg('FAL_API_KEY');
-  if (!falApiKey || !Array.isArray(imageUrls) || imageUrls.length === 0) return { success: true };
+  if (!FAL_API_KEY || !Array.isArray(imageUrls) || imageUrls.length === 0) return { success: true };
   try {
     await Promise.allSettled(
       imageUrls.map(url =>
-        fetch(url, { method: 'DELETE', headers: { 'Authorization': `Key ${falApiKey}` } })
+        fetch(url, { method: 'DELETE', headers: { 'Authorization': `Key ${FAL_API_KEY}` } })
       )
     );
   } catch {
