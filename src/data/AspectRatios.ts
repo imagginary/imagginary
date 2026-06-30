@@ -9,6 +9,7 @@ export interface AspectRatio {
   width: number;      // ComfyUI EmptyLatentImage width — divisible by 8
   height: number;     // ComfyUI EmptyLatentImage height — divisible by 8
   description: string;
+  studioOnly?: boolean;
 }
 
 export const ASPECT_RATIOS: AspectRatio[] = [
@@ -51,6 +52,15 @@ export const ASPECT_RATIOS: AspectRatio[] = [
     width: 432,
     height: 768,
     description: 'Vertical — TikTok, Reels, Stories',
+  },
+  {
+    id: '16:9-broadcast',
+    label: '16:9 HD',
+    cssRatio: '16/9',
+    width: 1536,
+    height: 864,
+    description: 'Broadcast HD — Studio only',
+    studioOnly: true,
   },
 ];
 

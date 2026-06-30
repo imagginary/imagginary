@@ -149,7 +149,7 @@ function CommunityView({ onLicenseChange, onClose }: { onLicenseChange: () => vo
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Shared Studio collaboration</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Custom voice cloning</li>
             <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Broadcast resolution (1536×864)</li>
-            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Brand LoRA training</li>
+            <li className="flex items-start gap-1.5"><CheckCircle className="w-3 h-3 text-violet-500 shrink-0 mt-px" />Brand style training — train on your own visual references</li>
           </ul>
           <button
             onClick={(e) => e.stopPropagation()}
@@ -330,6 +330,28 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           )}
         </div>
       </div>
+
+      {license?.tier === 'pro' && (
+        <div className="border border-violet-500/30 rounded-xl p-4 bg-violet-500/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-violet-400 font-semibold text-sm">✦ Upgrade to Studio</span>
+            <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">$79/mo</span>
+          </div>
+          <ul className="text-xs text-gray-400 space-y-1 mb-3">
+            <li>· 2,239 credits/month (4.2× more than Pro)</li>
+            <li>· Shared Studio — real-time collaboration</li>
+            <li>· Custom voice cloning</li>
+            <li>· Broadcast resolution (1536×864)</li>
+            <li>· Brand style training — train on your own visual references</li>
+          </ul>
+          <button
+            onClick={() => licenseService.openCheckout('studio')}
+            className="w-full py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+          >
+            Upgrade to Studio →
+          </button>
+        </div>
+      )}
 
       <div className="space-y-2">
         <button

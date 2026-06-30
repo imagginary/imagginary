@@ -54,6 +54,7 @@ console.error = (...a) => { _writeLine('[ERR]  ', a); _origError(...a); };
 let ollamaProcess = null;
 let comfyuiProcess = null;
 let mainWindow = null;
+let pendingDeepLink = null;
 
 // Result reported to the renderer via get-service-launch-status IPC
 const serviceLaunchStatus = {
@@ -1202,6 +1203,13 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => { mainWindow = null; });
 
+  mainWindow.once('ready-to-show', () => {
+    if (pendingDeepLink) {
+      handleDeepLink(pendingDeepLink, mainWindow);
+      pendingDeepLink = null;
+    }
+  });
+
   // Auto-update: download in background; show banner on update-available
   // Errors (e.g. code signature validation) are caught silently — banner stays visible
   if (app.isPackaged) {
@@ -1364,7 +1372,7 @@ app.whenReady().then(async () => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*;",
         ],
       },
@@ -1409,32 +1417,33 @@ app.on('window-all-closed', () => {
 // ── Phase 13 — Shared Studio deep link ──────────────────────────────────────
 app.setAsDefaultProtocolClient('imagginary');
 
-app.on('open-url', (_event, url) => {
+function handleDeepLink(url, window) {
   try {
     const parsed = new URL(url);
     if (parsed.pathname === '//join') {
       const projectId = parsed.searchParams.get('project');
-      if (projectId && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('join-shared-project', { projectId });
+      const supabaseUrl = parsed.searchParams.get('supabase');
+      if (projectId && window && !window.isDestroyed()) {
+        window.webContents.send('shared-studio-join', { projectId, supabaseUrl });
       }
     }
   } catch { /* ignore malformed URLs */ }
+}
+
+app.on('open-url', (_event, url) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    handleDeepLink(url, mainWindow);
+  } else {
+    pendingDeepLink = url;
+  }
 });
 
 // Windows/Linux: deep link arrives as second-instance argv
 app.on('second-instance', (_event, argv) => {
   const url = argv.find((arg) => arg.startsWith('imagginary://'));
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.pathname === '//join') {
-        const projectId = parsed.searchParams.get('project');
-        if (projectId && mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.focus();
-          mainWindow.webContents.send('join-shared-project', { projectId });
-        }
-      }
-    } catch { /* ignore */ }
+  if (url && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    handleDeepLink(url, mainWindow);
   }
 });
 
@@ -1506,6 +1515,15 @@ ipcMain.handle('check-ollama', async () => {
     return { connected: ok };
   } catch {
     return { connected: false };
+  }
+});
+
+ipcMain.handle('interrupt-comfyui', async () => {
+  try {
+    await fetch('http://127.0.0.1:8188/interrupt', { method: 'POST' });
+    return { success: true };
+  } catch (err) {
+    return { error: err.message };
   }
 });
 
@@ -1808,6 +1826,36 @@ ipcMain.handle('export-fcpxml', async (_event, xmlString) => {
   }
 });
 
+ipcMain.handle('export-panel-with-voice', async (_event, { imagePath, voicePath, outputPath }) => {
+  try {
+    assertSafePath(imagePath);
+    assertSafePath(voicePath);
+    assertSafePath(outputPath);
+    if (!fs.existsSync(imagePath)) return { success: false, error: 'Image file not found' };
+    if (!fs.existsSync(voicePath)) return { success: false, error: 'Voice file not found' };
+    const ffmpeg = resolveFfmpegBin();
+    if (!ffmpeg) return { success: false, error: 'ffmpeg not found' };
+    await new Promise((resolve, reject) => {
+      const ff = spawn(ffmpeg, [
+        '-y',
+        '-loop', '1', '-i', imagePath,
+        '-i', voicePath,
+        '-c:v', 'libx264', '-tune', 'stillimage',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-pix_fmt', 'yuv420p',
+        '-shortest',
+        outputPath,
+      ]);
+      ff.stderr.on('data', (d) => process.stderr.write(d));
+      ff.on('error', reject);
+      ff.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited with code ${code}`)));
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
   console.log('[Animatic] Handler called. Panels:', panelList?.length, 'Output:', outputPath);
 
@@ -1884,10 +1932,36 @@ ipcMain.handle('export-animatic', async (event, panelList, outputPath) => {
     const pixFmtArgs = encoder === 'h264_videotoolbox' ? [] : ['-pix_fmt', 'yuv420p'];
     const totalDuration = resolved.reduce((s, p) => s + p.duration, 0);
 
+    // Collect per-panel voice tracks with their timeline offsets
+    const voiceTracks = [];
+    let cumulativeMs = 0;
+    for (const panel of panelList) {
+      if (panel.voicePath && fs.existsSync(panel.voicePath)) {
+        voiceTracks.push({ path: panel.voicePath, delayMs: Math.round(cumulativeMs) });
+      }
+      cumulativeMs += (panel.duration ?? 3) * 1000;
+    }
+    const hasVoice = voiceTracks.length > 0;
+
+    // Build args — voice inputs follow the concat input (index 0)
+    const voiceInputArgs = voiceTracks.flatMap((t) => ['-i', t.path]);
+    let audioArgs = [];
+    if (hasVoice) {
+      const delayFilters = voiceTracks.map((t, i) =>
+        `[${i + 1}:a]adelay=${t.delayMs}|${t.delayMs}[va${i}]`
+      );
+      const mixInputs = voiceTracks.map((_, i) => `[va${i}]`).join('');
+      const filterComplex = `${delayFilters.join(';')};${mixInputs}amix=inputs=${voiceTracks.length}:duration=longest:dropout_transition=0[aout]`;
+      audioArgs = ['-filter_complex', filterComplex, '-map', '0:v', '-map', '[aout]', '-c:a', 'aac', '-b:a', '192k'];
+    }
+
     const ffmpegArgs = [
       '-y', '-f', 'concat', '-safe', '0', '-i', concatFile,
+      ...voiceInputArgs,
       '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
-      '-c:v', encoder, ...pixFmtArgs, '-movflags', '+faststart', outputPath,
+      '-c:v', encoder, ...pixFmtArgs,
+      ...audioArgs,
+      '-movflags', '+faststart', outputPath,
     ];
 
     await new Promise((resolve, reject) => {
@@ -2010,9 +2084,14 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
     const tempImageFiles = [];
 
     for (const panel of panels) {
-      if (panel.motionClipPath && fs.existsSync(panel.motionClipPath)) {
+      const hasValidClip = panel.motionClipPath
+        && fs.existsSync(panel.motionClipPath)
+        && fs.statSync(panel.motionClipPath).size > 1024;
+
+      if (hasValidClip) {
         validPanels.push({ ...panel, resolvedType: 'video', resolvedPath: panel.motionClipPath });
       } else if (panel.imagePath && fs.existsSync(panel.imagePath)) {
+        if (panel.motionClipPath) console.warn(`[MotionComic] Panel ${panel.id} clip is missing or corrupt — falling back to still image`);
         validPanels.push({ ...panel, resolvedType: 'still', resolvedPath: panel.imagePath });
       } else if (panel.imageData) {
         const tmpImg = path.join(tempDir, `mc-img-${sessionId}-${validPanels.length}.png`);
@@ -2109,18 +2188,65 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
 
     sendProgress(90);
 
-    // ── 5. Mix ambient sound ─────────────────────────────────────────────
-    // Pick mood from the first panel that has one, otherwise neutral
+    // ── 5. Mix ambient sound + per-panel voice tracks ────────────────────
     const dominantMood = validPanels.find((p) => p.mood)?.mood || '';
     const soundPath = selectAmbientSound(dominantMood);
 
-    if (soundPath) {
-      const audioArgs = [
+    // Collect voice tracks with their cumulative timeline offset (ms)
+    const comicVoiceTracks = [];
+    let comicCumulativeMs = 0;
+    for (const p of validPanels) {
+      if (p.voicePath && fs.existsSync(p.voicePath)) {
+        comicVoiceTracks.push({ path: p.voicePath, delayMs: Math.round(comicCumulativeMs) });
+      }
+      comicCumulativeMs += (p.duration ?? 3) * 1000;
+    }
+    const hasComicVoice = comicVoiceTracks.length > 0;
+
+    if (!soundPath && !hasComicVoice) {
+      // No audio at all — copy assembled video directly
+      fs.copyFileSync(assembledPath, outputPath);
+    } else {
+      // input 0 = assembled video
+      // inputs 1..N = voice WAVs (if any)
+      // input N+1 = ambient loop (if any)
+      const voiceInputArgs = comicVoiceTracks.flatMap((t) => ['-i', t.path]);
+      const ambientInputArgs = soundPath ? ['-stream_loop', '-1', '-i', soundPath] : [];
+      const ambientIdx = comicVoiceTracks.length + 1;
+
+      let filterComplex;
+      if (hasComicVoice && soundPath) {
+        const delayFilters = comicVoiceTracks.map((t, i) =>
+          `[${i + 1}:a]adelay=${t.delayMs}|${t.delayMs}[cv${i}]`
+        );
+        const voiceMixInputs = comicVoiceTracks.map((_, i) => `[cv${i}]`).join('');
+        filterComplex = [
+          ...delayFilters,
+          `${voiceMixInputs}amix=inputs=${comicVoiceTracks.length}:duration=longest:dropout_transition=0[vmix]`,
+          `[${ambientIdx}:a]volume=-18dB[amb]`,
+          `[vmix][amb]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
+        ].join(';');
+      } else if (hasComicVoice) {
+        const delayFilters = comicVoiceTracks.map((t, i) =>
+          `[${i + 1}:a]adelay=${t.delayMs}|${t.delayMs}[cv${i}]`
+        );
+        const voiceMixInputs = comicVoiceTracks.map((_, i) => `[cv${i}]`).join('');
+        filterComplex = [
+          ...delayFilters,
+          `${voiceMixInputs}amix=inputs=${comicVoiceTracks.length}:duration=longest:dropout_transition=0[aout]`,
+        ].join(';');
+      } else {
+        // ambient only — preserved exactly as before
+        filterComplex = `[${ambientIdx}:a]volume=-18dB[aout]`;
+      }
+
+      const audioMixArgs = [
         '-y',
         '-i', assembledPath,
-        '-stream_loop', '-1', '-i', soundPath,
-        '-filter_complex', '[1:a]volume=-18dB[amix]',
-        '-map', '0:v', '-map', '[amix]',
+        ...voiceInputArgs,
+        ...ambientInputArgs,
+        '-filter_complex', filterComplex,
+        '-map', '0:v', '-map', '[aout]',
         '-shortest',
         '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
         '-movflags', '+faststart',
@@ -2128,7 +2254,7 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
       ];
 
       await new Promise((resolve, reject) => {
-        const ff = spawn(ffmpeg, audioArgs);
+        const ff = spawn(ffmpeg, audioMixArgs);
         ff.stderr.on('data', (d) => process.stderr.write(d));
         ff.on('error', reject);
         ff.on('close', (code) => {
@@ -2136,9 +2262,6 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
           else reject(new Error(`ffmpeg audio mix exited with code ${code}`));
         });
       });
-    } else {
-      // No sound file — just copy assembled video as final output
-      fs.copyFileSync(assembledPath, outputPath);
     }
 
     try { fs.unlinkSync(assembledPath); } catch { /* ignore */ }
@@ -2374,23 +2497,21 @@ ipcMain.handle('validate-transfer-video', async (_event, filePath) => {
   try { assertSafePath(filePath); } catch (e) { return { success: false, error: e.message }; }
 
   const ext = path.extname(filePath).toLowerCase();
-  const supported = ['.mp4', '.mov', '.avi', '.webm'];
+  const supported = ['.mp4', '.mov', '.avi', '.webm', '.gif'];
   if (!supported.includes(ext)) {
     return {
       success: true, valid: false, duration: 0, frameCount: 0, warnings: [],
       estimatedQuality: 0,
-      rejectionReason: `Unsupported format "${ext}". Use MP4, MOV, AVI, or WebM.`,
+      rejectionReason: `Unsupported format "${ext}". Use MP4, MOV, AVI, WebM, or GIF.`,
     };
   }
 
-  // Find ffprobe (ships with ffmpeg bundle)
-  const ffprobeCandidates = [
-    path.join(__dirname, '..', 'resources', 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'),
-    'ffprobe',
-  ];
-  const ffprobePath = ffprobeCandidates.find((p) => {
-    try { return p === 'ffprobe' || fs.existsSync(p); } catch { return false; }
-  }) ?? 'ffprobe';
+  // Resolve ffprobe — bundled binary matches the ffmpeg naming convention
+  const ffprobeBinName = process.platform === 'win32' ? 'ffprobe-win.exe'
+    : process.platform === 'darwin' ? 'ffprobe-mac'
+    : 'ffprobe-linux';
+  const bundledFfprobe = path.join(__dirname, '..', 'resources', 'bin', ffprobeBinName);
+  const ffprobePath = fs.existsSync(bundledFfprobe) ? bundledFfprobe : 'ffprobe';
 
   try {
     // Run ffprobe to get duration, width, height, fps
@@ -2471,20 +2592,15 @@ ipcMain.handle('validate-transfer-video', async (_event, filePath) => {
       estimatedQuality: Math.max(0, Math.min(100, quality)),
     };
   } catch (err) {
-    // ffprobe unavailable — fall back to lightweight format check only
-    console.warn('[VideoTransfer] ffprobe unavailable, using fallback validation:', err.message);
-    const stat = fs.statSync(filePath);
-    const sizeMB = stat.size / (1024 * 1024);
+    console.warn('[VideoTransfer] ffprobe failed:', err.message);
     return {
       success: true,
-      valid: true,
-      duration: 0,          // unknown without ffprobe
+      valid: false,
+      duration: 0,
       frameCount: 0,
-      warnings: [
-        'Could not read video metadata (ffprobe not available)',
-        sizeMB > 200 ? 'Large file — this may take a while to process' : '',
-      ].filter(Boolean),
-      estimatedQuality: 60,
+      warnings: [],
+      estimatedQuality: 0,
+      rejectionReason: 'Could not read video metadata — please reinstall the app or contact support.',
     };
   }
 });
@@ -2634,6 +2750,7 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 const FAL_API_KEY      = _cfg('FAL_API_KEY');
 const SYNCSO_API_KEY   = _cfg('SYNCSO_API_KEY');
 const DEEPSEEK_API_KEY = _cfg('DEEPSEEK_API_KEY');
+const CARTESIA_API_KEY = _cfg('CARTESIA_API_KEY');
 
 /** Read the stored license tier from disk. Returns 'community' if none. */
 function getStoredLicenseTier() {
@@ -2703,6 +2820,7 @@ const CREDIT_COST = {
   characterPanel: 2,
   motionClip:    14,
   lipSync:       16,
+  loraTraining:  50,
 };
 
 function getCredits() {
@@ -2719,13 +2837,14 @@ ipcMain.handle('spend-credits', (_, cost) => {
   const bal = getCredits();
   const total = bal.subscriptionCredits + bal.topUpCredits;
   if (total < cost) return { success: false, remaining: total };
+  // Spend subscription credits first (expire monthly), preserve paid top-ups longest.
   let toSpend = cost;
-  if (bal.topUpCredits >= toSpend) {
-    bal.topUpCredits -= toSpend;
-  } else {
-    toSpend -= bal.topUpCredits;
-    bal.topUpCredits = 0;
+  if (bal.subscriptionCredits >= toSpend) {
     bal.subscriptionCredits -= toSpend;
+  } else {
+    toSpend -= bal.subscriptionCredits;
+    bal.subscriptionCredits = 0;
+    bal.topUpCredits -= toSpend;
   }
   setCredits(bal);
   return { success: true, remaining: bal.subscriptionCredits + bal.topUpCredits };
@@ -3123,6 +3242,14 @@ ipcMain.handle('generate-voice', async (event, params) => {
     try { fs.unlinkSync(mp3Path); } catch { /* ignore */ }
 
     if (ffmpegResult) return { success: false, error: ffmpegResult };
+
+    // Validate output before declaring success
+    const stats = fs.statSync(wavPath);
+    if (stats.size < 1024) {
+      try { fs.unlinkSync(wavPath); } catch { /* ignore */ }
+      return { success: false, error: 'Generated audio file is invalid or empty — please try again' };
+    }
+
     sendProgress(100);
     return { success: true, wavPath };
   } catch (err) {
@@ -3256,67 +3383,164 @@ ipcMain.handle('install-coqui-tts', async (event) => {
  * Studio only — fine-tune a Coqui model from a voice sample file.
  * Returns the new VoiceProfile on success.
  */
-ipcMain.handle('clone-voice', async (event, params) => {
+ipcMain.handle('clone-voice', async (_event, params) => {
   const { audioSamplePath, name } = params ?? {};
-  if (!audioSamplePath || !name) {
-    return { success: false, error: 'audioSamplePath and name are required' };
-  }
-  if (!fs.existsSync(audioSamplePath)) {
-    return { success: false, error: 'Audio sample file not found' };
-  }
+  if (!audioSamplePath || !name) return { success: false, error: 'audioSamplePath and name are required' };
+  if (!fs.existsSync(audioSamplePath)) return { success: false, error: 'Audio sample file not found' };
+
+  // BYOK ElevenLabs takes priority; fall back to baked-in Cartesia
+  const elevenLabsKey = _cfg('ELEVENLABS_API_KEY') || store.get('elevenLabsApiKey', '');
+  const useElevenLabs = !!elevenLabsKey;
+  const useCartesia   = !!CARTESIA_API_KEY;
+  if (!useElevenLabs && !useCartesia) return { success: false, error: 'No voice cloning API configured' };
 
   try {
-    const pythonBin = resolveVenvPython();
-    const appDataDir = app.getPath('userData');
-    const cloneDir = path.join(appDataDir, 'voice_clones', name.replace(/[^a-z0-9_-]/gi, '_'));
-    fs.mkdirSync(cloneDir, { recursive: true });
+    assertSafePath(audioSamplePath);
+    const audioBuffer = fs.readFileSync(audioSamplePath);
 
-    // Use Coqui's YourTTS / fine-tune path for custom clones
-    const args = [
-      '-m', 'TTS',
-      '--model_name', 'tts_models/multilingual/multi-dataset/your_tts',
-      '--speaker_wav', audioSamplePath,
-      '--language_idx', 'en',
-      '--text', 'Voice clone test.',
-      '--out_path', path.join(cloneDir, 'test_output.wav'),
-    ];
+    if (useElevenLabs) {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('files', new Blob([audioBuffer]), path.basename(audioSamplePath));
+      formData.append('description', 'Cloned via Imagginary Studio');
 
-    console.log('[VoiceClone] Starting clone for:', name);
-    const result = await new Promise((resolve) => {
-      const proc = spawn(pythonBin, args, { stdio: 'pipe' });
-      let stderr = '';
-      proc.stderr.on('data', (d) => { stderr += d.toString(); });
-      proc.on('close', (code) => {
-        if (code === 0) {
-          resolve({ success: true });
-        } else {
-          const errMsg = stderr.split('\n').filter(Boolean).slice(-3).join(' ') || 'Clone failed';
-          resolve({ success: false, error: errMsg });
-        }
+      const res = await fetch('https://api.elevenlabs.io/v1/voices/add', {
+        method: 'POST',
+        headers: { 'xi-api-key': elevenLabsKey },
+        body: formData,
       });
-      proc.on('error', (err) => resolve({ success: false, error: err.message }));
-    });
+      const json = await res.json();
+      if (!res.ok || !json.voice_id) {
+        return { success: false, error: json.detail?.message ?? json.detail ?? `ElevenLabs error: ${res.status}` };
+      }
+      return { success: true, voiceId: json.voice_id, name, provider: 'elevenlabs' };
 
-    if (!result.success) return result;
+    } else {
+      // Cartesia: upload clip to get embedding, then create voice
+      const uploadRes = await fetch('https://api.cartesia.ai/voices/clone/clip', {
+        method: 'POST',
+        headers: {
+          'Cartesia-Version': '2024-06-10',
+          'X-API-Key': CARTESIA_API_KEY,
+          'Content-Type': 'audio/mpeg',
+        },
+        body: audioBuffer,
+      });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        return { success: false, error: err.message ?? `Cartesia upload error: ${uploadRes.status}` };
+      }
+      const { embedding } = await uploadRes.json();
 
-    const profile = {
-      id: `custom-${Date.now()}`,
-      name,
-      description: `Custom voice cloned from sample`,
-      style: 'custom',
-      gender: 'male',
-      age: 'adult',
-      accent: 'custom',
-      samplePath: audioSamplePath,
-      isCustom: true,
-      tier: 'studio',
-      modelName: 'tts_models/multilingual/multi-dataset/your_tts',
-      speakerWav: audioSamplePath,
-    };
-    return { success: true, profile };
+      const voiceRes = await fetch('https://api.cartesia.ai/voices', {
+        method: 'POST',
+        headers: {
+          'Cartesia-Version': '2024-06-10',
+          'X-API-Key': CARTESIA_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, description: 'Cloned via Imagginary Studio', embedding, language: 'en' }),
+      });
+      if (!voiceRes.ok) {
+        const err = await voiceRes.json().catch(() => ({}));
+        return { success: false, error: err.message ?? `Cartesia voice creation error: ${voiceRes.status}` };
+      }
+      const voiceData = await voiceRes.json();
+      return { success: true, voiceId: voiceData.id, name, provider: 'cartesia' };
+    }
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+// KNOWN LIMITATION (v2): No client-side rate limiting or quota tracking for voice
+// generation calls — relies on provider error responses (Cartesia/ElevenLabs HTTP status
+// codes), which do surface correctly to the user via existing validation in VoiceService.ts.
+ipcMain.handle('generate-cloned-voice', async (_event, { text, voiceId, provider }) => {
+  if (!text || !voiceId) return { success: false, error: 'text and voiceId required' };
+  try {
+    const voiceDir = path.join(app.getPath('userData'), 'voices');
+    fs.mkdirSync(voiceDir, { recursive: true });
+    const outputPath = path.join(voiceDir, `${Date.now()}.mp3`);
+
+    if (provider === 'elevenlabs') {
+      const elevenLabsKey = _cfg('ELEVENLABS_API_KEY') || store.get('elevenLabsApiKey', '');
+      if (!elevenLabsKey) return { success: false, error: 'ElevenLabs API key not configured' };
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': elevenLabsKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+      });
+      if (!res.ok) return { success: false, error: `ElevenLabs TTS error: ${res.status}` };
+      fs.writeFileSync(outputPath, Buffer.from(await res.arrayBuffer()));
+      const statsEl = fs.statSync(outputPath);
+      if (statsEl.size < 1024) {
+        try { fs.unlinkSync(outputPath); } catch { /* ignore */ }
+        return { success: false, error: 'Generated audio file is invalid or empty — please try again' };
+      }
+      return { success: true, audioPath: outputPath };
+
+    } else {
+      if (!CARTESIA_API_KEY) return { success: false, error: 'Cartesia API key not configured' };
+      const res = await fetch('https://api.cartesia.ai/tts/bytes', {
+        method: 'POST',
+        headers: {
+          'Cartesia-Version': '2024-06-10',
+          'X-API-Key': CARTESIA_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model_id: 'sonic-2',
+          transcript: text,
+          voice: { mode: 'id', id: voiceId },
+          output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 },
+          language: 'en',
+        }),
+      });
+      if (!res.ok) return { success: false, error: `Cartesia TTS error: ${res.status}` };
+      fs.writeFileSync(outputPath, Buffer.from(await res.arrayBuffer()));
+      const statsC = fs.statSync(outputPath);
+      if (statsC.size < 1024) {
+        try { fs.unlinkSync(outputPath); } catch { /* ignore */ }
+        return { success: false, error: 'Generated audio file is invalid or empty — please try again' };
+      }
+      return { success: true, audioPath: outputPath };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('check-voice-clone-providers', () => {
+  const cartesiaKey   = CARTESIA_API_KEY;
+  const elevenLabsKey = _cfg('ELEVENLABS_API_KEY') || store.get('elevenLabsApiKey', '');
+  const preferred     = elevenLabsKey ? 'elevenlabs' : cartesiaKey ? 'cartesia' : null;
+  return { cartesia: !!cartesiaKey, elevenlabs: !!elevenLabsKey, preferred };
+});
+
+ipcMain.handle('save-elevenlabs-key', (_event, { key }) => {
+  store.set('elevenLabsApiKey', key || '');
+  return { success: true };
+});
+
+ipcMain.handle('get-custom-voices', () => {
+  const voices = store.get('customVoices', []);
+  return { success: true, voices };
+});
+
+ipcMain.handle('save-custom-voice', (_event, { voice }) => {
+  if (!voice?.id) return { success: false, error: 'voice.id required' };
+  const existing = store.get('customVoices', []);
+  const updated = [...existing.filter(v => v.id !== voice.id), voice];
+  store.set('customVoices', updated);
+  return { success: true };
+});
+
+ipcMain.handle('delete-custom-voice', (_event, { voiceId }) => {
+  if (!voiceId) return { success: false, error: 'voiceId required' };
+  const existing = store.get('customVoices', []);
+  store.set('customVoices', existing.filter(v => v.id !== voiceId));
+  return { success: true };
 });
 
 ipcMain.handle('read-file-as-base64', (_event, filePath) => {
@@ -3329,6 +3553,16 @@ ipcMain.handle('read-file-as-base64', (_event, filePath) => {
   } catch { return null; }
 });
 
+ipcMain.handle('delete-file', (_event, filePath) => {
+  try {
+    const resolvedPath = assertSafePath(filePath);
+    if (fs.existsSync(resolvedPath)) fs.unlinkSync(resolvedPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // ── Cloud API proxy handlers (keys never leave main process) ─────────────────
 // All handlers validate Pro/Studio tier from the on-disk license before calling
 // any external API. Progress is streamed back via 'cloud-progress' IPC events.
@@ -3336,8 +3570,9 @@ ipcMain.handle('read-file-as-base64', (_event, filePath) => {
 /** Fetch a URL and return the body as a base64 string. */
 async function fetchToBase64(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
   const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 1024) throw new Error(`Downloaded file is too small (${buf.length} bytes) — likely corrupt or empty`);
   return buf.toString('base64');
 }
 
@@ -3440,9 +3675,13 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
     try { event.sender.send('cloud-progress', { handler: 'fal-kling', pct, msg }); } catch {}
   };
 
+  let cancelled = false;
+  const cancelHandler = () => { cancelled = true; };
+  ipcMain.once('cancel-fal-kling', cancelHandler);
+
   try {
     const base64 = imageData.replace(/^data:image\/[^;]+;base64,/, '');
-    send(5, 'Sending to Kling via Fal.ai…');
+    send(5, 'Sending to Kling AI…\nKling queue can take longer during peak hours');
 
     const submitRes = await fetch('https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video', {
       method: 'POST',
@@ -3459,10 +3698,12 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
     const job = await submitRes.json();
     const requestId = job.request_id;
 
-    send(15, 'Kling is generating motion…');
+    send(15, 'Sending to Kling AI…\nKling queue can take longer during peak hours');
 
     for (let i = 0; i < 60; i++) {
+      if (cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
+      if (cancelled) return { error: 'cancelled' };
       const pollRes = await fetch(
         `https://fal.run/fal-ai/kling-video/v1.6/standard/image-to-video/requests/${requestId}`,
         { headers: { 'Authorization': `Key ${key}` } }
@@ -3470,21 +3711,27 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
       if (!pollRes.ok) continue;
       const status = await pollRes.json();
       const pct = Math.min(15 + Math.pow(i / 20, 0.6) * 70, 88);
-      send(pct, `Generating motion… ${status.status ?? ''}`);
+      send(pct, 'Sending to Kling AI…\nKling queue can take longer during peak hours');
 
       if (status.status === 'COMPLETED') {
-        send(92, 'Downloading result…');
+        send(92, 'Downloading your motion clip…');
         const videoUrl = status.video?.url;
         if (!videoUrl) return { error: 'No video URL in Kling response' };
-        const base64Result = await fetchToBase64(videoUrl);
-        send(100, 'Done');
-        return { base64: `data:video/mp4;base64,${base64Result}` };
+        try {
+          const base64Result = await fetchToBase64(videoUrl);
+          send(100, 'Done');
+          return { base64: `data:video/mp4;base64,${base64Result}` };
+        } catch (err) {
+          return { error: `Failed to download generated video: ${err.message}` };
+        }
       }
       if (status.status === 'FAILED') return { error: 'Kling generation failed' };
     }
     return { error: 'Kling timed out' };
   } catch (err) {
     return { error: err.message };
+  } finally {
+    ipcMain.removeListener('cancel-fal-kling', cancelHandler);
   }
 });
 
@@ -3684,4 +3931,258 @@ ipcMain.handle('download-controlnet-openpose', async (event) => {
     try { if (fs.existsSync(modelPath + '.download')) fs.unlinkSync(modelPath + '.download'); } catch { /* ignore */ }
     return { success: false, error: err.message };
   }
+});
+
+// ── Brand LoRA Training ───────────────────────────────────────────────────────
+
+// Step 1: Upload training images to Fal storage, return CDN URLs
+ipcMain.handle('upload-training-images', async (event, { imagePaths }) => {
+  if (!isProOrStudio()) return { success: false, error: 'Studio required' };
+  if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
+  if (!imagePaths?.length) return { success: false, error: 'No images provided' };
+
+  const uploadedUrls = [];
+  try {
+    for (let i = 0; i < imagePaths.length; i++) {
+      const filePath = assertSafePath(imagePaths[i]);
+      const fileBuffer = fs.readFileSync(filePath);
+      const fileName = path.basename(filePath);
+      const mimeType = fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+      const uploadRes = await fetch('https://storage.fal.ai/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${FAL_API_KEY}`,
+          'Content-Type': mimeType,
+          'X-Fal-File-Name': fileName,
+        },
+        body: fileBuffer,
+      });
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        return { success: false, error: `Upload failed for ${fileName}: ${errText}` };
+      }
+
+      const uploadData = await uploadRes.json();
+      const url = uploadData.access_url || uploadData.url;
+      if (!url) return { success: false, error: `No URL returned for ${fileName}` };
+      uploadedUrls.push(url);
+
+      event.sender.send('lora-upload-progress', {
+        current: i + 1,
+        total: imagePaths.length,
+        pct: Math.round(((i + 1) / imagePaths.length) * 100),
+      });
+    }
+    return { success: true, urls: uploadedUrls };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Step 2: Submit async training job, returns requestId for polling
+ipcMain.handle('start-lora-training', async (_event, { imageUrls, styleName, triggerWord }) => {
+  if (!isProOrStudio()) return { success: false, error: 'Studio required' };
+  if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
+
+  const bal = getCredits();
+  if (bal.subscriptionCredits + bal.topUpCredits < CREDIT_COST.loraTraining) {
+    return { success: false, error: 'insufficient credits' };
+  }
+
+  try {
+    const res = await fetch('https://queue.fal.run/fal-ai/flux-lora-fast-training', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${FAL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        images_data_url: imageUrls,
+        trigger_word: triggerWord || 'IMAGGINARY_BRAND',
+        steps: 1000,
+        learning_rate: 0.0004,
+        batch_size: 1,
+        resolution: '512,768,1024',
+        autocaption: true,
+        is_input_format_already_preprocessed: false,
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      return { success: false, error: errData.detail || `Training submission failed: ${res.status}` };
+    }
+
+    const data = await res.json();
+    if (!data.request_id) return { success: false, error: 'No request_id in response' };
+
+    // Deduct credits on successful submission (subscription first, top-up preserved longest)
+    const newBal = { ...bal };
+    let toSpend = CREDIT_COST.loraTraining;
+    if (newBal.subscriptionCredits >= toSpend) {
+      newBal.subscriptionCredits -= toSpend;
+    } else {
+      toSpend -= newBal.subscriptionCredits;
+      newBal.subscriptionCredits = 0;
+      newBal.topUpCredits -= toSpend;
+    }
+    setCredits(newBal);
+
+    return { success: true, requestId: data.request_id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Step 3: Poll training status; returns loraUrl when COMPLETED
+ipcMain.handle('poll-lora-training', async (_event, { requestId }) => {
+  if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
+  if (!requestId) return { success: false, error: 'requestId required' };
+
+  try {
+    const statusRes = await fetch(
+      `https://queue.fal.run/fal-ai/flux-lora-fast-training/requests/${requestId}/status`,
+      { headers: { 'Authorization': `Key ${FAL_API_KEY}` } }
+    );
+    if (!statusRes.ok) return { success: false, error: `Status check failed: ${statusRes.status}` };
+
+    const statusData = await statusRes.json();
+    // statusData.status: 'IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
+
+    if (statusData.status === 'COMPLETED') {
+      const resultRes = await fetch(
+        `https://queue.fal.run/fal-ai/flux-lora-fast-training/requests/${requestId}`,
+        { headers: { 'Authorization': `Key ${FAL_API_KEY}` } }
+      );
+      if (!resultRes.ok) return { success: false, error: `Result fetch failed: ${resultRes.status}` };
+      const result = await resultRes.json();
+      return {
+        success: true,
+        status: 'COMPLETED',
+        loraUrl: result.diffusers_lora_file?.url ?? null,
+        configUrl: result.config_file?.url ?? null,
+      };
+    }
+
+    if (statusData.status === 'FAILED') {
+      return { success: true, status: 'FAILED', error: statusData.error || 'Training failed' };
+    }
+
+    return { success: true, status: statusData.status, logs: statusData.logs ?? null };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Step 4: Download trained LoRA from Fal CDN → userData/loras/ + ComfyUI models/loras/
+ipcMain.handle('install-lora', async (event, { loraUrl, loraName }) => {
+  if (!loraUrl || !loraName) return { success: false, error: 'loraUrl and loraName required' };
+
+  try {
+    const safeLoraName = loraName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${safeLoraName}.safetensors`;
+
+    const userLoraDir = path.join(app.getPath('userData'), 'loras');
+    fs.mkdirSync(userLoraDir, { recursive: true });
+    const userLoraPath = path.join(userLoraDir, fileName);
+
+    // Install to ComfyUI's lora directory (best-guess default path)
+    const comfyLoraDir = path.join(os.homedir(), 'ComfyUI', 'models', 'loras');
+    let comfyLoraPath = null;
+    try {
+      fs.mkdirSync(comfyLoraDir, { recursive: true });
+      comfyLoraPath = path.join(comfyLoraDir, fileName);
+    } catch {
+      console.warn('[LoRA] Could not create ComfyUI loras dir — ComfyUI may not be at default path');
+    }
+
+    event.sender.send('lora-install-progress', { pct: 0, message: 'Downloading trained LoRA…' });
+
+    await streamDownload(loraUrl, userLoraPath, (downloaded, total) => {
+      const pct = total > 0 ? Math.round((downloaded / total) * 90) : 0;
+      event.sender.send('lora-install-progress', { pct, message: `Downloading… ${pct}%` });
+    });
+
+    if (comfyLoraPath) {
+      event.sender.send('lora-install-progress', { pct: 95, message: 'Installing into ComfyUI…' });
+      fs.copyFileSync(userLoraPath, comfyLoraPath);
+
+      // Ask ComfyUI to refresh its model list so the new LoRA is discoverable immediately
+      try {
+        const comfyUrl = store.get('comfyuiUrl', 'http://127.0.0.1:8188');
+        await fetch(`${comfyUrl}/api/free`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ unload_models: false, free_memory: false }),
+        });
+      } catch { /* non-critical — ComfyUI may not be running */ }
+    }
+
+    event.sender.send('lora-install-progress', { pct: 100, message: 'LoRA installed' });
+    return { success: true, userLoraPath, comfyLoraPath, fileName };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Step 5: Custom style persistence via electron-store
+ipcMain.handle('get-custom-styles', () => {
+  const styles = store.get('customStyles', []);
+  return { success: true, styles };
+});
+
+ipcMain.handle('save-custom-style', (_event, { style }) => {
+  if (!style?.id) return { success: false, error: 'style.id required' };
+  const existing = store.get('customStyles', []);
+  const updated = [...existing.filter(s => s.id !== style.id), style];
+  store.set('customStyles', updated);
+  return { success: true };
+});
+
+ipcMain.handle('delete-custom-style', (_event, { styleId }) => {
+  if (!styleId) return { success: false, error: 'styleId required' };
+  const existing = store.get('customStyles', []);
+  const target = existing.find(s => s.id === styleId);
+
+  // Delete LoRA file from userData/loras/ (primary copy)
+  if (target?.loraPath) {
+    try {
+      assertSafePath(target.loraPath);
+      if (fs.existsSync(target.loraPath)) fs.unlinkSync(target.loraPath);
+    } catch (err) {
+      console.warn('[LoRA] Could not delete loraPath:', target.loraPath, err.message);
+    }
+  }
+
+  // Also remove the copy from ComfyUI's models/loras/ directory
+  if (target?.loraName) {
+    const comfyLoraPath = path.join(os.homedir(), 'ComfyUI', 'models', 'loras', `${target.loraName}.safetensors`);
+    try {
+      if (fs.existsSync(comfyLoraPath)) fs.unlinkSync(comfyLoraPath);
+    } catch (err) {
+      console.warn('[LoRA] Could not delete ComfyUI copy:', comfyLoraPath, err.message);
+    }
+  }
+
+  store.set('customStyles', existing.filter(s => s.id !== styleId));
+  return { success: true };
+});
+
+// Best-effort cleanup of training images uploaded to Fal.ai storage.
+// Fal.ai's storage API supports DELETE on uploaded file URLs.
+ipcMain.handle('cleanup-training-uploads', async (_event, { imageUrls }) => {
+  const falApiKey = _cfg('FAL_API_KEY');
+  if (!falApiKey || !Array.isArray(imageUrls) || imageUrls.length === 0) return { success: true };
+  try {
+    await Promise.allSettled(
+      imageUrls.map(url =>
+        fetch(url, { method: 'DELETE', headers: { 'Authorization': `Key ${falApiKey}` } })
+      )
+    );
+  } catch {
+    // Best-effort — never fail the training flow over cleanup
+  }
+  return { success: true };
 });

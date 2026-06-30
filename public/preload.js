@@ -148,13 +148,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateVoice: (params) => ipcRenderer.invoke('generate-voice', params),
   installCoquiTTS: () => ipcRenderer.invoke('install-coqui-tts'),
   cloneVoice: (params) => ipcRenderer.invoke('clone-voice', params),
+  generateClonedVoice: (params) => ipcRenderer.invoke('generate-cloned-voice', params),
+  checkVoiceCloneProviders: () => ipcRenderer.invoke('check-voice-clone-providers'),
+  saveElevenLabsKey: (params) => ipcRenderer.invoke('save-elevenlabs-key', params),
+  getCustomVoices: () => ipcRenderer.invoke('get-custom-voices'),
+  saveCustomVoice: (params) => ipcRenderer.invoke('save-custom-voice', params),
+  deleteCustomVoice: (params) => ipcRenderer.invoke('delete-custom-voice', params),
   getEdgeTtsVoices: () => ipcRenderer.invoke('get-edge-tts-voices'),
   previewVoice: (params) => ipcRenderer.invoke('preview-voice', params),
   readFileAsBase64: (filePath) => ipcRenderer.invoke('read-file-as-base64', filePath),
+  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+  exportPanelWithVoice: (params) => ipcRenderer.invoke('export-panel-with-voice', params),
   onJoinSharedProject: (cb) => {
     const handler = (_event, data) => cb(data);
     ipcRenderer.on('join-shared-project', handler);
     return () => ipcRenderer.removeListener('join-shared-project', handler);
+  },
+  onSharedStudioJoin: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('shared-studio-join', handler);
+    return () => ipcRenderer.removeListener('shared-studio-join', handler);
   },
   onVoiceProgress: (cb) => {
     const handler = (_event, pct) => cb(pct);
@@ -172,6 +185,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   falIPAdapter:        (params) => ipcRenderer.invoke('fal-ipadapter', params),
   falFluxFill:         (params) => ipcRenderer.invoke('fal-flux-fill', params),
   falKling:            (params) => ipcRenderer.invoke('fal-kling', params),
+  cancelFalKling:      () => ipcRenderer.send('cancel-fal-kling'),
+  interruptComfyUI:    () => ipcRenderer.invoke('interrupt-comfyui'),
   syncsoLipSync:       (params) => ipcRenderer.invoke('syncso-lipsync', params),
   deepSeekShot:        (params) => ipcRenderer.invoke('deepseek-parse-shot', params),
   deepSeekScreenplay:  (params) => ipcRenderer.invoke('deepseek-parse-screenplay', params),
@@ -179,6 +194,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, data) => cb(data);
     ipcRenderer.on('cloud-progress', handler);
     return () => ipcRenderer.removeListener('cloud-progress', handler);
+  },
+
+  // Brand LoRA Training
+  uploadTrainingImages:  (params) => ipcRenderer.invoke('upload-training-images', params),
+  startLoraTraining:     (params) => ipcRenderer.invoke('start-lora-training', params),
+  pollLoraTraining:      (params) => ipcRenderer.invoke('poll-lora-training', params),
+  installLora:           (params) => ipcRenderer.invoke('install-lora', params),
+  getCustomStyles:       ()       => ipcRenderer.invoke('get-custom-styles'),
+  saveCustomStyle:       (params) => ipcRenderer.invoke('save-custom-style', params),
+  deleteCustomStyle:         (params) => ipcRenderer.invoke('delete-custom-style', params),
+  cleanupTrainingUploads:    (params) => ipcRenderer.invoke('cleanup-training-uploads', params),
+  onLoraUploadProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('lora-upload-progress', handler);
+    return () => ipcRenderer.removeListener('lora-upload-progress', handler);
+  },
+  onLoraInstallProgress: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('lora-install-progress', handler);
+    return () => ipcRenderer.removeListener('lora-install-progress', handler);
   },
 
   // Platform (safe to read in preload)

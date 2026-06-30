@@ -17,7 +17,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   X, Play, Pause, Download, Upload, Loader2, Mic, MicOff,
-  CheckCircle, AlertCircle, Lock, Volume2, RefreshCw, Globe, ChevronDown, ChevronUp, Search,
+  CheckCircle, AlertCircle, Lock, Volume2, RefreshCw, Globe, ChevronDown, ChevronUp, Search, Trash2,
 } from 'lucide-react';
 import { Character, Panel } from '../types';
 import { VoiceProfile, EdgeVoice, voiceService, EdgeTtsCheckResult } from '../services/VoiceService';
@@ -30,10 +30,14 @@ interface VoiceStudioProps {
   characters: Character[];
   isPro: boolean;
   isStudio?: boolean;
+  /** App-level lock — true when this panel's voice is generating (survives modal remount) */
+  isVoiceGenerating?: boolean;
   onComplete: (wavPath: string, characterId: string | null) => void;
   onLipSyncComplete: (videoUrl: string) => void;
   onOpenSettings: () => void;
   onClose: () => void;
+  onVoiceGenerationStart?: (panelId: string) => void;
+  onVoiceGenerationEnd?: (panelId: string) => void;
 }
 
 type InstallState = 'checking' | 'available' | 'not-installed' | 'installing' | 'failed';
@@ -183,10 +187,13 @@ export default function VoiceStudio({
   characters,
   isPro,
   isStudio = false,
+  isVoiceGenerating = false,
   onComplete,
   onLipSyncComplete,
   onOpenSettings,
   onClose,
+  onVoiceGenerationStart,
+  onVoiceGenerationEnd,
 }: VoiceStudioProps) {
   const [installState, setInstallState] = useState<InstallState>('checking');
   const [installProgress, setInstallProgress] = useState('');
@@ -217,11 +224,16 @@ export default function VoiceStudio({
   const [generatedWavPath, setGeneratedWavPath] = useState<string | null>(panel.voicePath ?? null);
   const [isPlayingResult, setIsPlayingResult] = useState(false);
 
+  // Active voice profile (full object for generate routing)
+  const [activeVoiceProfile, setActiveVoiceProfile] = useState<VoiceProfile | null>(null);
+
   // Studio: voice cloning
   const [cloneFile, setCloneFile] = useState<File | null>(null);
   const [cloneName, setCloneName] = useState('');
   const [isCloning, setIsCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [cloneProvider, setCloneProvider] = useState<'cartesia' | 'elevenlabs' | null>(null);
+  const [cloneAvailable, setCloneAvailable] = useState(true);
 
   // Lip sync
   const [lipSyncAvailable, setLipSyncAvailable] = useState(false);
@@ -240,16 +252,26 @@ export default function VoiceStudio({
       setInstallState(res.available ? 'available' : 'not-installed');
     });
     lipSyncService.isAvailable().then(setLipSyncAvailable);
+    (window as any).electronAPI?.checkVoiceCloneProviders?.().then((r: any) => {
+      setCloneProvider(r?.preferred ?? null);
+      setCloneAvailable(!!r?.preferred);
+    });
   }, []);
 
   useEffect(() => {
     if (installState !== 'available') return;
-    voiceService.getAvailableVoices().then((v) => {
-      setVoices(v);
-      if (v.length > 0 && !selectedVoiceId) {
-        setSelectedVoiceId(v[0].id);
-        setActiveEdgeVoice(v[0].edgeVoice);
-        setActiveVoiceLabel(v[0].name);
+    voiceService.getAvailableVoices().then(async (v) => {
+      // Merge persisted custom voices
+      const customResult = await (window as any).electronAPI?.getCustomVoices?.();
+      const customVoices: VoiceProfile[] = customResult?.voices ?? [];
+      const existingIds = new Set(v.map((p: VoiceProfile) => p.id));
+      const merged = [...v, ...customVoices.filter(c => !existingIds.has(c.id))];
+      setVoices(merged);
+      if (merged.length > 0 && !selectedVoiceId) {
+        setSelectedVoiceId(merged[0].id);
+        setActiveEdgeVoice(merged[0].edgeVoice);
+        setActiveVoiceLabel(merged[0].name);
+        setActiveVoiceProfile(merged[0]);
       }
     });
   }, [installState]);
@@ -302,8 +324,9 @@ export default function VoiceStudio({
 
   const handleSelectProfile = useCallback((profile: VoiceProfile) => {
     setSelectedVoiceId(profile.id);
-    setActiveEdgeVoice(profile.edgeVoice);
+    setActiveEdgeVoice(profile.edgeVoice || null);
     setActiveVoiceLabel(profile.name);
+    setActiveVoiceProfile(profile);
   }, []);
 
   // ── Select voice from browser ───────────────────────────────────────────────
@@ -333,17 +356,23 @@ export default function VoiceStudio({
   // ── Generate ────────────────────────────────────────────────────────────────
 
   const handleGenerate = useCallback(async () => {
-    if (!activeEdgeVoice || !dialogue.trim()) return;
+    const canGenerate = dialogue.trim() && (activeEdgeVoice || (activeVoiceProfile?.elevenLabsVoiceId || activeVoiceProfile?.cartesiaVoiceId));
+    if (!canGenerate || isVoiceGenerating) return; // app-level lock prevents remount bypass
     setGenState('generating');
     setGenProgress(0);
     setGenError(null);
+    onVoiceGenerationStart?.(panel.id);
 
-    const fakeProfile = { id: 'dynamic', name: activeVoiceLabel, description: '', gender: 'male' as const, language: '', edgeVoice: activeEdgeVoice };
+    const profile = activeVoiceProfile ?? {
+      id: 'dynamic', name: activeVoiceLabel, description: '', gender: 'male' as const,
+      language: '', edgeVoice: activeEdgeVoice ?? '',
+    };
+    const safeId = (activeEdgeVoice ?? activeVoiceProfile?.id ?? 'voice').replace(/[^a-z0-9_-]/gi, '-');
     try {
       const wavPath = await voiceService.generateVoice(
         dialogue.trim(),
-        activeEdgeVoice.replace(/[^a-z0-9_-]/gi, '-'), // safe voiceId for filename
-        fakeProfile,
+        safeId,
+        profile,
         (pct) => setGenProgress(pct),
       );
       setGeneratedWavPath(wavPath);
@@ -351,8 +380,10 @@ export default function VoiceStudio({
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Generation failed');
       setGenState('error');
+    } finally {
+      onVoiceGenerationEnd?.(panel.id);
     }
-  }, [activeEdgeVoice, activeVoiceLabel, dialogue]);
+  }, [activeEdgeVoice, activeVoiceProfile, activeVoiceLabel, dialogue, isVoiceGenerating, panel.id, onVoiceGenerationStart, onVoiceGenerationEnd]);
 
   // ── Playback ────────────────────────────────────────────────────────────────
 
@@ -407,10 +438,37 @@ export default function VoiceStudio({
 
   const handleClone = useCallback(async () => {
     if (!cloneFile || !cloneName.trim()) return;
+
+    // Validate file
+    const maxSize = 10 * 1024 * 1024;
+    if (cloneFile.size > maxSize) {
+      setCloneError('File too large — maximum 10MB per file');
+      return;
+    }
+    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'audio/x-m4a'];
+    if (!allowedTypes.includes(cloneFile.type) && !/\.(mp3|wav|m4a|ogg)$/i.test(cloneFile.name)) {
+      setCloneError('Unsupported format — use MP3, WAV, M4A, or OGG');
+      return;
+    }
+
     setIsCloning(true);
     setCloneError(null);
     try {
-      const profile = await voiceService.cloneVoice(cloneFile.path ?? cloneFile.name, cloneName.trim());
+      const result = await voiceService.cloneVoice((cloneFile as any).path ?? cloneFile.name, cloneName.trim());
+      const profile: VoiceProfile = {
+        id: `${result.provider}-${result.voiceId}`,
+        name: result.name,
+        description: '',
+        gender: 'male',
+        language: 'en-US',
+        edgeVoice: '',
+        isCustom: true,
+        tier: 'studio',
+        provider: result.provider,
+        elevenLabsVoiceId: result.provider === 'elevenlabs' ? result.voiceId : undefined,
+        cartesiaVoiceId:   result.provider === 'cartesia'   ? result.voiceId : undefined,
+      };
+      await (window as any).electronAPI?.saveCustomVoice?.({ voice: profile });
       setVoices((prev) => [...prev, profile]);
       handleSelectProfile(profile);
       setCloneFile(null);
@@ -420,7 +478,17 @@ export default function VoiceStudio({
     } finally {
       setIsCloning(false);
     }
-  }, [cloneFile, cloneName]);
+  }, [cloneFile, cloneName, handleSelectProfile]);
+
+  const handleDeleteCustomVoice = useCallback(async (voiceId: string) => {
+    await (window as any).electronAPI?.deleteCustomVoice?.({ voiceId });
+    setVoices((prev) => prev.filter(v => v.id !== voiceId));
+    if (activeVoiceProfile?.id === voiceId) {
+      setActiveVoiceProfile(null);
+      setActiveEdgeVoice(null);
+      setSelectedVoiceId(null);
+    }
+  }, [activeVoiceProfile]);
 
   // ── Community gate ───────────────────────────────────────────────────────────
 
@@ -659,7 +727,7 @@ export default function VoiceStudio({
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleGenerate}
-                    disabled={!activeEdgeVoice || !dialogue.trim() || genState === 'generating'}
+                    disabled={!(dialogue.trim() && (activeEdgeVoice || (activeVoiceProfile?.elevenLabsVoiceId || activeVoiceProfile?.cartesiaVoiceId))) || isVoiceGenerating || genState === 'generating'}
                     className="flex items-center gap-2 px-4 py-2 bg-imagginary-600 hover:bg-imagginary-500 text-black text-xs font-semibold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {genState === 'generating'
@@ -705,15 +773,57 @@ export default function VoiceStudio({
                 </div>
               )}
 
+              {/* ── Studio: Cloned Voices list ───────────────────────────────── */}
+              {isStudio && voices.filter(v => v.isCustom).length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Your Cloned Voices</p>
+                  {voices.filter(v => v.isCustom).map(voice => (
+                    <div
+                      key={voice.id}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                        activeVoiceProfile?.id === voice.id
+                          ? 'bg-violet-500/20 border border-violet-500/40'
+                          : 'hover:bg-gray-800 border border-transparent'
+                      }`}
+                      onClick={() => handleSelectProfile(voice)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Mic className="w-3 h-3 text-violet-400" />
+                        <span className="text-sm text-white">{voice.name}</span>
+                        <span className="text-[9px] text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full">Cloned</span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteCustomVoice(voice.id); }}
+                        className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* ── Studio: Voice cloning ────────────────────────────────────── */}
               {isStudio && (
                 <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Custom Voice Clone</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Clone a New Voice</p>
                     <span className="text-[9px] px-1 py-0.5 rounded bg-violet-900/30 text-violet-400 border border-violet-800/30 font-medium uppercase">Studio</span>
                   </div>
-                  <p className="text-[10px] text-gray-600">Upload a 5-minute minimum audio sample to clone a custom voice.</p>
-                  <input ref={cloneInputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => setCloneFile(e.target.files?.[0] ?? null)} />
+                  {cloneProvider ? (
+                    <p className="text-[10px] text-gray-500">
+                      Voice cloning via {cloneProvider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'}
+                      {cloneProvider === 'elevenlabs' ? ' (your API key)' : ''}
+                    </p>
+                  ) : (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                      <p className="text-amber-400 text-[10px]">
+                        Voice cloning is not yet configured for this build. Contact support.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-600">Upload a clear audio sample — 1 minute minimum, 5+ minutes for best quality.</p>
+                  <input ref={cloneInputRef} type="file" accept=".mp3,.wav,.m4a,.ogg,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/x-m4a" className="hidden" onChange={(e) => setCloneFile(e.target.files?.[0] ?? null)} />
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => cloneInputRef.current?.click()}
@@ -733,7 +843,7 @@ export default function VoiceStudio({
                         />
                         <button
                           onClick={handleClone}
-                          disabled={!cloneName.trim() || isCloning}
+                          disabled={!cloneName.trim() || isCloning || !cloneAvailable}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-violet-700 hover:bg-violet-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           {isCloning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mic className="w-3 h-3" />}
@@ -742,6 +852,10 @@ export default function VoiceStudio({
                       </>
                     )}
                   </div>
+                  <p className="text-[10px] text-gray-600">MP3, WAV, M4A or OGG · Max 10MB · 1+ minute recommended for best quality</p>
+                  <p className="text-[10px] text-gray-600">
+                    Voice is processed and stored securely via ElevenLabs. Only you can access your cloned voice.
+                  </p>
                   {cloneError && <p className="text-[10px] text-red-400">{cloneError}</p>}
                 </div>
               )}

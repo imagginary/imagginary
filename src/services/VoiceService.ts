@@ -9,6 +9,9 @@ export interface VoiceProfile {
   edgeVoice: string;   // edge-tts voice name, e.g. "en-US-ChristopherNeural"
   isCustom?: boolean;
   tier?: 'pro' | 'studio';
+  elevenLabsVoiceId?: string;
+  cartesiaVoiceId?: string;
+  provider?: 'elevenlabs' | 'cartesia';
 }
 
 export interface EdgeVoice {
@@ -50,6 +53,19 @@ class VoiceService {
     voiceProfile: VoiceProfile,
     onProgress?: (pct: number) => void,
   ): Promise<string> {
+    // Cloned voice path (Cartesia or ElevenLabs BYOK)
+    if (voiceProfile.isCustom && (voiceProfile.cartesiaVoiceId || voiceProfile.elevenLabsVoiceId)) {
+      if (!window.electronAPI?.generateClonedVoice) {
+        throw new Error('Voice generation is not available in this build — please update the app');
+      }
+      const cloneVoiceId = voiceProfile.elevenLabsVoiceId ?? voiceProfile.cartesiaVoiceId!;
+      const provider = voiceProfile.provider ?? 'cartesia';
+      const result = await window.electronAPI.generateClonedVoice({ text, voiceId: cloneVoiceId, provider });
+      if (result?.success && result.audioPath) return result.audioPath;
+      throw new Error(result?.error ?? 'Cloned voice generation failed');
+    }
+
+    // Default edge-tts path
     return new Promise((resolve, reject) => {
       let cleanup: (() => void) | undefined;
 
@@ -96,9 +112,9 @@ class VoiceService {
     }
   }
 
-  async cloneVoice(audioSamplePath: string, name: string): Promise<VoiceProfile> {
+  async cloneVoice(audioSamplePath: string, name: string): Promise<{ voiceId: string; name: string; provider: 'cartesia' | 'elevenlabs' }> {
     const result = await window.electronAPI?.cloneVoice?.({ audioSamplePath, name });
-    if (result?.success && result.profile) return result.profile as VoiceProfile;
+    if (result?.success && result.voiceId) return { voiceId: result.voiceId, name: result.name, provider: result.provider };
     throw new Error(result?.error ?? 'Voice cloning failed');
   }
 

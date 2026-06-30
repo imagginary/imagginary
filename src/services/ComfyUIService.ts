@@ -96,6 +96,11 @@ interface HistoryEntry {
 export class ComfyUIService {
   private defaultCheckpoint: string | null = null;
   private loraCache: string[] | null = null;
+
+  /** Call after installing a new LoRA so the next generation re-queries ComfyUI's model list. */
+  invalidateLoraCache(): void {
+    this.loraCache = null;
+  }
   private clientId: string;
 
   constructor() {
@@ -203,7 +208,7 @@ export class ComfyUIService {
     aspectRatio: AspectRatio,
     characterDescription: string | null = null,
     seedOverride?: number,
-    opts?: { promptSuffix?: string; negativePromptSuffix?: string; loraName?: string | null },
+    opts?: { promptSuffix?: string; negativePromptSuffix?: string; loraName?: string | null; loraStrength?: number },
     referenceImageFilename: string | null = null,
     hasIPAdapter: boolean = false
   ): object {
@@ -242,8 +247,8 @@ export class ComfyUIService {
           class_type: 'LoraLoader',
           inputs: {
             lora_name: lora,
-            strength_model: 1.0,
-            strength_clip: 1.0,
+            strength_model: opts?.loraStrength ?? 1.0,
+            strength_clip: opts?.loraStrength ?? 1.0,
             model: [checkpointNode, 0],
             clip: [checkpointNode, 1],
           },
@@ -414,6 +419,11 @@ export class ComfyUIService {
             positivePrompt = `(solo, ${characterDescriptions}:1.2), ${positivePrompt}`;
           }
         }
+        // Inject trigger word for custom styles — LoRA weights can't run server-side
+        // but the trigger word still carries semantic signal
+        if (style?.isCustom && style?.promptSuffix) {
+          positivePrompt = `${positivePrompt}, ${style.promptSuffix}`;
+        }
         const result = await (window as any).electronAPI.falFluxSchnell({
           prompt: positivePrompt,
           width: aspectRatio.width,
@@ -440,6 +450,25 @@ export class ComfyUIService {
     style?: StyleProfile,
     shotAngle: string = ''
   ): Promise<string> {
+    if (style?.isCustom && style?.trainingStatus !== 'complete') {
+      throw new Error(`Style "${style.name}" is still training. Please wait for training to complete before generating.`);
+    }
+
+    // Custom style trained on another machine — the LoRA file won't be in ComfyUI here
+    if (style?.isCustom && style?.trainingStatus === 'complete' && style?.loraName) {
+      const available = await this.getAvailableLoras();
+      const loraPresent = available.some((l) => {
+        const base = l.replace(/\.[^.]+$/, '');
+        return base === style.loraName || base.toLowerCase() === style.loraName!.toLowerCase();
+      });
+      if (!loraPresent) {
+        throw new Error(
+          `The style "${style.name}" was trained on a different machine and isn't available here. ` +
+          `Ask the project owner to share the trained style file, or select a different style for this panel.`
+        );
+      }
+    }
+
     if (!this.defaultCheckpoint) {
       await this.getAvailableCheckpoints();
     }
@@ -533,6 +562,7 @@ export class ComfyUIService {
       promptSuffix:         style?.promptSuffix,
       negativePromptSuffix: style?.negativePrompt,
       loraName:             resolvedLora,
+      loraStrength:         style?.loraStrength,
     }, referenceImageFilename, hasIPAdapter);
 
     onProgress?.(5, 'Sending prompt to ComfyUI...');
@@ -993,18 +1023,19 @@ export class ComfyUIService {
         aspectRatio: '16:9',
       });
 
-      if (result?.base64 && !result.error) {
+      if (result?.base64 && result.base64.length > 1000) {
         await licenseService.spendCredits(CREDIT_COSTS.motionClip);
         telemetryService.track('motion_generated_cloud', { provider: 'kling' });
         return result.base64;
       }
-      console.warn('[Kling] Error from main process:', result?.error);
-      return null;
+      const errMsg = result?.error || 'Cloud animation failed — no video data received';
+      console.warn('[Kling] Error from main process:', errMsg);
+      throw new Error(errMsg);
     } catch (err) {
-      console.warn('[Kling] IPC error:', err);
-      return null;
+      throw err;
     } finally {
       cleanupProgress?.();
+      (window as any).electronAPI?.cancelFalKling?.();
     }
   }
 

@@ -44,6 +44,8 @@ jobs:
           Expand-Archive "$env:TEMP\ffmpeg-win.zip" -DestinationPath "$env:TEMP\ffmpeg-win"
           $ffmpegExe = Get-ChildItem -Recurse "$env:TEMP\ffmpeg-win" -Filter ffmpeg.exe | Select-Object -First 1
           Copy-Item $ffmpegExe.FullName "resources\bin\ffmpeg-win.exe"
+          $ffprobeExe = Get-ChildItem -Recurse "$env:TEMP\ffmpeg-win" -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $ffprobeExe.FullName "resources\bin\ffprobe-win.exe"
 
       - name: Write runtime config
         env:
@@ -59,6 +61,8 @@ jobs:
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
+          CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
+          ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
         run: node scripts/write-config.js
@@ -116,6 +120,10 @@ jobs:
           unzip -o /tmp/ffmpeg-mac.zip -d resources/bin/
           mv resources/bin/ffmpeg resources/bin/ffmpeg-mac
           chmod +x resources/bin/ffmpeg-mac
+          curl -fsSL "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o /tmp/ffprobe-mac.zip
+          unzip -o /tmp/ffprobe-mac.zip -d resources/bin/
+          mv resources/bin/ffprobe resources/bin/ffprobe-mac
+          chmod +x resources/bin/ffprobe-mac
 
       - name: Install Apple certificate
         env:
@@ -153,6 +161,8 @@ jobs:
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
+          CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
+          ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
         run: node scripts/write-config.js
@@ -214,7 +224,8 @@ jobs:
           curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" -o /tmp/ffmpeg-linux.tar.xz
           tar -xf /tmp/ffmpeg-linux.tar.xz -C /tmp/
           cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffmpeg resources/bin/ffmpeg-linux
-          chmod +x resources/bin/ffmpeg-linux
+          cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffprobe resources/bin/ffprobe-linux
+          chmod +x resources/bin/ffmpeg-linux resources/bin/ffprobe-linux
 
       - name: Write runtime config
         env:
@@ -230,6 +241,8 @@ jobs:
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
           FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
+          CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
+          ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
         run: node scripts/write-config.js

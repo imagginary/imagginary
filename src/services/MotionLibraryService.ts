@@ -202,17 +202,16 @@ class MotionLibraryService {
       : 'smooth character animation, cinematic quality';
 
     if (licenseService.isPro() || licenseService.isStudio()) {
+      // Pro/Studio: cloud only — errors propagate to caller, no local Wan fallback
       onProgress?.(5, 'Sending to Kling cloud…');
       const cloudVideo = await comfyUIService.animatePanelCloud(
         panelImageData, motionPrompt, onProgress
       );
-      if (cloudVideo) {
-        onProgress?.(100, 'Animation complete');
-        return { videoData: cloudVideo, videoPath: null };
-      }
-      onProgress?.(10, 'Cloud unavailable — trying local…');
+      onProgress?.(100, 'Animation complete');
+      return { videoData: cloudVideo, videoPath: null };
     }
 
+    // Community: local Wan only
     onProgress?.(15, 'Sending to Wan 2.2…');
     const videoData = await comfyUIService.animatePanel(
       panelImageData,

@@ -218,7 +218,7 @@ export default function VideoTransfer({
   async function handleBrowseFile() {
     const result = await (window as any).electronAPI.showOpenDialog({
       title: 'Select Reference Video',
-      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'avi', 'webm'] }],
+      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'avi', 'webm', 'gif'] }],
       properties: ['openFile'],
     });
     if (!result.canceled && result.filePaths?.length > 0) {

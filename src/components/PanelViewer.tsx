@@ -13,6 +13,7 @@ interface PanelViewerProps {
   onUndoEdit?: (panelId: string) => void;
   onAnimatePanel?: (panelId: string, motionDescription: string) => void;
   onClearMotion?: (panelId: string) => void;
+  onRemoveVoice?: (panelId: string) => void;
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
   onOpenPoseEditor?: () => void;
   onOpenMotionLibrary?: () => void;
@@ -20,11 +21,15 @@ interface PanelViewerProps {
   onOpenVoiceStudio?: () => void;
   onOpenSettings?: () => void;
   onClearError?: () => void;
+  onCancelAnimate?: () => void;
+  onCancelInpaint?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
   isPro?: boolean;
   tierAccent?: string;
+  onCursorMove?: (panelId: string, x: number, y: number) => void;
+  collaboratorCursors?: Map<string, { userId: string; userName: string; panelId: string | null; x: number; y: number }>;
 }
 
 const BRUSH_SIZES = [8, 16, 28, 44];
@@ -56,6 +61,9 @@ function formatTimestamp(ts: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+const CURSOR_COLORS = ['#7C3AED', '#ceaf82', '#0D9488', '#E11D48', '#D97706', '#0284C7'];
+const getCursorColor = (name: string) => CURSOR_COLORS[name.charCodeAt(0) % CURSOR_COLORS.length];
+
 export default function PanelViewer({
   panel,
   progress,
@@ -64,6 +72,7 @@ export default function PanelViewer({
   onUndoEdit,
   onAnimatePanel,
   onClearMotion,
+  onRemoveVoice,
   onRestoreRevision,
   onOpenPoseEditor,
   onOpenMotionLibrary,
@@ -71,11 +80,15 @@ export default function PanelViewer({
   onOpenVoiceStudio,
   onOpenSettings,
   onClearError,
+  onCancelAnimate,
+  onCancelInpaint,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
   isPro = false,
   tierAccent = '#ceaf82',
+  onCursorMove,
+  collaboratorCursors,
 }: PanelViewerProps) {
   const aspectRatio = effectiveAspectRatio ?? getAspectRatio(DEFAULT_ASPECT_RATIO_ID);
   const isGenerating =
@@ -478,27 +491,84 @@ export default function PanelViewer({
     );
   }
 
+  // Collaborators currently focused on this panel (for "also viewing" indicator)
+  const collaboratorsHere = collaboratorCursors
+    ? Array.from(collaboratorCursors.values()).filter(c => c.panelId === panel?.id)
+    : [];
+
   // ── Normal view ──────────────────────────────────────────────────────────────
   return (
     <div className="relative flex-1 flex flex-col items-center justify-center bg-gray-950 min-h-0">
+      {/* Co-presence indicator — shown when another collaborator is viewing this panel */}
+      {collaboratorsHere.length > 0 && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] pointer-events-none select-none whitespace-nowrap">
+          <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          {collaboratorsHere.map(c => c.userName).join(', ')} {collaboratorsHere.length === 1 ? 'is' : 'are'} also viewing this panel
+        </div>
+      )}
       {/* Panel image / video area */}
       <div className="w-full h-full flex items-center justify-center p-6 min-h-0">
         <div
           ref={imageContainerRef}
           className="relative bg-gray-900 rounded-lg overflow-hidden shadow-2xl border border-gray-800"
           style={{ aspectRatio: aspectRatio.cssRatio, maxHeight: '100%', maxWidth: '100%', width: '100%' }}
+          onMouseMove={(e) => {
+            if (!panel?.id || !onCursorMove) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            onCursorMove(panel.id, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
+          }}
+          onMouseLeave={() => {
+            if (panel?.id && onCursorMove) onCursorMove(panel.id, -1, -1);
+          }}
         >
+          {/* Collaborator cursor overlay */}
+          {collaboratorCursors && collaboratorCursors.size > 0 && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+              {Array.from(collaboratorCursors.values())
+                .filter(c => c.panelId === panel?.id && c.x >= 0 && c.y >= 0)
+                .map(cursor => (
+                  <div
+                    key={cursor.userId}
+                    className="absolute flex items-start gap-1 transition-all duration-75"
+                    style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%`, transform: 'translate(-2px, -2px)' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 2L14 7L8 9L6 14L2 2Z" fill={getCursorColor(cursor.userName)} stroke="white" strokeWidth="1" />
+                    </svg>
+                    <span
+                      className="text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                      style={{ backgroundColor: getCursorColor(cursor.userName) }}
+                    >
+                      {cursor.userName}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
           {/* Motion clip — shown in main viewport when animate mode is active and clip exists */}
           {animateMode && hasClip && !isGenerating && (panel?.motionClipData || panel?.motionClipPath) && (
-            <video
-              key={panel?.motionClipData ?? panel?.motionClipPath ?? ''}
-              src={panel?.motionClipData ?? undefined}
-              autoPlay
-              loop
-              muted
-              controls
-              className="w-full h-full object-contain"
-            />
+            <>
+              <video
+                key={panel?.motionClipData ?? panel?.motionClipPath ?? ''}
+                src={panel?.motionClipData ?? undefined}
+                autoPlay
+                loop
+                muted
+                controls
+                className="w-full h-full object-contain"
+              />
+              <button
+                onClick={() => panel && onClearMotion?.(panel.id)}
+                className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded text-[10px] text-gray-400 hover:text-red-400 bg-black/60 hover:bg-black/80 backdrop-blur-sm transition-colors z-10"
+                title="Remove motion clip"
+              >
+                <X className="w-2.5 h-2.5" />
+                Remove Clip
+              </button>
+            </>
           )}
 
           {/* Generated image — shown when no active video */}
@@ -585,6 +655,15 @@ export default function PanelViewer({
                     Wan 2.2 generation takes 3–5 minutes locally.
                     Keep this window open.
                   </p>
+                )}
+                {progress?.status === 'generating' && editMode && onCancelInpaint && (
+                  <button
+                    onClick={onCancelInpaint}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Cancel
+                  </button>
                 )}
               </div>
             </div>
@@ -770,6 +849,17 @@ export default function PanelViewer({
             </button>
           )}
 
+          {panel?.voicePath && onRemoveVoice && (
+            <button
+              onClick={() => panel && onRemoveVoice(panel.id)}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+              title="Remove voice clip"
+            >
+              <X className="w-2.5 h-2.5" />
+              Remove Voice
+            </button>
+          )}
+
           {canUndo && (
             <button
               onClick={() => onUndoEdit?.(panel!.id)}
@@ -829,11 +919,6 @@ export default function PanelViewer({
           {`Insufficient credits (need ${CREDIT_COSTS.inpaint}, have ${licenseService.getRemainingCredits()}).`}{' '}
           <button onClick={onOpenSettings} className="underline ml-1">Add your own Fal.ai key</button>
           {' '}to continue, or {daysUntilReset} day{daysUntilReset !== 1 ? 's' : ''} until next credit allocation.
-        </p>
-      )}
-      {editMode && isPro && !inpaintsExhausted && !settingsService.getKey('falApiKey') && (
-        <p className="text-[10px] text-gray-600 px-6 pb-1">
-          Add a Fal.ai key in Settings for best-quality inpainting (FLUX.1 Fill).
         </p>
       )}
       {editMode && !isPro && (
@@ -899,9 +984,15 @@ export default function PanelViewer({
               />
 
               {/* Duration info */}
-              <p className="text-[10px] text-gray-600">
-                Duration: ~1 second · Wan 2.1 I2V 14B fp8 · ~3–8 min on Apple Silicon
-              </p>
+              {isPro ? (
+                <p className="text-xs text-gray-500">
+                  Motion clip via Kling AI · typically 3–7 min · credits deducted on completion
+                </p>
+              ) : (
+                <p className="text-[10px] text-gray-600">
+                  Duration: ~1 second · Wan 2.1 I2V 14B fp8 · ~3–8 min on Apple Silicon
+                </p>
+              )}
 
               {/* Action buttons */}
               <div className="flex items-center gap-2">
@@ -923,7 +1014,7 @@ export default function PanelViewer({
                   )}
                 </button>
                 <button
-                  onClick={() => setAnimateMode(false)}
+                  onClick={() => { setAnimateMode(false); onCancelAnimate?.(); }}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
                 >
                   <X className="w-3 h-3" />

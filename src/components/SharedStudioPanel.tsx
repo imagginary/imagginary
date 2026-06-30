@@ -1,6 +1,6 @@
 import React from 'react';
-import { Users, Link, LogOut } from 'lucide-react';
-import { sharedStudioService } from '../services/SharedStudioService';
+import { Link, LogOut } from 'lucide-react';
+import { sharedStudioService, SharedStudioConnectionStatus } from '../services/SharedStudioService';
 
 interface SessionUser {
   userId: string;
@@ -10,6 +10,7 @@ interface SessionUser {
 interface Props {
   projectId: string;
   users: SessionUser[];
+  connectionStatus: SharedStudioConnectionStatus;
   onInvite: () => void;
   onLeave: () => void;
 }
@@ -36,20 +37,36 @@ function UserAvatar({ name }: { name: string }) {
   );
 }
 
-export default function SharedStudioPanel({ projectId, users, onInvite, onLeave }: Props) {
+export default function SharedStudioPanel({ projectId, users, connectionStatus, onInvite, onLeave }: Props) {
   const myId = sharedStudioService.getUserId();
   const others = users.filter((u) => u.userId !== myId);
   const shown = others.slice(0, 5);
   const overflow = others.length - 5;
 
+  const isLive = connectionStatus === 'connected';
+
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 bg-green-950/40 border-b border-green-900/40">
-      {/* Live indicator */}
-      <div className="flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-        <span className="text-[10px] font-semibold text-green-400 uppercase tracking-wide">Live</span>
-        <span className="text-[10px] text-green-700">· Shared Session</span>
-      </div>
+    <div className={`flex items-center gap-2 px-3 py-1.5 border-b ${isLive ? 'bg-green-950/40 border-green-900/40' : 'bg-gray-900/60 border-gray-800'}`}>
+      {/* Connection status indicator */}
+      {connectionStatus === 'connected' && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-[10px] font-semibold text-green-400 uppercase tracking-wide">Live</span>
+          <span className="text-[10px] text-green-700">· Shared Session</span>
+        </div>
+      )}
+      {connectionStatus === 'reconnecting' && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide">Reconnecting…</span>
+        </div>
+      )}
+      {connectionStatus === 'disconnected' && (
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-red-500" />
+          <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">Disconnected</span>
+        </div>
+      )}
 
       <div className="w-px h-3 bg-green-900" />
 

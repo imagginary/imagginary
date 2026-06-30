@@ -13,7 +13,9 @@ import ActivateLicense from './components/ActivateLicense';
 import SettingsModal from './components/SettingsModal';
 import SharedStudioPanel from './components/SharedStudioPanel';
 import ShareProjectModal from './components/ShareProjectModal';
-import { sharedStudioService, SharedStudioEvent } from './services/SharedStudioService';
+import SharedStudioOnboarding from './components/SharedStudioOnboarding';
+import LoRATrainer from './components/LoRATrainer';
+import { sharedStudioService, SharedStudioEvent, SharedStudioConnectionStatus } from './services/SharedStudioService';
 import ShotInput, { ShotConstraints } from './components/ShotInput';
 import CharacterLibrary from './components/CharacterLibrary';
 import RightSidebar from './components/RightSidebar';
@@ -27,6 +29,7 @@ import { characterLibraryService } from './services/CharacterLibraryService';
 import { animaticExporter } from './services/AnimaticExporter';
 import { productionExporter } from './services/ProductionExporter';
 import { motionComicExporter } from './services/MotionComicExporter';
+import { customStyleService } from './services/CustomStyleService';
 import { poseEngineService } from './services/PoseEngineService';
 import {
   Project,
@@ -44,7 +47,6 @@ import {
 import {
   STYLE_CLASSIC_STORYBOARD,
   STYLE_VAULT,
-  getStyleById,
 } from './data/StyleVault';
 import { getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from './data/AspectRatios';
 
@@ -134,6 +136,10 @@ declare global {
   }
 }
 
+// Module-level set of training job IDs currently being polled this session.
+// Prevents duplicate polling loops when the app is opened multiple times rapidly.
+const activePollingJobs = new Set<string>();
+
 // Computed once at module load — both constants share the same panel id so
 // initial project state and initial activePanelId are always in sync.
 const _initialPanel = createEmptyPanel(0);
@@ -170,10 +176,19 @@ export default function App() {
   const [showVideoTransfer, setShowVideoTransfer] = useState(false);
   // Phase 15 — Voice Studio
   const [showVoiceStudio, setShowVoiceStudio] = useState(false);
+  // Keyed by panelId so the lock survives VoiceStudio modal unmount/remount
+  const [voiceGenerationState, setVoiceGenerationState] = useState<Map<string, 'idle' | 'generating'>>(new Map());
+  const isVoiceGenerating = (panelId: string) => voiceGenerationState.get(panelId) === 'generating';
+  const setVoiceGenerating = (panelId: string, state: 'idle' | 'generating') =>
+    setVoiceGenerationState((prev) => { const next = new Map(prev); next.set(panelId, state); return next; });
+  // Legacy scalar kept for isPanelGenerating compatibility — derived from map
+  const voiceGeneratingPanelId = Array.from(voiceGenerationState.entries()).find(([, v]) => v === 'generating')?.[0] ?? null;
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('imagginary_onboarded'));
   const [welcomeDismissible, setWelcomeDismissible] = useState(false);
   const [showScriptReader, setShowScriptReader] = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
+  const [showLoraTrainer, setShowLoraTrainer] = useState(false);
+  const [customStylesLoaded, setCustomStylesLoaded] = useState(false);
   // Phase 14 — true when the main process auto-started Ollama + ComfyUI successfully
   const [servicesAutoStarted, setServicesAutoStarted] = useState(false);
   // License
@@ -194,6 +209,12 @@ export default function App() {
   const [isSharedSession, setIsSharedSession] = useState(false);
   const [sessionUsers, setSessionUsers] = useState<Array<{ userId: string; userName: string }>>([]);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showSharedStudioOnboarding, setShowSharedStudioOnboarding] = useState(false);
+  const [collaboratorCursors, setCollaboratorCursors] = useState<Map<string, { userId: string; userName: string; panelId: string | null; x: number; y: number }>>(new Map());
+  const [sharedStudioConnectionStatus, setSharedStudioConnectionStatus] = useState<SharedStudioConnectionStatus>('disconnected');
+  const cursorBroadcastThrottle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressRef = useRef(progress);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
   const [estimatedGenerationSeconds, setEstimatedGenerationSeconds] = useState<number | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPath = useRef<string | null>(null);
@@ -226,7 +247,62 @@ export default function App() {
   useEffect(() => {
     settingsService.load();
     licenseService.load().then(() => setLicense(licenseService.getLicense()));
+    customStyleService.load().then(() => {
+      setCustomStylesLoaded(true);
+      // Resume polling for any training jobs that were in-progress when the app closed
+      const inProgress = customStyleService.getCustomStyles()
+        .filter(s => s.trainingStatus === 'training' && s.trainingJobId);
+      for (const style of inProgress) {
+        resumeLoraPolling(style);
+      }
+    });
   }, []);
+
+  const resumeLoraPolling = async (style: StyleProfile) => {
+    // Idempotency: skip if already complete/failed (could happen on rapid restart)
+    if (style.trainingStatus !== 'training') return;
+    // Dedup: only one poller per job per process lifetime
+    if (!style.trainingJobId || activePollingJobs.has(style.trainingJobId)) return;
+    activePollingJobs.add(style.trainingJobId);
+
+    try {
+    for (let i = 0; i < 80; i++) {
+      await new Promise<void>(r => setTimeout(r, 15000));
+      try {
+        const result = await (window as any).electronAPI.pollLoraTraining({ requestId: style.trainingJobId });
+        if (!result.success) continue;
+
+        if (result.status === 'COMPLETED') {
+          const installResult = await (window as any).electronAPI.installLora({
+            loraUrl: result.loraUrl,
+            loraName: style.loraName,
+          });
+          if (installResult.success) {
+            comfyUIService.invalidateLoraCache();
+            await customStyleService.saveCustomStyle({
+              ...style,
+              trainingStatus: 'complete',
+              loraPath: installResult.userLoraPath,
+              loraName: installResult.fileName.replace('.safetensors', ''),
+            });
+            setCustomStylesLoaded(prev => !prev);
+            setCloudToast(`✦ "${style.name}" brand style is ready!`);
+            setTimeout(() => setCloudToast(null), 5000);
+          }
+          break;
+        }
+
+        if (result.status === 'FAILED') {
+          await customStyleService.saveCustomStyle({ ...style, trainingStatus: 'failed' });
+          setCustomStylesLoaded(prev => !prev);
+          break;
+        }
+      } catch { /* network error — keep polling */ }
+    }
+    } finally {
+      activePollingJobs.delete(style.trainingJobId);
+    }
+  };
 
   // ── Hardware speed estimate (for slow-machine hint in ShotInput) ──────────────
   useEffect(() => {
@@ -289,7 +365,12 @@ export default function App() {
 
   const activePanel = project.panels.find((p) => p.id === activePanelId) ?? null;
   const hasMotionClips = project.panels.some((p) => p.motionClipPath || p.motionClipData);
-  const isGenerating = progress !== null && progress.status !== 'complete' && progress.status !== 'error';
+  const isPanelGenerating = (panelId: string) =>
+    (progress !== null &&
+      progress.panelId === panelId &&
+      progress.status !== 'complete' &&
+      progress.status !== 'error') ||
+    voiceGeneratingPanelId === panelId;
   const effectiveAspectRatio = getAspectRatio(
     activePanel?.aspectRatioId || project.aspectRatioId || DEFAULT_ASPECT_RATIO_ID
   );
@@ -699,15 +780,80 @@ export default function App() {
   function handleSharedStudioEvent(event: SharedStudioEvent) {
     switch (event.type) {
       case 'project_update':
-        setProject((prev) => ({
-          ...event.project,
-          panels: event.project.panels.map((incomingPanel) => {
-            const localPanel = prev.panels.find((p) => p.id === incomingPanel.id);
-            // Keep local panel if it's currently being generated
-            if (localPanel && progress?.panelId === localPanel.id) return localPanel;
-            return incomingPanel;
-          }),
-        }));
+        setProject((prev) => {
+          // Merge characters: keep local additions not yet in the remote payload
+          const remoteCharIds = new Set(event.project.characters.map((c) => c.id));
+          const localOnlyChars = prev.characters.filter((c) => !remoteCharIds.has(c.id));
+          const mergedCharacters = [...event.project.characters, ...localOnlyChars];
+
+          // Merge panels: keep local additions not yet reflected in the remote payload
+          const remotePanelIds = new Set(event.project.panels.map((p) => p.id));
+          const localOnlyPanels = prev.panels.filter((p) => !remotePanelIds.has(p.id));
+
+          const mergedPanels = [
+            ...event.project.panels.map((incomingPanel) => {
+              const localPanel = prev.panels.find((p) => p.id === incomingPanel.id);
+              if (!localPanel) return incomingPanel;
+              // Keep local panel unchanged while it's actively generating (ref avoids stale closure)
+              if (progressRef.current?.panelId === localPanel.id) return localPanel;
+              // Preserve local binary data and per-machine history — remote strips these before broadcasting
+              return {
+                ...incomingPanel,
+                generatedImageData: localPanel.generatedImageData,
+                motionClipData: localPanel.motionClipData,
+                voiceClipData: localPanel.voiceClipData,
+                poseClipData: localPanel.poseClipData,
+                editHistory: localPanel.editHistory,
+                revisions: localPanel.revisions,
+              };
+            }),
+            // Append panels added locally that haven't been broadcast yet
+            ...localOnlyPanels,
+          ];
+
+          const mergedProject = {
+            ...event.project,
+            characters: mergedCharacters,
+            panels: mergedPanels,
+          };
+
+          // If the active panel was deleted by a collaborator, redirect to the first available panel
+          // We need activePanelId from outer scope — read it via the ref pattern isn't needed here
+          // because setActivePanelId is a stable dispatch and this runs synchronously in the updater
+          setActivePanelId((currentActivePanelId) => {
+            const stillExists = mergedPanels.some((p) => p.id === currentActivePanelId);
+            if (!stillExists) {
+              // Show toast outside the updater — schedule via setTimeout to avoid setState-in-setState
+              if (currentActivePanelId && prev.panels.some((p) => p.id === currentActivePanelId)) {
+                setTimeout(() => setCloudToast('A collaborator removed the panel you were viewing'), 0);
+                setTimeout(() => setCloudToast(null), 4000);
+              }
+              return mergedPanels.length > 0 ? mergedPanels[0].id : null;
+            }
+            return currentActivePanelId;
+          });
+
+          return mergedProject;
+        });
+        break;
+      case 'state_response':
+        if (event.targetUserId !== sharedStudioService.getUserId()) return;
+        setProject((prev) => {
+          // Only apply if we joined with an empty project — first response wins
+          if (prev.panels.length > 0 && prev.panels.some(p => p.shotDescription || p.generatedImagePath)) return prev;
+          return { ...event.project, panels: event.project.panels };
+        });
+        break;
+      case 'cursor':
+        setCollaboratorCursors(prev => {
+          const next = new Map(prev);
+          if (event.x === -1 && event.y === -1) {
+            next.delete(event.userId);
+          } else {
+            next.set(event.userId, { userId: event.userId, userName: event.userName, panelId: event.panelId, x: event.x, y: event.y });
+          }
+          return next;
+        });
         break;
       case 'user_joined':
         setSessionUsers((prev) => [
@@ -717,6 +863,7 @@ export default function App() {
         break;
       case 'user_left':
         setSessionUsers((prev) => prev.filter((u) => u.userId !== event.userId));
+        setCollaboratorCursors(prev => { const next = new Map(prev); next.delete(event.userId); return next; });
         break;
     }
   }
@@ -724,18 +871,42 @@ export default function App() {
   async function startSharedSession() {
     if (!licenseService.isStudio()) return;
     if (!sharedStudioService.isConfigured()) {
-      setShowSettings(true);
+      setShowSharedStudioOnboarding(true);
       return;
     }
-    const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent);
+    const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent, project);
     if (joined) setIsSharedSession(true);
+  }
+
+  function handleCopyInviteLink() {
+    const supabaseUrl = settingsService.getKey('supabaseUrl') || '';
+    if (!project.id || !supabaseUrl) return;
+    const link = `imagginary://join?project=${encodeURIComponent(project.id)}&supabase=${encodeURIComponent(supabaseUrl)}`;
+    navigator.clipboard.writeText(link);
   }
 
   async function handleLeaveSharedSession() {
     await sharedStudioService.leaveProject();
     setIsSharedSession(false);
     setSessionUsers([]);
+    setCollaboratorCursors(new Map());
   }
+
+  function handleCursorMove(panelId: string, x: number, y: number) {
+    if (!isSharedSession) return;
+    if (cursorBroadcastThrottle.current) return;
+    cursorBroadcastThrottle.current = setTimeout(() => {
+      cursorBroadcastThrottle.current = null;
+    }, 50);
+    sharedStudioService.broadcastCursor(panelId, x, y);
+  }
+
+  // Register connection-status listener whenever a shared session is active
+  useEffect(() => {
+    if (!isSharedSession) return;
+    sharedStudioService.setConnectionStatusListener(setSharedStudioConnectionStatus);
+    return () => sharedStudioService.setConnectionStatusListener(() => {});
+  }, [isSharedSession]);
 
   // Broadcast project updates to teammates (1 second debounce)
   useEffect(() => {
@@ -748,11 +919,16 @@ export default function App() {
 
   // Listen for deep-link join events from electron main process
   useEffect(() => {
-    if (!window.electronAPI?.onJoinSharedProject) return;
-    const cleanup = window.electronAPI.onJoinSharedProject(({ projectId }: { projectId: string }) => {
-      if (!licenseService.isStudio()) return;
+    if (!window.electronAPI?.onSharedStudioJoin) return;
+    const cleanup = window.electronAPI.onSharedStudioJoin(({ projectId, supabaseUrl }: { projectId: string; supabaseUrl?: string }) => {
+      if (!licenseService.isStudio()) {
+        setCloudToast('This invite requires a Studio subscription to join');
+        setTimeout(() => setCloudToast(null), 5000);
+        return;
+      }
+      if (supabaseUrl) settingsService.save({ supabaseUrl });
       if (!sharedStudioService.isConfigured()) { setShowSettings(true); return; }
-      sharedStudioService.joinProject(projectId, handleSharedStudioEvent).then((ok) => {
+      sharedStudioService.joinProject(projectId, handleSharedStudioEvent, null).then((ok) => {
         if (ok) setIsSharedSession(true);
       });
     });
@@ -904,26 +1080,20 @@ export default function App() {
         motionPrompt = await ollamaService.refineMotionPrompt(motionDescription);
       }
 
-      // Try Kling cloud first (Pro + Fal.ai key + sufficient credits)
-      const useCloud = (licenseService.isPro() || licenseService.isStudio()) && licenseService.hasCredits(CREDIT_COSTS.motionClip);
+      const isProUser = licenseService.isPro() || licenseService.isStudio();
 
-      let base64Video: string | null = null;
+      let base64Video: string;
 
-      if (useCloud) {
+      if (isProUser) {
+        // Pro/Studio: Kling cloud only — no local Wan fallback
         setProgress({ panelId, status: 'animating', progress: 5, message: 'Sending to Kling…' });
         base64Video = await comfyUIService.animatePanelCloud(
           panel.generatedImageData,
           motionPrompt,
           (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
         );
-        if (!base64Video) {
-          setCloudToast('Cloud motion failed — trying local generation…');
-          setTimeout(() => setCloudToast(null), 4000);
-        }
-      }
-
-      if (!base64Video) {
-        // Fall back to local Wan I2V
+      } else {
+        // Community: local Wan I2V only
         setProgress({ panelId, status: 'animating', progress: 5, message: 'Generating motion clip...' });
         base64Video = await comfyUIService.animatePanel(
           panel.generatedImageData,
@@ -947,21 +1117,26 @@ export default function App() {
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Motion clip ready' });
       setTimeout(() => setProgress(null), 2000);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const isProUser = licenseService.isPro() || licenseService.isStudio();
+      if (isProUser) {
+        // Surface the real cloud error — no local fallback for Pro/Studio
+        setProgress({ panelId, status: 'error', progress: 0, message: 'Cloud animation failed', error: `${msg} Please try again.` });
+        return;
+      }
       if (error instanceof Error && error.message === 'WAN_MODEL_UNAVAILABLE') {
         setProgress({
           panelId,
           status: 'error',
           progress: 0,
           message: 'Motion generation unavailable',
-          error: 'Motion generation requires a powerful GPU (24GB+ VRAM). Pro users can use Kling cloud motion instead.',
-          errorLink: (licenseService.isPro() || licenseService.isStudio()) ? undefined : { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
+          error: 'Motion generation requires a powerful GPU (24GB+ VRAM).',
+          errorLink: { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
         });
         return;
       }
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      // Community users should never see technical Wan/ComfyUI errors — show upgrade prompt instead
-      const isProUser = licenseService.isPro() || licenseService.isStudio();
-      if (!isProUser && msg.includes('Wan 2.2')) {
+      // Community user — hide technical Wan errors behind an upgrade prompt
+      if (msg.includes('Wan 2.2')) {
         setProgress({
           panelId,
           status: 'error',
@@ -978,6 +1153,14 @@ export default function App() {
 
   function handleClearMotion(panelId: string) {
     updatePanel(panelId, { motionClipData: null, motionClipPath: null, motionDescription: '' });
+  }
+
+  async function handleRemoveVoice(panelId: string) {
+    const panel = project.panels.find((p) => p.id === panelId);
+    if (panel?.voicePath) {
+      await window.electronAPI?.deleteFile?.(panel.voicePath).catch(() => {});
+    }
+    updatePanel(panelId, { voicePath: null, voiceCharacterId: null });
   }
 
   async function handleGeneratePoseAnimation(params: {
@@ -1100,8 +1283,12 @@ export default function App() {
     setShowVideoTransfer(false);
   }
 
-  function handleVoiceComplete(wavPath: string, characterId: string | null) {
+  async function handleVoiceComplete(wavPath: string, characterId: string | null) {
     if (!activePanelId) return;
+    const panel = project.panels.find((p) => p.id === activePanelId);
+    if (panel?.voicePath && panel.voicePath !== wavPath) {
+      await window.electronAPI?.deleteFile?.(panel.voicePath).catch(() => {});
+    }
     updatePanel(activePanelId, {
       voicePath: wavPath,
       voiceCharacterId: characterId,
@@ -1160,6 +1347,26 @@ export default function App() {
     if (result.canceled || !result.filePath) return;
     const b64 = activePanel.generatedImageData.replace(/^data:image\/[^;]+;base64,/, '');
     await window.electronAPI.saveImage(b64, result.filePath);
+  }
+
+  async function handleExportPanelWithVoice() {
+    if (!activePanel?.imagePath || !activePanel?.voicePath || !window.electronAPI) return;
+    const padded = (activePanel.order + 1).toString().padStart(2, '0');
+    const result = await window.electronAPI.showSaveDialog({
+      title: 'Export Panel with Voice',
+      defaultPath: `panel_${padded}_with_voice.mp4`,
+      filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+    });
+    if (result.canceled || !result.filePath) return;
+    const exportResult = await (window.electronAPI as any).exportPanelWithVoice({
+      imagePath: activePanel.imagePath,
+      voicePath: activePanel.voicePath,
+      outputPath: result.filePath,
+    });
+    if (!exportResult?.success) {
+      setExportError(exportResult?.error ?? 'Export with voice failed');
+      setTimeout(() => setExportError(null), 5000);
+    }
   }
 
   async function handleExportPDF() {
@@ -1229,12 +1436,15 @@ export default function App() {
         hasMotionClips={hasMotionClips}
         isSharedSession={isSharedSession}
         onStartSharedSession={startSharedSession}
+        onCopyInviteLink={handleCopyInviteLink}
+        sharedStudioConfigured={sharedStudioService.isConfigured()}
       />
 
       {isSharedSession && (
         <SharedStudioPanel
           projectId={project.id}
           users={sessionUsers}
+          connectionStatus={sharedStudioConnectionStatus}
           onInvite={() => setShowShareModal(true)}
           onLeave={handleLeaveSharedSession}
         />
@@ -1244,6 +1454,17 @@ export default function App() {
         <ShareProjectModal
           projectId={project.id}
           onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {showSharedStudioOnboarding && (
+        <SharedStudioOnboarding
+          onClose={() => setShowSharedStudioOnboarding(false)}
+          onConfigured={async () => {
+            setShowSharedStudioOnboarding(false);
+            const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent, project);
+            if (joined) setIsSharedSession(true);
+          }}
         />
       )}
 
@@ -1263,6 +1484,20 @@ export default function App() {
           onApply={(style) => setProject((prev) => ({ ...prev, style, updatedAt: Date.now() }))}
           onApplyAspectRatio={(id) => setProject((prev) => ({ ...prev, aspectRatioId: id, updatedAt: Date.now() }))}
           onClose={() => setShowStylePicker(false)}
+          isStudio={licenseService.isStudio()}
+          onOpenLoraTrainer={() => { setShowStylePicker(false); setShowLoraTrainer(true); }}
+          customStylesKey={customStylesLoaded}
+        />
+      )}
+
+      {showLoraTrainer && licenseService.isStudio() && (
+        <LoRATrainer
+          onClose={() => setShowLoraTrainer(false)}
+          onStyleCreated={(style) => {
+            customStyleService.updateCustomStyleStatus(style.id, style);
+            setCustomStylesLoaded(prev => !prev);
+          }}
+          isStudio={licenseService.isStudio()}
         />
       )}
 
@@ -1289,7 +1524,7 @@ export default function App() {
               <div className="min-w-0">
                 <div className="text-[11px] text-gray-400 truncate">
                   {activePanel?.styleProfileId
-                    ? getStyleById(activePanel.styleProfileId).name
+                    ? (customStyleService.getStyleById(activePanel.styleProfileId)?.name ?? project.style.name)
                     : project.style.name}
                 </div>
                 <div className="text-[10px] text-gray-600">
@@ -1413,24 +1648,32 @@ export default function App() {
             onUndoEdit={handleUndoEdit}
             onAnimatePanel={handleAnimatePanel}
             onClearMotion={handleClearMotion}
+            onRemoveVoice={handleRemoveVoice}
             onRestoreRevision={handleRestoreRevision}
             onOpenPoseEditor={() => setShowPoseEditor(true)}
             onOpenMotionLibrary={() => setShowMotionLibrary(true)}
             onOpenVideoTransfer={() => setShowVideoTransfer(true)}
-            onOpenVoiceStudio={() => setShowVoiceStudio(true)}
+            onOpenVoiceStudio={() => {
+              if (activePanelId && isPanelGenerating(activePanelId)) return;
+              setShowVoiceStudio(true);
+            }}
             onClearError={() => setProgress(null)}
+            onCancelAnimate={() => { (window as any).electronAPI?.cancelFalKling?.(); setProgress(null); }}
+            onCancelInpaint={() => { (window as any).electronAPI?.interruptComfyUI?.(); setProgress(null); }}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}
             isPro={licenseService.isPro() || licenseService.isStudio()}
             tierAccent={tierAccent}
+            onCursorMove={isSharedSession ? handleCursorMove : undefined}
+            collaboratorCursors={isSharedSession ? collaboratorCursors : undefined}
           />
           <ShotInput
             value={shotInput}
             onChange={setShotInput}
             onGenerate={handleGenerate}
             onOptionsChange={setShotConstraints}
-            isGenerating={isGenerating}
+            isGenerating={activePanelId ? isPanelGenerating(activePanelId) : false}
             serviceStatus={serviceStatus}
             disabled={false}
             estimatedSeconds={(licenseService.isPro() || licenseService.isStudio()) ? null : estimatedGenerationSeconds}
@@ -1449,7 +1692,9 @@ export default function App() {
             onGenerate={handleRegenerate}
             onRegenerate={handleRegenerate}
             onExportPanel={handleExportPanel}
-            isGenerating={isGenerating}
+            onExportPanelWithVoice={activePanel?.voicePath && activePanel?.imagePath ? handleExportPanelWithVoice : undefined}
+            isGenerating={activePanelId ? isPanelGenerating(activePanelId) : false}
+            activeStyleProfile={project.style}
           />
         </div>
       </div>
@@ -1493,10 +1738,13 @@ export default function App() {
           panel={activePanel}
           characters={project.characters}
           isPro={licenseService.isPro() || licenseService.isStudio()}
+          isVoiceGenerating={isVoiceGenerating(activePanel.id)}
           onComplete={handleVoiceComplete}
           onLipSyncComplete={handleLipSyncComplete}
           onOpenSettings={() => { setShowVoiceStudio(false); setShowSettings(true); }}
           onClose={() => setShowVoiceStudio(false)}
+          onVoiceGenerationStart={(panelId) => setVoiceGenerating(panelId, 'generating')}
+          onVoiceGenerationEnd={(panelId) => setVoiceGenerating(panelId, 'idle')}
         />
       )}
 

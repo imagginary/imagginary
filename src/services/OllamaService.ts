@@ -110,7 +110,7 @@ export class OllamaService {
 
   /** Returns the model to use: user setting → discovered installed model → hardcoded default. */
   private getModel(): string {
-    return settingsService.getKey('ollamaModel') || this.availableModel || 'qwen2.5:14b';
+    return settingsService.getKey('ollamaModel') || this.availableModel || 'qwen2.5:3b';
   }
 
   async checkConnection(): Promise<boolean> {
@@ -159,12 +159,12 @@ export class OllamaService {
       if (!response.ok) return;
       const data = await response.json() as { models: Array<{ name: string }> };
       const installed = data.models?.map((m) => m.name) ?? [];
-      // Exact match only — prefix matching caused qwen2.5:7b to satisfy qwen2.5:14b
-      // User preference is checked first, then qwen2.5:14b default, then fallbacks
+      // Exact match only — prefix matching caused qwen2.5:7b to satisfy qwen2.5:3b
+      // User preference is checked first, then qwen2.5:3b default, then fallbacks
       const userPref = settingsService.getKey('ollamaModel');
       const priorityList = userPref
-        ? [userPref, 'qwen2.5:14b', ...FALLBACK_MODELS]
-        : ['qwen2.5:14b', ...FALLBACK_MODELS];
+        ? [userPref, 'qwen2.5:3b', ...FALLBACK_MODELS]
+        : ['qwen2.5:3b', ...FALLBACK_MODELS];
       const found = installed.find((name) => priorityList.includes(name)) ?? null;
       this.availableModel = found;
       console.log('[OllamaService] Installed models:', installed.join(', ') || '(none)');

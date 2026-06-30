@@ -151,10 +151,18 @@ export interface StyleProfile {
   name: string;
   description: string;
   loraName: string | null;
+  loraStrength?: number;          // 0.5-1.5, defaults to 1.0
   promptSuffix: string;
   negativePrompt: string;   // '' for community styles, style-specific terms for pro
   tier: 'community' | 'pro' | 'studio';
   previewImageUrl: string | null; // null until Phase 8 Pro preview images are added
+  // Training metadata — only present on custom trained styles
+  isCustom?: boolean;
+  trainingStatus?: 'pending' | 'training' | 'complete' | 'failed';
+  trainingJobId?: string;
+  trainedAt?: number;
+  trainingImageCount?: number;
+  loraPath?: string;              // absolute path to .safetensors in userData/loras/
 }
 
 export interface Project {
@@ -240,8 +248,6 @@ export interface AppSettings {
   // Phase 9 — Turntable 3D model picker
   turntable3dProvider: '3daistudio';
   threeDaiApiKey: string;
-  // Phase 9 — Character consistency (cloud IPAdapter)
-  falApiKey: string;
   // Phase 13 — Shared Studio (Supabase)
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -250,14 +256,13 @@ export interface AppSettings {
   // Advanced — custom service URLs (leave blank for defaults)
   ollamaUrl: string;
   comfyuiUrl: string;
-  // Advanced — Ollama model override (empty = use default qwen2.5:14b)
+  // Advanced — Ollama model override (empty = use default qwen2.5:3b)
   ollamaModel: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   turntable3dProvider: '3daistudio',
   threeDaiApiKey: '',
-  falApiKey: '',
   supabaseUrl: '',
   supabaseAnonKey: '',
   activeCheckpoint: '',

@@ -1,8 +1,9 @@
 import React from 'react';
-import { RefreshCw, Download, Zap } from 'lucide-react';
-import { Panel, Character, StructuredPrompt } from '../types';
+import { RefreshCw, Download, Zap, Mic } from 'lucide-react';
+import { Panel, Character, StructuredPrompt, StyleProfile } from '../types';
 import { FILM_DICTIONARY } from '../data/FilmLanguageDictionary';
 import { ASPECT_RATIOS, DEFAULT_ASPECT_RATIO_ID, getAspectRatio } from '../data/AspectRatios';
+import { licenseService } from '../services/LicenseService';
 
 interface RightSidebarProps {
   panel: Panel | null;
@@ -13,7 +14,9 @@ interface RightSidebarProps {
   onGenerate: () => void;
   onRegenerate: () => void;
   onExportPanel: () => void;
+  onExportPanelWithVoice?: () => void;
   isGenerating: boolean;
+  activeStyleProfile?: StyleProfile | null;
 }
 
 // Options sourced from FILM_DICTIONARY — single source of truth
@@ -70,7 +73,9 @@ export default function RightSidebar({
   onGenerate,
   onRegenerate,
   onExportPanel,
+  onExportPanelWithVoice,
   isGenerating,
+  activeStyleProfile,
 }: RightSidebarProps) {
   if (!panel) {
     return (
@@ -183,7 +188,7 @@ export default function RightSidebar({
           <option value="">
             Project default ({getAspectRatio(projectAspectRatioId ?? DEFAULT_ASPECT_RATIO_ID).label})
           </option>
-          {ASPECT_RATIOS.map((r) => (
+          {ASPECT_RATIOS.filter(r => !r.studioOnly || licenseService.isStudio()).map((r) => (
             <option key={r.id} value={r.id}>
               {r.label} — {r.description.split('—')[0].trim()}
             </option>
@@ -232,6 +237,14 @@ export default function RightSidebar({
         </Section>
       )}
 
+      {/* Custom style cloud notice */}
+      {activeStyleProfile?.isCustom && (licenseService.isPro() || licenseService.isStudio()) && (
+        <p className="text-xs text-amber-400/70 px-3 pb-1">
+          ✦ Custom styles use local generation for full LoRA quality.
+          Cloud generation uses trigger word only.
+        </p>
+      )}
+
       {/* Actions */}
       <div className="px-3 space-y-2">
         <button
@@ -258,6 +271,15 @@ export default function RightSidebar({
           <Download className="w-3.5 h-3.5" />
           Export Panel
         </button>
+        {onExportPanelWithVoice && (
+          <button
+            onClick={onExportPanelWithVoice}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-gray-800 hover:bg-gray-700 text-emerald-400 text-xs rounded transition-colors"
+          >
+            <Mic className="w-3.5 h-3.5" />
+            Export with Voice
+          </button>
+        )}
       </div>
     </div>
   );

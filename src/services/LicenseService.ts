@@ -17,6 +17,7 @@ export const CREDIT_COSTS = {
   motionClip:     14,
   lipSync:        16,
   turntable:       2,
+  loraTraining:   50,
 };
 
 // In-memory cache of the balance — kept in sync after every async mutation.
@@ -137,11 +138,12 @@ class LicenseService {
     const result = await (window as any).electronAPI.spendCredits(cost);
     if (result?.success) {
       // Mirror the main-process spend logic to keep the cache accurate:
-      // topUp is spent first, then subscription.
-      const newTopUp = Math.max(0, this._cache.topUpCredits - cost);
-      const newSub = (result.remaining as number) - newTopUp;
+      // subscription is spent first (expires monthly), top-up preserved longest.
+      const newSub = Math.max(0, this._cache.subscriptionCredits - cost);
+      const remainder = cost - (this._cache.subscriptionCredits - newSub);
+      const newTopUp = Math.max(0, this._cache.topUpCredits - remainder);
       this._cache = {
-        subscriptionCredits: Math.max(0, newSub),
+        subscriptionCredits: newSub,
         topUpCredits:        newTopUp,
         lastCreditedAt:      this._cache.lastCreditedAt,
       };
@@ -182,7 +184,16 @@ class LicenseService {
           lastValidatedAt: Date.now(),
           lastCreditedAt: Date.now(),
         };
-        await this.initBalance();
+        // Only grant the initial allocation on first-ever activation.
+        // On reactivation, preserve existing credits and only check if a
+        // monthly refresh is due — prevents the deactivate→reactivate exploit.
+        // NOTE: a determined user can wipe electron-store to reset lastCreditedAt;
+        // a server-side credit ledger would be needed to fully close that gap (v2).
+        if (this._cache.lastCreditedAt === 0) {
+          await this.initBalance();
+        } else {
+          await this.checkAndAddMonthlyCredits();
+        }
         console.log('[LicenseService] validate complete — this.license.tier:', this.license?.tier, '— isPro:', this.isPro());
       }
       return result;
@@ -192,9 +203,9 @@ class LicenseService {
   }
 
   async deactivate(): Promise<void> {
+    // Credits persist — they represent value tied to the key, not the activation state.
+    // Zeroing them here would let the user deactivate → reactivate to farm fresh credits.
     this.license = null;
-    await (window as any).electronAPI.resetCredits();
-    this._cache = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt: 0 };
     await (window as any).electronAPI.clearLicense();
   }
 

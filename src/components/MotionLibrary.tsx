@@ -294,6 +294,13 @@ export default function MotionLibrary({
     }, 600);
   }
 
+  function handleClose() {
+    if (isApplying) {
+      (window as any).electronAPI?.cancelFalKling?.();
+    }
+    onClose();
+  }
+
   async function handleApply() {
     if (!isPro) return;
     const needsComfyUI = !(licenseService.isPro() || licenseService.isStudio());
@@ -349,7 +356,9 @@ export default function MotionLibrary({
 
   const expandedPreview = selectedPoseSeq.length > 0 ? expandSequence(selectedPoseSeq, 4) : [];
   const currentFrame = expandedPreview[previewFrame % Math.max(1, expandedPreview.length)];
-  const canApply = isPro && !!selectedClip && !!panel.generatedImageData && comfyuiConnected && !isApplying;
+  // Pro/Studio always use Kling cloud — comfyuiConnected only required for Community users
+  const canApply = isPro && !!selectedClip && !!panel.generatedImageData && !isApplying
+    && (licenseService.isPro() || licenseService.isStudio() || comfyuiConnected);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -360,16 +369,16 @@ export default function MotionLibrary({
           <Film className="w-4 h-4 text-violet-400" />
           <h2 className="text-sm font-semibold text-gray-200">Motion Library</h2>
           <span className="text-[10px] text-gray-600 font-mono">
-            {clips.length} clips{!comfyuiConnected && ' · GPU needed to apply'}
+            {clips.length} clips{!comfyuiConnected && !(licenseService.isPro() || licenseService.isStudio()) && ' · GPU needed to apply'}
           </span>
-          {!comfyuiConnected && (
+          {!comfyuiConnected && !(licenseService.isPro() || licenseService.isStudio()) && (
             <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-950/50 border border-yellow-700/40 rounded text-[10px] text-yellow-400">
               <AlertCircle className="w-3 h-3" />
               ControlNet + GPU required to apply clips
             </div>
           )}
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="ml-auto p-1.5 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
           >
             <X className="w-4 h-4" />

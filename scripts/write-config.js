@@ -17,6 +17,8 @@ const cfg = {
   DEEPSEEK_API_KEY:                process.env.DEEPSEEK_API_KEY                || '',
   FAL_API_KEY:                     process.env.FAL_API_KEY                     || '',
   SYNCSO_API_KEY:                  process.env.SYNCSO_API_KEY                  || '',
+  CARTESIA_API_KEY:                process.env.CARTESIA_API_KEY                || '',
+  ELEVENLABS_API_KEY:              process.env.ELEVENLABS_API_KEY              || '',
   UMAMI_WEBSITE_ID:                process.env.UMAMI_WEBSITE_ID                || '',
   DODO_API_KEY:                    process.env.DODO_API_KEY                    || '',
   DODO_API_BASE:                   process.env.DODO_API_BASE                   || 'https://live.dodopayments.com',
