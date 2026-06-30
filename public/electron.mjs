@@ -2767,9 +2767,29 @@ function getLicensePath() {
   return path.join(app.getPath('userData'), 'imagginary-license.json');
 }
 
-const LICENSE_HMAC_SECRET = _cfg('LICENSE_HMAC_SECRET') || 'dev-fallback-secret-change-in-prod';
+// In packaged builds the real secret is baked in by scripts/write-config.js from
+// the LICENSE_HMAC_SECRET CI secret.  In local dev we allow a clearly-labelled
+// insecure placeholder so development doesn't require the production secret.
+// An empty string (e.g. CI secret missing from a misconfigured run) is treated
+// identically to absent — never fall back silently to a forgeable string.
+const _rawHmacSecret = _cfg('LICENSE_HMAC_SECRET');
+const LICENSE_HMAC_SECRET = (_rawHmacSecret && _rawHmacSecret.length > 0)
+  ? _rawHmacSecret
+  : (app.isPackaged ? null : 'LOCAL_DEV_ONLY_INSECURE_SECRET');
+
+if (!LICENSE_HMAC_SECRET && app.isPackaged) {
+  console.error('[FATAL] LICENSE_HMAC_SECRET is not configured in a packaged build — license signing cannot proceed securely.');
+  dialog.showErrorBox(
+    'Configuration Error',
+    'Imagginary could not start due to a missing security configuration.\nPlease reinstall the app or contact support@imagginary.com.'
+  );
+  app.quit();
+}
 
 function signLicense(obj) {
+  if (!LICENSE_HMAC_SECRET) {
+    throw new Error('License signing unavailable — security configuration missing');
+  }
   const { _sig: _removed, ...payload } = obj;
   const body = JSON.stringify(payload);
   const sig = createHmac('sha256', LICENSE_HMAC_SECRET).update(body).digest('hex');
@@ -2777,6 +2797,7 @@ function signLicense(obj) {
 }
 
 function verifyLicense(obj) {
+  if (!LICENSE_HMAC_SECRET) return false; // fail closed — never fail open
   if (!obj || typeof obj !== 'object') return false;
   const { _sig: sig, ...payload } = obj;
   if (!sig) return false;

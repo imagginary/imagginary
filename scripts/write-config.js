@@ -32,6 +32,13 @@ const cfg = {
   DODO_CUSTOMER_PORTAL_URL:        process.env.DODO_CUSTOMER_PORTAL_URL        || 'https://customer.dodopayments.com',
 };
 
+// LICENSE_HMAC_SECRET is security-critical — abort the build if it's absent
+// so we never ship a package where license forgery is trivially possible.
+if (!cfg.LICENSE_HMAC_SECRET && process.env.CI) {
+  console.error('[write-config] FATAL: LICENSE_HMAC_SECRET is not set. Refusing to produce a packaged build without it.');
+  process.exit(1);
+}
+
 const outPath = path.join(__dirname, '..', 'resources', 'config.json');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(cfg, null, 2), 'utf8');
