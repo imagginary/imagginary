@@ -58,7 +58,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
 
   // Register upload-progress IPC listener for the training phase
   useEffect(() => {
-    const api = (window as any).electronAPI;
+    const api = window.electronAPI;
     if (!api?.onLoraUploadProgress) return;
     const cleanup = api.onLoraUploadProgress((data: { pct: number; current: number; total: number }) => {
       setUploadProgress(data.pct);
@@ -111,13 +111,13 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       // 1. Upload images
       setTrainingMessage('Uploading reference images…');
       const imagePaths = selectedImages.map((img) => img.path);
-      const uploadResult = await (window as any).electronAPI.uploadTrainingImages({ imagePaths });
+      const uploadResult = await window.electronAPI!.uploadTrainingImages({ imagePaths });
       if (!uploadResult.success) throw new Error(uploadResult.error);
       const uploadedUrls: string[] = uploadResult.urls ?? [];
 
       // 2. Submit training job
       setTrainingMessage('Submitting training job to Fal.ai…');
-      const trainingResult = await (window as any).electronAPI.startLoraTraining({
+      const trainingResult = await window.electronAPI!.startLoraTraining({
         imageUrls: uploadResult.urls,
         styleName,
         triggerWord,
@@ -153,7 +153,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       for (let i = 0; i < 80; i++) {
         await new Promise<void>((r) => setTimeout(r, 15_000));
 
-        const statusResult = await (window as any).electronAPI.pollLoraTraining({ requestId });
+        const statusResult = await window.electronAPI!.pollLoraTraining({ requestId });
         if (!statusResult.success) throw new Error(statusResult.error);
 
         const elapsed = Math.round((i + 1) * 15 / 60);
@@ -175,7 +175,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       setTrainingMessage('Downloading trained LoRA…');
       setTrainingProgress(92);
       const loraName = `${triggerWord.toLowerCase()}_lora`;
-      const installResult = await (window as any).electronAPI.installLora({ loraUrl, loraName });
+      const installResult = await window.electronAPI!.installLora({ loraUrl, loraName });
       if (!installResult.success) throw new Error(installResult.error);
 
       // 5. Invalidate ComfyUI LoRA cache so next generation picks up the new file
@@ -198,7 +198,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       setStep('complete');
 
       // Best-effort cleanup of uploaded training images from Fal.ai storage (fire-and-forget)
-      (window as any).electronAPI?.cleanupTrainingUploads?.({ imageUrls: uploadedUrls }).catch(() => {});
+      window.electronAPI?.cleanupTrainingUploads?.({ imageUrls: uploadedUrls }).catch(() => {});
     } catch (err: any) {
       setTrainingError(err?.message ?? 'Unknown error');
       setTrainingMessage('Training failed');

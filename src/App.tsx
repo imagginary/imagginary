@@ -113,21 +113,139 @@ function createEmptyPanel(order: number): Panel {
 }
 
 interface ElectronAPI {
+  // Project persistence
   saveProject: (data: unknown, filePath: string) => Promise<{ success: boolean; error?: string }>;
   loadProject: (filePath: string) => Promise<{ success: boolean; data?: Project; error?: string }>;
   showSaveDialog: (opts: object) => Promise<{ canceled: boolean; filePath?: string }>;
   showOpenDialog: (opts: object) => Promise<{ canceled: boolean; filePaths?: string[] }>;
+  showExportDialog: (opts: object) => Promise<{ canceled: boolean; filePath?: string }>;
+
+  // Image / video
   saveImage: (base64: string, fileName: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  readImage: (filePath: string) => Promise<{ success: boolean; base64?: string; error?: string }>;
   saveVideo: (base64: string, fileName: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
-  getAppDataPath: () => Promise<string>;
-  openFolder: (path: string) => void;
+
+  // Production Pack exports
   exportPDF: (base64Data: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
   exportFCPXML: (xmlString: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
+
+  // Animatic export
+  exportAnimatic: (panelList: unknown[], outputPath: string) => Promise<{ success: boolean; error?: string }>;
+  onAnimaticProgress: (cb: (percent: number) => void) => () => void;
+
+  // Motion Comic export
+  exportMotionComic: (payload: unknown) => Promise<{ success: boolean; error?: string }>;
+  onMotionComicProgress: (cb: (pct: number) => void) => () => void;
+
+  // Pose Engine / ControlNet
+  onPoseAnimationProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+  checkControlnetOpenpose: () => Promise<{ installed: boolean }>;
+  downloadControlnetOpenpose: () => Promise<{ success: boolean; error?: string }>;
+  onControlnetDownloadProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+
+  // ComfyUI
+  deleteComfyInputFile: (filename: string) => Promise<{ success: boolean; error?: string }>;
+  interruptComfyUI: () => Promise<{ success: boolean; error?: string }>;
+
+  // App info
+  getAppDataPath: () => Promise<string>;
+  openFolder: (path: string) => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
+
+  // Bundled engine / model downloads
+  getServiceLaunchStatus: () => Promise<{ autoStartAttempted: boolean; ollama: boolean; comfyui: boolean; modelPresent: boolean }>;
   downloadModels: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
   onDownloadModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
   downloadProModel: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
   onProModelProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
+  downloadAbsoluteReality: () => Promise<{ success: boolean; cached?: boolean; error?: string }>;
+  onAbsoluteRealityProgress: (cb: (data: { pct: number; downloaded: number; total: number }) => void) => () => void;
+
+  // Service health checks
+  checkOllama: () => Promise<{ ok: boolean }>;
+  checkComfyUI: () => Promise<{ ok: boolean }>;
+  getComfyUIProxyPort: () => Promise<number>;
+
+  // System info
+  getSystemMemory: () => Promise<{ totalMem: number; freeMem: number }>;
+
+  // Motion Library
+  getMotionLibraryIndex: () => Promise<{ success: boolean; clips?: unknown[]; error?: string }>;
+  getMotionClipSequence: (clipId: string) => Promise<{ success: boolean; sequence?: unknown; error?: string }>;
+  applyMotionClip: (params: unknown) => Promise<{ success: boolean; error?: string }>;
+  extractVideoPose: (videoPath: string) => Promise<{ success: boolean; error?: string }>;
+  onMotionClipProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+
+  // Video Transfer
+  validateTransferVideo: (filePath: string) => Promise<{ success: boolean; duration?: number; frameCount?: number; error?: string }>;
+  extractTransferPoses: (filePath: string) => Promise<{ success: boolean; sequence?: unknown; sequencePath?: string; tempDir?: string; frameCount?: number; duration?: number; usedSynthetic?: boolean; error?: string }>;
+  cleanupTransferFrames: (tempDir: string) => Promise<{ success: boolean; error?: string }>;
+  onTransferPoseProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+
+  // Credits
+  getCredits: () => Promise<{ subscriptionCredits: number; topUpCredits: number }>;
+  spendCredits: (cost: number) => Promise<{ success: boolean; error?: string }>;
+  setCredits: (bal: number) => Promise<{ success: boolean }>;
+  resetCredits: () => Promise<{ success: boolean }>;
+
+  // License / Dodo Payments
+  validateLicense: (key: string) => Promise<{ success: boolean; tier?: string; error?: string }>;
+  getLicense: () => Promise<{ tier: string; key?: string } | null>;
+  saveLicense: (license: unknown) => Promise<{ success: boolean }>;
+  clearLicense: () => Promise<{ success: boolean }>;
+  openCheckout: (tier: string) => Promise<void>;
+  openCustomerPortal: () => Promise<void>;
+  validateTopup: (code: string) => Promise<{ success: boolean; credits?: number; error?: string }>;
+  openTopupCheckout: (pack: string) => Promise<void>;
+
+  // Voice Layer
+  checkCoquiTTS: () => Promise<{ installed: boolean }>;
+  getVoiceLibrary: () => Promise<{ success: boolean; voices?: unknown[]; error?: string }>;
+  getVoiceSample: (voiceId: string) => Promise<{ success: boolean; audioBase64?: string; error?: string }>;
+  generateVoice: (params: { text: string; voiceId: string; speed?: number }) => Promise<{ success: boolean; audioPath?: string; error?: string }>;
+  installCoquiTTS: () => Promise<{ success: boolean; error?: string }>;
+  cloneVoice: (params: { audioPath: string; voiceName: string }) => Promise<{ success: boolean; voiceId?: string; error?: string }>;
+  generateClonedVoice: (params: { text: string; voiceId: string; provider: string }) => Promise<{ success: boolean; audioPath?: string; error?: string }>;
+  checkVoiceCloneProviders: () => Promise<{ cartesia: boolean; elevenlabs: boolean; preferred: string | null }>;
+  saveElevenLabsKey: (params: { key: string }) => Promise<{ success: boolean }>;
+  getCustomVoices: () => Promise<{ success: boolean; voices?: unknown[] }>;
+  saveCustomVoice: (params: unknown) => Promise<{ success: boolean; error?: string }>;
+  deleteCustomVoice: (params: { voiceId: string }) => Promise<{ success: boolean; error?: string }>;
+  getEdgeTtsVoices: () => Promise<{ success: boolean; voices?: unknown[]; error?: string }>;
+  previewVoice: (params: { voiceId: string; text?: string }) => Promise<{ success: boolean; audioBase64?: string; error?: string }>;
+  readFileAsBase64: (filePath: string) => Promise<{ success: boolean; base64?: string; error?: string }>;
+  deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  exportPanelWithVoice: (params: unknown) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   onJoinSharedProject: (cb: (data: { projectId: string }) => void) => () => void;
+  onSharedStudioJoin: (cb: (data: { projectId: string; supabaseUrl?: string }) => void) => () => void;
+  onVoiceProgress: (cb: (pct: number) => void) => () => void;
+  onInstallProgress: (cb: (msg: string) => void) => () => void;
+
+  // Cloud API proxy
+  falFluxSchnell: (params: unknown) => Promise<unknown>;
+  falIPAdapter: (params: unknown) => Promise<unknown>;
+  falFluxFill: (params: unknown) => Promise<unknown>;
+  falKling: (params: unknown) => Promise<unknown>;
+  cancelFalKling: () => void;
+  syncsoLipSync: (params: unknown) => Promise<unknown>;
+  deepSeekShot: (params: unknown) => Promise<unknown>;
+  deepSeekScreenplay: (params: unknown) => Promise<unknown>;
+  onCloudProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+
+  // Brand LoRA Training
+  uploadTrainingImages: (params: { imagePaths: string[] }) => Promise<{ success: boolean; urls?: string[]; error?: string }>;
+  startLoraTraining: (params: { imageUrls: string[]; styleName: string; triggerWord: string }) => Promise<{ success: boolean; requestId?: string; error?: string }>;
+  pollLoraTraining: (params: { requestId: string }) => Promise<{ success: boolean; status?: string; loraPath?: string; error?: string }>;
+  installLora: (params: { loraPath: string; styleName: string }) => Promise<{ success: boolean; error?: string }>;
+  getCustomStyles: () => Promise<{ success: boolean; styles?: unknown[] }>;
+  saveCustomStyle: (params: unknown) => Promise<{ success: boolean; error?: string }>;
+  deleteCustomStyle: (params: { styleId: string }) => Promise<{ success: boolean; error?: string }>;
+  cleanupTrainingUploads: (params: unknown) => Promise<{ success: boolean; error?: string }>;
+  onLoraUploadProgress: (cb: (data: { current: number; total: number; pct: number }) => void) => () => void;
+  onLoraInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+
+  // Platform
+  platform: string;
 }
 
 declare global {
@@ -274,11 +392,11 @@ export default function App() {
     for (let i = 0; i < 80; i++) {
       await new Promise<void>(r => setTimeout(r, 15000));
       try {
-        const result = await (window as any).electronAPI?.pollLoraTraining?.({ requestId: style.trainingJobId });
+        const result = await window.electronAPI?.pollLoraTraining?.({ requestId: style.trainingJobId });
         if (!result.success) continue;
 
         if (result.status === 'COMPLETED') {
-          const installResult = await (window as any).electronAPI.installLora({
+          const installResult = await window.electronAPI!.installLora({
             loraUrl: result.loraUrl,
             loraName: style.loraName,
           });
@@ -311,7 +429,7 @@ export default function App() {
 
   // ── Hardware speed estimate (for slow-machine hint in ShotInput) ──────────────
   useEffect(() => {
-    (window as any).electronAPI?.getSystemMemory?.().then((info: any) => {
+    window.electronAPI?.getSystemMemory?.().then((info) => {
       if (info.speedCategory === 'slow') {
         const estimate = info.isAppleSilicon
           ? info.totalGB >= 8 ? 180 : 300
@@ -635,9 +753,9 @@ export default function App() {
           error.message.includes('timed out') ||
           error.message.includes('Ollama'));
 
-      if (isOllamaError && (window as any).electronAPI?.getSystemMemory) {
+      if (isOllamaError && window.electronAPI?.getSystemMemory) {
         try {
-          const { freeMem } = await (window as any).electronAPI.getSystemMemory() as { totalMem: number; freeMem: number };
+          const { freeMem } = await window.electronAPI.getSystemMemory();
           const freeMB = Math.round(freeMem / (1024 * 1024));
           if (freeMem < 1.5 * 1024 * 1024 * 1024) {
             setProgress({
@@ -1385,7 +1503,7 @@ export default function App() {
       filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
     });
     if (result.canceled || !result.filePath) return;
-    const exportResult = await (window.electronAPI as any).exportPanelWithVoice({
+    const exportResult = await window.electronAPI.exportPanelWithVoice({
       imagePath: activePanel.generatedImagePath,
       voicePath: activePanel.voicePath,
       outputPath: result.filePath,
@@ -1685,8 +1803,8 @@ export default function App() {
               setShowVoiceStudio(true);
             }}
             onClearError={() => setProgress(null)}
-            onCancelAnimate={() => { (window as any).electronAPI?.cancelFalKling?.(); setProgress(null); }}
-            onCancelInpaint={() => { (window as any).electronAPI?.interruptComfyUI?.(); setProgress(null); }}
+            onCancelAnimate={() => { window.electronAPI?.cancelFalKling?.(); setProgress(null); }}
+            onCancelInpaint={() => { window.electronAPI?.interruptComfyUI?.(); setProgress(null); }}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}

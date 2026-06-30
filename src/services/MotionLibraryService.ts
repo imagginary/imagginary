@@ -48,8 +48,8 @@ class MotionLibraryService {
 
   async getComfyBaseUrl(): Promise<string> {
     if (this.comfyBaseUrl) return this.comfyBaseUrl;
-    if ((window as any).electronAPI?.getComfyUIProxyPort) {
-      const port = await (window as any).electronAPI.getComfyUIProxyPort();
+    if (window.electronAPI?.getComfyUIProxyPort) {
+      const port = await window.electronAPI!.getComfyUIProxyPort();
       if (port) {
         this.comfyBaseUrl = `http://127.0.0.1:${port}`;
         return this.comfyBaseUrl;
@@ -81,7 +81,7 @@ class MotionLibraryService {
     // Merge with any full library clips loaded via IPC
     let fullLibraryClips: MotionClip[] = [];
     try {
-      const result = await (window as any).electronAPI?.getMotionLibraryIndex?.();
+      const result = await window.electronAPI?.getMotionLibraryIndex?.();
       if (result?.success && Array.isArray(result.clips)) {
         fullLibraryClips = result.clips.filter(
           (c: MotionClip) => !starterClips.find((s) => s.id === c.id)
@@ -177,7 +177,7 @@ class MotionLibraryService {
 
     // Try full library via IPC
     try {
-      const result = await (window as any).electronAPI?.getMotionClipSequence?.(clipId);
+      const result = await window.electronAPI?.getMotionClipSequence?.(clipId);
       if (result?.success && Array.isArray(result.sequence)) {
         this.poseCache.set(clipId, result.sequence);
         return result.sequence;
@@ -226,7 +226,7 @@ class MotionLibraryService {
   async uploadReferenceVideo(
     videoPath: string
   ): Promise<MotionClip & { poseSequence: PoseKeyframe[] }> {
-    const result = await (window as any).electronAPI?.extractVideoPose?.(videoPath);
+    const result = await window.electronAPI?.extractVideoPose?.(videoPath);
     if (!result?.success) {
       throw new Error(result?.error ?? 'Failed to extract pose from video');
     }
@@ -257,7 +257,7 @@ class MotionLibraryService {
 
   /** Load pose sequence from bundled resources via IPC. */
   private async loadStarterPoseSequence(clipId: string): Promise<PoseKeyframe[]> {
-    const result = await (window as any).electronAPI?.getMotionClipSequence?.(clipId);
+    const result = await window.electronAPI?.getMotionClipSequence?.(clipId);
     if (result?.success && Array.isArray(result.sequence)) return result.sequence;
     throw new Error('not found');
   }

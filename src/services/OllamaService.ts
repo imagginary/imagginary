@@ -116,9 +116,9 @@ export class OllamaService {
   async checkConnection(): Promise<boolean> {
     // In packaged Electron, renderer fetch() is blocked by CSP from file:// origin.
     // Delegate to the main process IPC handler which has no such restriction.
-    if ((window as any).electronAPI?.checkOllama) {
+    if (window.electronAPI?.checkOllama) {
       try {
-        const result = await (window as any).electronAPI.checkOllama();
+        const result = await window.electronAPI!.checkOllama();
         if (!result.connected) {
           this.isConnected = false;
           return false;
@@ -327,7 +327,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
     systemPrompt: string,
   ): Promise<StructuredPrompt | null> {
     try {
-      const result = await (window as any).electronAPI?.deepSeekShot?.({ description, systemPrompt });
+      const result = await window.electronAPI?.deepSeekShot?.({ description, systemPrompt });
       if (!result || result.error) {
         if (result?.error) console.warn('[DeepSeek] Parse error — falling back to Ollama:', result.error);
         return null;
@@ -357,7 +357,7 @@ Return only the JSON array. No explanation, no markdown, no preamble.`;
     systemPrompt: string,
   ): Promise<ScriptShot[] | null> {
     try {
-      const result = await (window as any).electronAPI?.deepSeekScreenplay?.({ scriptText, systemPrompt });
+      const result = await window.electronAPI?.deepSeekScreenplay?.({ scriptText, systemPrompt });
       if (!result || result.error) {
         if (result?.error) console.warn('[DeepSeek] Screenplay parse error — falling back to Ollama:', result.error);
         return null;

@@ -79,7 +79,7 @@ export default function WelcomeFlow({ serviceStatus, servicesAutoStarted = false
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
   useEffect(() => {
-    (window as any).electronAPI?.getSystemMemory?.().then(setSystemInfo).catch(() => {});
+    window.electronAPI?.getSystemMemory?.().then(setSystemInfo).catch(() => {});
   }, []);
 
   // Auto-advance from step 1 to step 2 if both services become green

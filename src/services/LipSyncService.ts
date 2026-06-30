@@ -11,7 +11,7 @@ class LipSyncService {
     // Sync.so uses a baked-in API key (SYNCSO_API_KEY from config.json); availability
     // is confirmed by checking whether the IPC handler is exposed by the main process.
     // There is no BYOK option for Sync.so, so no settings key check is needed here.
-    return !!(window as any).electronAPI?.syncsoLipSync;
+    return !!window.electronAPI?.syncsoLipSync;
   }
 
   async generateLipSync(
@@ -25,13 +25,13 @@ class LipSyncService {
 
     // Read audio file as base64 via IPC
     onProgress?.(10, 'Uploading to Sync.so…');
-    const audioBase64 = await (window as any).electronAPI.readFileAsBase64(audioPath);
+    const audioBase64 = await window.electronAPI!.readFileAsBase64(audioPath);
     if (!audioBase64) return null;
 
     // Listen for progress events from main process poll loop
     let cleanupProgress: (() => void) | null = null;
-    if ((window as any).electronAPI?.onCloudProgress) {
-      cleanupProgress = (window as any).electronAPI.onCloudProgress(
+    if (window.electronAPI?.onCloudProgress) {
+      cleanupProgress = window.electronAPI!.onCloudProgress(
         (data: { handler: string; pct: number; msg: string }) => {
           if (data.handler === 'syncso-lipsync') onProgress?.(data.pct, data.msg);
         }
@@ -39,7 +39,7 @@ class LipSyncService {
     }
 
     try {
-      const result = await (window as any).electronAPI.syncsoLipSync({ imageBase64, audioBase64 });
+      const result = await window.electronAPI!.syncsoLipSync({ imageBase64, audioBase64 });
 
       if (result?.videoUrl && !result.error) {
         await licenseService.spendCredits(CREDIT_COSTS.lipSync);

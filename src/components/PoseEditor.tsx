@@ -336,7 +336,7 @@ export default function PoseEditor({
     setDownloadError(null);
     setDownloadProgress(0);
 
-    const cleanup = (window as any).electronAPI?.onControlnetDownloadProgress?.(
+    const cleanup = window.electronAPI?.onControlnetDownloadProgress?.(
       (data: { pct: number; mb: string }) => {
         setDownloadProgress(data.pct);
         setDownloadMb(data.mb);
@@ -344,7 +344,7 @@ export default function PoseEditor({
     );
 
     try {
-      const result = await (window as any).electronAPI?.downloadControlnetOpenpose?.();
+      const result = await window.electronAPI?.downloadControlnetOpenpose?.();
       if (result?.success) {
         setShowControlnetDownload(false);
         // Retry generation automatically

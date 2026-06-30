@@ -24,7 +24,7 @@ export default function SharedStudioOnboarding({ onClose, onConfigured }: Props)
   }
 
   function openSupabase() {
-    (window as any).electronAPI?.openExternal?.('https://supabase.com');
+    window.electronAPI?.openExternal?.('https://supabase.com');
   }
 
   const ready = url.trim() && anonKey.trim();

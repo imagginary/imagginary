@@ -2305,32 +2305,6 @@ ipcMain.handle('export-motion-comic', async (event, { panels, outputPath }) => {
 // If you want to move generation fully to the main process in the future,
 // replicate the ComfyUI polling logic from PoseEngineService.ts here.
 
-ipcMain.handle('generate-pose-animation', async (event, params) => {
-  console.log('[PoseEngine] Handler called. Templates:', params?.poseTemplateIds?.length, 'Frames/segment:', params?.framesPerSegment);
-
-  const sendProgress = (data) => {
-    try { event.sender.send('pose-animation-progress', data); } catch { /* window closed */ }
-  };
-
-  // Basic validation
-  if (!params?.imageData) {
-    return { success: false, error: 'No image data provided for pose animation' };
-  }
-  if (!params?.poseTemplateIds?.length) {
-    return { success: false, error: 'No pose templates selected' };
-  }
-
-  // Signal start — the renderer's PoseEngineService drives the actual generation
-  // via ComfyUI.  The IPC handler just records success/failure.
-  sendProgress({ pct: 0, msg: 'Pose animation initiated from main process' });
-
-  // The renderer performs the generation directly (ComfyUI is a localhost HTTP
-  // server accessible from the renderer via the proxy port).  Return a sentinel
-  // so the renderer knows the IPC channel is ready; actual progress events
-  // flow from the renderer's onProgress callback via setProgress() in App.tsx.
-  return { success: true, delegatedToRenderer: true };
-});
-
 // ── Phase 6C — Motion Library ────────────────────────────────────────────────
 
 /**
@@ -2702,21 +2676,10 @@ ipcMain.handle('extract-transfer-poses', async (event, videoPath) => {
 
     sendProgress(58, `${actualFrameCount} frames extracted. Generating pose sequence…`);
 
-    // Try OpenPose if available, otherwise use synthetic fallback
-    // OpenPose detection: check for 'openpose' or 'python' + openpose scripts
-    const openposePath = process.env.OPENPOSE_PATH ?? '';
-    let sequence;
-
-    if (openposePath && fs.existsSync(openposePath)) {
-      sendProgress(60, 'Running OpenPose on frames… (GPU required)');
-      // For now, log that OpenPose is available but use synthetic until
-      // full OpenPose integration is wired — see docs/VIDEO_TRANSFER_OPENPOSE.md
-      console.log('[VideoTransfer] OpenPose available at:', openposePath, '— using synthetic for now');
-      sequence = generateSyntheticPoseSequence(actualFrameCount, duration);
-    } else {
-      sendProgress(60, 'OpenPose not available — using synthetic pose fallback…');
-      sequence = generateSyntheticPoseSequence(actualFrameCount, duration);
-    }
+    // Synthetic pose generation is the only supported path.
+    // Real OpenPose integration requires GPU-side output parsing that is not yet implemented.
+    sendProgress(60, 'Generating synthetic pose sequence…');
+    const sequence = generateSyntheticPoseSequence(actualFrameCount, duration);
 
     sendProgress(90, 'Saving pose sequence…');
 
@@ -2732,7 +2695,7 @@ ipcMain.handle('extract-transfer-poses', async (event, videoPath) => {
       tempDir,
       frameCount: actualFrameCount,
       duration,
-      usedSynthetic: !openposePath,
+      usedSynthetic: true,
     };
   } catch (err) {
     console.error('[VideoTransfer] extract-transfer-poses error:', err);
@@ -2782,6 +2745,10 @@ function getStoredLicenseTier() {
 function isProOrStudio() {
   const t = getStoredLicenseTier();
   return t === 'pro' || t === 'studio';
+}
+
+function isStudio() {
+  return getStoredLicenseTier() === 'studio';
 }
 
 // ── License / Dodo Payments ───────────────────────────────────────────────────
@@ -3978,7 +3945,7 @@ ipcMain.handle('download-controlnet-openpose', async (event) => {
 
 // Step 1: Upload training images to Fal storage, return CDN URLs
 ipcMain.handle('upload-training-images', async (event, { imagePaths }) => {
-  if (!isProOrStudio()) return { success: false, error: 'Studio required' };
+  if (!isStudio()) return { success: false, error: 'Studio subscription required' };
   if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
   if (!imagePaths?.length) return { success: false, error: 'No images provided' };
 
@@ -4024,7 +3991,7 @@ ipcMain.handle('upload-training-images', async (event, { imagePaths }) => {
 
 // Step 2: Submit async training job, returns requestId for polling
 ipcMain.handle('start-lora-training', async (_event, { imageUrls, styleName, triggerWord }) => {
-  if (!isProOrStudio()) return { success: false, error: 'Studio required' };
+  if (!isStudio()) return { success: false, error: 'Studio subscription required' };
   if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
 
   const bal = getCredits();

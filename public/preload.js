@@ -46,7 +46,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Phase 6B — Pose Engine
-  generatePoseAnimation: (params) => ipcRenderer.invoke('generate-pose-animation', params),
   onPoseAnimationProgress: (cb) => {
     const handler = (_event, data) => cb(data);
     ipcRenderer.on('pose-animation-progress', handler);

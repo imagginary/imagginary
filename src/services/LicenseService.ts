@@ -43,7 +43,7 @@ class LicenseService {
       if (legacy) {
         try {
           const old = JSON.parse(legacy);
-          await (window as any).electronAPI?.setCredits?.({
+          await window.electronAPI?.setCredits?.({
             subscriptionCredits: old.subscriptionCredits ?? 0,
             topUpCredits:        old.topUpCredits        ?? 0,
             lastCreditedAt:      old.lastCreditedAt      ?? 0,
@@ -53,7 +53,7 @@ class LicenseService {
       }
 
       // ── Load balance from main process ────────────────────────────────────
-      const bal = await (window as any).electronAPI?.getCredits?.();
+      const bal = await window.electronAPI?.getCredits?.();
       if (bal) {
         this._cache = {
           subscriptionCredits: bal.subscriptionCredits ?? 0,
@@ -63,7 +63,7 @@ class LicenseService {
       }
 
       // ── Load license ──────────────────────────────────────────────────────
-      const stored = await (window as any).electronAPI?.getLicense?.();
+      const stored = await window.electronAPI?.getLicense?.();
       if (stored) {
         this.license = stored as License;
         await this.checkAndAddMonthlyCredits();
@@ -84,7 +84,7 @@ class LicenseService {
       topUpCredits:        this._cache.topUpCredits,
       lastCreditedAt:      now,
     };
-    await (window as any).electronAPI.setCredits(this._cache);
+    await window.electronAPI!.setCredits(this._cache);
     console.log(`[Credits] Added ${allocation} subscription credits. Total: ${this._cache.subscriptionCredits + this._cache.topUpCredits}`);
   }
 
@@ -95,7 +95,7 @@ class LicenseService {
 
     setTimeout(async () => {
       try {
-        const result = await (window as any).electronAPI.validateLicense(this.license!.key);
+        const result = await window.electronAPI!.validateLicense(this.license!.key);
         if (result.valid) {
           const updated: License = {
             ...this.license!,
@@ -103,17 +103,17 @@ class LicenseService {
             tier: result.tier,
           };
           this.license = updated;
-          await (window as any).electronAPI.saveLicense(updated);
+          await window.electronAPI!.saveLicense(updated);
           await this.checkAndAddMonthlyCredits();
         } else {
           console.log('[License] Re-validation failed:', result.error, '— downgrading to Community on next launch');
-          await (window as any).electronAPI.clearLicense();
+          await window.electronAPI!.clearLicense();
         }
       } catch {
         console.log('[License] Re-validation network error — will retry tomorrow');
         const MAX_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
         if (this.license && Date.now() - (this.license.lastValidatedAt ?? 0) > MAX_GRACE_MS) {
-          await (window as any).electronAPI.clearLicense();
+          await window.electronAPI!.clearLicense();
           this.license = null;
         }
       }
@@ -137,7 +137,7 @@ class LicenseService {
   }
 
   async spendCredits(cost: number): Promise<boolean> {
-    const result = await (window as any).electronAPI.spendCredits(cost);
+    const result = await window.electronAPI!.spendCredits(cost);
     if (result?.success) {
       // Mirror the main-process spend logic to keep the cache accurate:
       // subscription is spent first (expires monthly), top-up preserved longest.
@@ -158,7 +158,7 @@ class LicenseService {
       ...this._cache,
       topUpCredits: this._cache.topUpCredits + amount,
     };
-    await (window as any).electronAPI.setCredits(this._cache);
+    await window.electronAPI!.setCredits(this._cache);
   }
 
   private async initBalance(): Promise<void> {
@@ -168,14 +168,14 @@ class LicenseService {
       topUpCredits:        0,
       lastCreditedAt:      Date.now(),
     };
-    await (window as any).electronAPI.setCredits(this._cache);
+    await window.electronAPI!.setCredits(this._cache);
   }
 
   async validate(key: string): Promise<{ valid: boolean; error?: string }> {
     const trimmed = key.trim();
     if (!trimmed) return { valid: false, error: 'Please enter a license key.' };
     try {
-      const result = await (window as any).electronAPI.validateLicense(trimmed);
+      const result = await window.electronAPI!.validateLicense(trimmed);
       if (result.valid) {
         this.license = {
           key: trimmed,
@@ -208,19 +208,19 @@ class LicenseService {
     // Credits persist — they represent value tied to the key, not the activation state.
     // Zeroing them here would let the user deactivate → reactivate to farm fresh credits.
     this.license = null;
-    await (window as any).electronAPI.clearLicense();
+    await window.electronAPI!.clearLicense();
   }
 
   openCheckout(tier: 'pro' | 'studio' | 'pro_annual' | 'studio_annual'): void {
-    (window as any).electronAPI.openCheckout(tier);
+    window.electronAPI!.openCheckout(tier);
   }
 
   openCustomerPortal(): void {
-    (window as any).electronAPI.openCustomerPortal();
+    window.electronAPI!.openCustomerPortal();
   }
 
   openTopupCheckout(pack: 'starter' | 'standard' | 'power'): void {
-    (window as any).electronAPI.openTopupCheckout(pack);
+    window.electronAPI!.openTopupCheckout(pack);
   }
 
   getTier(): LicenseTier { return this.license?.tier ?? 'community'; }

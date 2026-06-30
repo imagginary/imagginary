@@ -252,7 +252,7 @@ export default function VoiceStudio({
       setInstallState(res.available ? 'available' : 'not-installed');
     });
     lipSyncService.isAvailable().then(setLipSyncAvailable);
-    (window as any).electronAPI?.checkVoiceCloneProviders?.().then((r: any) => {
+    window.electronAPI?.checkVoiceCloneProviders?.().then((r: any) => {
       setCloneProvider(r?.preferred ?? null);
       setCloneAvailable(!!r?.preferred);
     });
@@ -262,7 +262,7 @@ export default function VoiceStudio({
     if (installState !== 'available') return;
     voiceService.getAvailableVoices().then(async (v) => {
       // Merge persisted custom voices
-      const customResult = await (window as any).electronAPI?.getCustomVoices?.();
+      const customResult = await window.electronAPI?.getCustomVoices?.();
       const customVoices: VoiceProfile[] = customResult?.voices ?? [];
       const existingIds = new Set(v.map((p: VoiceProfile) => p.id));
       const merged = [...v, ...customVoices.filter(c => !existingIds.has(c.id))];
@@ -468,7 +468,7 @@ export default function VoiceStudio({
         elevenLabsVoiceId: result.provider === 'elevenlabs' ? result.voiceId : undefined,
         cartesiaVoiceId:   result.provider === 'cartesia'   ? result.voiceId : undefined,
       };
-      await (window as any).electronAPI?.saveCustomVoice?.({ voice: profile });
+      await window.electronAPI?.saveCustomVoice?.({ voice: profile });
       setVoices((prev) => [...prev, profile]);
       handleSelectProfile(profile);
       setCloneFile(null);
@@ -481,7 +481,7 @@ export default function VoiceStudio({
   }, [cloneFile, cloneName, handleSelectProfile]);
 
   const handleDeleteCustomVoice = useCallback(async (voiceId: string) => {
-    await (window as any).electronAPI?.deleteCustomVoice?.({ voiceId });
+    await window.electronAPI?.deleteCustomVoice?.({ voiceId });
     setVoices((prev) => prev.filter(v => v.id !== voiceId));
     if (activeVoiceProfile?.id === voiceId) {
       setActiveVoiceProfile(null);

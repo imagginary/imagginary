@@ -13,9 +13,9 @@ import { getComfyUIUrl } from '../config/services';
 // without a renderer reload (common in dev with hot-reload). The IPC call is a cheap
 // synchronous store lookup in the main process, so the overhead is negligible.
 async function getComfyBaseUrl(): Promise<string> {
-  if ((window as any).electronAPI?.getComfyUIProxyPort) {
+  if (window.electronAPI?.getComfyUIProxyPort) {
     try {
-      const port = await (window as any).electronAPI.getComfyUIProxyPort();
+      const port = await window.electronAPI!.getComfyUIProxyPort();
       if (port) return `http://127.0.0.1:${port}`;
     } catch { /* fall through to direct URL */ }
   }
@@ -107,9 +107,9 @@ export class ComfyUIService {
   async checkConnection(): Promise<ComfyUIStatus> {
     // In packaged Electron, renderer fetch() is blocked by CSP from file:// origin.
     // Delegate the liveness check to the main process IPC handler.
-    if ((window as any).electronAPI?.checkComfyUI) {
+    if (window.electronAPI?.checkComfyUI) {
       try {
-        const result = await (window as any).electronAPI.checkComfyUI();
+        const result = await window.electronAPI!.checkComfyUI();
         if (!result.connected) return { connected: false, availableModels: [], queueSize: 0 };
         const models = await this.getAvailableCheckpoints();
         return { connected: true, availableModels: models, queueSize: 0 };
@@ -421,7 +421,7 @@ export class ComfyUIService {
         if (style?.isCustom && style?.promptSuffix) {
           positivePrompt = `${positivePrompt}, ${style.promptSuffix}`;
         }
-        const result = await (window as any).electronAPI.falFluxSchnell({
+        const result = await window.electronAPI!.falFluxSchnell({
           prompt: positivePrompt,
           width: aspectRatio.width,
           height: aspectRatio.height,
@@ -519,7 +519,7 @@ export class ComfyUIService {
           // Pre-fetch reference image from ComfyUI here in renderer (localhost — no secret needed)
           const refData = await this.getUploadedImageData(referenceImageFilename);
           if (refData) {
-            const result = await (window as any).electronAPI.falIPAdapter({
+            const result = await window.electronAPI!.falIPAdapter({
               prompt: positivePrompt,
               faceImageData: refData,
             });
@@ -701,7 +701,7 @@ export class ComfyUIService {
           const rawImage = imageData.replace(/^data:image\/[^;]+;base64,/, '');
           const rawMask  = maskData.replace(/^data:image\/[^;]+;base64,/, '');
           onProgress?.(10, 'Sending to FLUX.1 Fill…');
-          const result = await (window as any).electronAPI.falFluxFill({
+          const result = await window.electronAPI!.falFluxFill({
             imageBase64: rawImage,
             maskBase64:  rawMask,
             prompt:      editDescription,
@@ -990,8 +990,8 @@ export class ComfyUIService {
 
     // Listen for progress events from main process poll loop
     let cleanupProgress: (() => void) | null = null;
-    if ((window as any).electronAPI?.onCloudProgress) {
-      cleanupProgress = (window as any).electronAPI.onCloudProgress(
+    if (window.electronAPI?.onCloudProgress) {
+      cleanupProgress = window.electronAPI!.onCloudProgress(
         (data: { handler: string; pct: number; msg: string }) => {
           if (data.handler === 'fal-kling') onProgress?.(data.pct, data.msg);
         }
@@ -999,7 +999,7 @@ export class ComfyUIService {
     }
 
     try {
-      const result = await (window as any).electronAPI.falKling({
+      const result = await window.electronAPI!.falKling({
         imageData,
         motionPrompt,
         duration: '5',
@@ -1018,7 +1018,7 @@ export class ComfyUIService {
       throw err;
     } finally {
       cleanupProgress?.();
-      (window as any).electronAPI?.cancelFalKling?.();
+      window.electronAPI?.cancelFalKling?.();
     }
   }
 

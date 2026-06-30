@@ -258,8 +258,8 @@ class PoseEngineService {
 
   private async getComfyBaseUrl(): Promise<string> {
     if (this.comfyBaseUrl) return this.comfyBaseUrl;
-    if ((window as any).electronAPI?.getComfyUIProxyPort) {
-      const port = await (window as any).electronAPI.getComfyUIProxyPort();
+    if (window.electronAPI?.getComfyUIProxyPort) {
+      const port = await window.electronAPI!.getComfyUIProxyPort();
       if (port) {
         this.comfyBaseUrl = `http://127.0.0.1:${port}`;
         return this.comfyBaseUrl;
@@ -277,7 +277,7 @@ class PoseEngineService {
     const progress = (pct: number, msg: string) => onProgress?.(pct, msg);
 
     progress(5, 'Checking ControlNet model…');
-    const { installed } = await (window as any).electronAPI.checkControlnetOpenpose();
+    const { installed } = await window.electronAPI!.checkControlnetOpenpose();
     if (!installed) {
       throw new Error('CONTROLNET_NOT_INSTALLED');
     }

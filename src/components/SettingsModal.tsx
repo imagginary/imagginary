@@ -49,7 +49,7 @@ function KeyInput({
   }
 
   function openLink() {
-    (window as any).electronAPI?.openExternal(link);
+    window.electronAPI?.openExternal(link);
   }
 
   return (
@@ -124,7 +124,7 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
   }
 
   async function handleDownloadProModel() {
-    const api = (window as any).electronAPI;
+    const api = window.electronAPI;
     if (!api) return;
     setProModelDownloading(true);
     setProModelPct(0);
@@ -227,10 +227,10 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
                         onClick={async () => {
                           setAbsDownloading(true);
                           setAbsPct(0);
-                          const cleanup = (window as any).electronAPI?.onAbsoluteRealityProgress(
+                          const cleanup = window.electronAPI?.onAbsoluteRealityProgress(
                             (d: { pct: number }) => setAbsPct(d.pct)
                           );
-                          const result = await (window as any).electronAPI?.downloadAbsoluteReality();
+                          const result = await window.electronAPI?.downloadAbsoluteReality();
                           cleanup?.();
                           setAbsDownloading(false);
                           if (result?.success) {
@@ -359,7 +359,7 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-gray-400">Project URL</label>
                     <button
-                      onClick={() => (window as any).electronAPI?.openExternal('https://supabase.com')}
+                      onClick={() => window.electronAPI?.openExternal('https://supabase.com')}
                       className="flex items-center gap-1 text-[10px] text-imagginary-500 hover:text-imagginary-400 transition-colors"
                     >
                       Create free project <ExternalLink className="w-2.5 h-2.5" />
@@ -410,7 +410,7 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
                       const target = projectSlug
                         ? `${supabaseUrl.trim()}/project/${projectSlug}/settings/api`
                         : 'https://supabase.com/dashboard';
-                      (window as any).electronAPI?.openExternal(target);
+                      window.electronAPI?.openExternal(target);
                     }}
                     className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-2 rounded-lg border border-red-500/30 flex items-center gap-1.5 transition-colors"
                   >
@@ -445,7 +445,7 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
                 Paste your own ElevenLabs API key to use ElevenLabs instead —
                 higher naturalness quality, your ElevenLabs subscription required.{' '}
                 <button
-                  onClick={() => (window as any).electronAPI?.openExternal('https://elevenlabs.io/api')}
+                  onClick={() => window.electronAPI?.openExternal('https://elevenlabs.io/api')}
                   className="text-violet-400 hover:text-violet-300 transition-colors"
                 >
                   Get API key →
@@ -461,7 +461,7 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
                 />
                 <button
                   onClick={async () => {
-                    await (window as any).electronAPI?.saveElevenLabsKey?.({ key: elevenLabsKey.trim() });
+                    await window.electronAPI?.saveElevenLabsKey?.({ key: elevenLabsKey.trim() });
                     setElevenLabsSaved(true);
                     setTimeout(() => setElevenLabsSaved(false), 2000);
                   }}

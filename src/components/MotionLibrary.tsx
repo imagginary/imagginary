@@ -295,7 +295,7 @@ export default function MotionLibrary({
 
   function handleClose() {
     if (isApplying) {
-      (window as any).electronAPI?.cancelFalKling?.();
+      window.electronAPI?.cancelFalKling?.();
     }
     onClose();
   }
@@ -308,7 +308,7 @@ export default function MotionLibrary({
     setApplyError(null);
     setApplyProgress(0);
     setApplyMsg('Starting…');
-    const cleanupProgress = (window as any).electronAPI?.onCloudProgress?.(
+    const cleanupProgress = window.electronAPI?.onCloudProgress?.(
       (data: { handler: string; pct: number; msg: string }) => {
         if (data.handler === 'fal-kling') {
           setApplyProgress(data.pct);
@@ -333,7 +333,7 @@ export default function MotionLibrary({
 
   async function handleUploadVideo() {
     if (!isPro) return;
-    const result = await (window as any).electronAPI?.showOpenDialog?.({
+    const result = await window.electronAPI?.showOpenDialog?.({
       title: 'Select Reference Video',
       filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'webm'] }],
       properties: ['openFile'],
@@ -565,7 +565,7 @@ export default function MotionLibrary({
                         Motion generation needs a 14B model (~14 GB) — Pro generates in the cloud in under 60 seconds.
                       </p>
                       <button
-                        onClick={() => (window as any).electronAPI?.openExternal?.('https://imagginary.com/upgrade')}
+                        onClick={() => window.electronAPI?.openExternal?.('https://imagginary.com/upgrade')}
                         className="w-full px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors"
                       >
                         Upgrade to Pro — $19/month

@@ -22,7 +22,7 @@ const SUPPORTED_FORMATS = ['.mp4', '.mov', '.avi', '.webm'];
 const MAX_DURATION_S = 30;
 
 function getElectronAPI(): Record<string, (...args: unknown[]) => unknown> {
-  return (window as any).electronAPI ?? {};
+  return window.electronAPI ?? {};
 }
 
 // ── Main Service ─────────────────────────────────────────────────────────────

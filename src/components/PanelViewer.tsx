@@ -690,7 +690,7 @@ export default function PanelViewer({
               {progress?.errorLink && (
                 <button
                   className="mt-3 text-xs text-violet-400 hover:text-violet-300 underline underline-offset-2"
-                  onClick={(e) => { e.stopPropagation(); (window as any).electronAPI?.openExternal(progress.errorLink!.url); }}
+                  onClick={(e) => { e.stopPropagation(); window.electronAPI?.openExternal(progress.errorLink!.url); }}
                 >
                   {progress.errorLink.label}
                 </button>

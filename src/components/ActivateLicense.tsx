@@ -234,7 +234,7 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
   const handleRedeemTopup = useCallback(async () => {
     setTopupLoading(true);
     setTopupResult(null);
-    const result = await (window as any).electronAPI.validateTopup(topupCode.trim());
+    const result = await window.electronAPI!.validateTopup(topupCode.trim());
     if (result.valid) {
       await licenseService.addTopUpCredits(result.credits);
       setTopupResult(`✓ ${result.credits} credits added to your account`);
