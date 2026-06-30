@@ -215,6 +215,11 @@ export default function App() {
   const cursorBroadcastThrottle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef(progress);
   useEffect(() => { progressRef.current = progress; }, [progress]);
+
+  // projectRef — always holds the latest project so callbacks registered once (deep-link
+  // join, SharedStudio request_state responder) never read a stale closure value.
+  const projectRef = useRef(project);
+  useEffect(() => { projectRef.current = project; }, [project]);
   const [estimatedGenerationSeconds, setEstimatedGenerationSeconds] = useState<number | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedPath = useRef<string | null>(null);
@@ -482,6 +487,7 @@ export default function App() {
     description: string,
     overrideCharacterIds?: string[],
     overrideConstraints?: Partial<ShotConstraints>,
+    panelOverride?: Panel,
   ) {
     if (!description.trim()) return;
     if (serviceStatus.ollama !== 'connected') return;
@@ -489,8 +495,9 @@ export default function App() {
     setProgress({ panelId, status: 'parsing', progress: 0, message: 'Parsing shot description…' });
 
     try {
-      // Constraints priority: overrideConstraints (from ShotInput dropdowns) > panel pre-set values
-      const panel = project.panels.find((p) => p.id === panelId);
+      // Prefer explicit panelOverride so callers that create a panel and immediately call
+      // generate() don't read stale React state before setProject() has committed.
+      const panel = panelOverride ?? project.panels.find((p) => p.id === panelId);
       const resolvedShotType = overrideConstraints?.shotType || panel?.shotType || '';
       const resolvedAngle    = overrideConstraints?.angle    || panel?.angle    || '';
       const resolvedMood     = overrideConstraints?.mood     || panel?.mood     || '';
@@ -666,13 +673,12 @@ export default function App() {
     setShotInput(firstShot);
     setShowWelcome(false);
 
-    // Kick off first panel generation immediately after overlay closes
-    setTimeout(() => {
-      const panel = createEmptyPanel(0);
-      setProject((prev) => ({ ...prev, panels: [panel], updatedAt: Date.now() }));
-      setActivePanelId(panel.id);
-      generate(panel.id, firstShot);
-    }, 50);
+    // Kick off first panel generation immediately. panelOverride is passed so generate()
+    // doesn't need to look up the panel from React state (which may not have committed yet).
+    const panel = createEmptyPanel(0);
+    setProject((prev) => ({ ...prev, panels: [panel], updatedAt: Date.now() }));
+    setActivePanelId(panel.id);
+    generate(panel.id, firstShot, undefined, undefined, panel);
   }
 
   function handleGenerate() {
@@ -882,13 +888,19 @@ export default function App() {
     }
   }
 
+  // Keep a stable ref to handleSharedStudioEvent so useEffect callbacks registered
+  // with an empty dep array (mount-only) always call the latest version of the handler,
+  // not the stale closure captured at mount time.
+  const handleSharedStudioEventRef = useRef(handleSharedStudioEvent);
+  useEffect(() => { handleSharedStudioEventRef.current = handleSharedStudioEvent; });
+
   async function startSharedSession() {
     if (!licenseService.isStudio()) return;
     if (!sharedStudioService.isConfigured()) {
       setShowSharedStudioOnboarding(true);
       return;
     }
-    const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent, project);
+    const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEventRef.current, () => projectRef.current);
     if (joined) setIsSharedSession(true);
   }
 
@@ -942,7 +954,7 @@ export default function App() {
       }
       if (supabaseUrl) settingsService.save({ supabaseUrl });
       if (!sharedStudioService.isConfigured()) { setShowSettings(true); return; }
-      sharedStudioService.joinProject(projectId, handleSharedStudioEvent, null).then((ok) => {
+      sharedStudioService.joinProject(projectId, handleSharedStudioEventRef.current, () => projectRef.current).then((ok) => {
         if (ok) setIsSharedSession(true);
       });
     });
@@ -1014,8 +1026,9 @@ export default function App() {
     for (let i = 0; i < newPanels.length; i++) {
       onProgress(i + 1, newPanels.length);
       try {
-        // Pass characterIds directly to avoid stale closure over project state
-        await generate(newPanels[i].id, shots[i].shotDescription, shots[i].assignedCharacterIds);
+        // Pass the panel object directly so generate() never reads stale React state.
+        // overrideCharacterIds is also passed for clarity, though panelOverride.characters has the same value.
+        await generate(newPanels[i].id, shots[i].shotDescription, shots[i].assignedCharacterIds, undefined, newPanels[i]);
       } catch (err) {
         // Log and continue — don't abort the sequence on a single panel failure
         console.error(`Script generation: panel ${i + 1} of ${newPanels.length} failed:`, err);
@@ -1477,7 +1490,7 @@ export default function App() {
           onClose={() => setShowSharedStudioOnboarding(false)}
           onConfigured={async () => {
             setShowSharedStudioOnboarding(false);
-            const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEvent, project);
+            const joined = await sharedStudioService.joinProject(project.id, handleSharedStudioEventRef.current, () => projectRef.current);
             if (joined) setIsSharedSession(true);
           }}
         />

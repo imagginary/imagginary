@@ -27,6 +27,7 @@ export type SharedStudioConnectionStatus = 'connected' | 'disconnected' | 'recon
 
 class SharedStudioService {
   private client: SupabaseClient | null = null;
+  private cachedCredentials: { url: string; key: string } | null = null;
   private channel: RealtimeChannel | null = null;
   private userId: string = `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   private userName: string = 'Anonymous';
@@ -36,7 +37,7 @@ class SharedStudioService {
   private onConnectionStatusChange?: (status: SharedStudioConnectionStatus) => void;
   // Stored for reconnect — set on joinProject, cleared on leaveProject
   private _reconnectProjectId: string | null = null;
-  private _reconnectCurrentProject: Project | null = null;
+  private _reconnectGetCurrentProject: (() => Project | null) | null = null;
 
   isConfigured(): boolean {
     const s = settingsService.get();
@@ -67,10 +68,10 @@ class SharedStudioService {
     try {
       // leaveProject clears reconnect fields — snapshot before calling
       const projectId = this._reconnectProjectId;
-      const currentProject = this._reconnectCurrentProject;
+      const getCurrentProject = this._reconnectGetCurrentProject;
       const onEvent = this.onEventCallback;
       await this.leaveProject();
-      await this.joinProject(projectId, onEvent, currentProject);
+      await this.joinProject(projectId, onEvent, getCurrentProject ?? (() => null));
     } catch {
       setTimeout(() => this.attemptReconnect(), 8000);
     }
@@ -79,9 +80,15 @@ class SharedStudioService {
   private getClient(): SupabaseClient | null {
     const s = settingsService.get();
     if (!s.supabaseUrl || !s.supabaseAnonKey) return null;
-    // Re-create client if credentials changed
-    if (!this.client) {
+    // Re-create client if no client exists yet, or if credentials have changed since
+    // the client was last created (e.g. a deep-link join saved a new supabaseUrl).
+    if (
+      !this.client ||
+      this.cachedCredentials?.url !== s.supabaseUrl ||
+      this.cachedCredentials?.key !== s.supabaseAnonKey
+    ) {
       this.client = createClient(s.supabaseUrl, s.supabaseAnonKey);
+      this.cachedCredentials = { url: s.supabaseUrl, key: s.supabaseAnonKey };
     }
     return this.client;
   }
@@ -106,7 +113,7 @@ class SharedStudioService {
   async joinProject(
     projectId: string,
     onEvent: (event: SharedStudioEvent) => void,
-    currentProject: Project | null = null,
+    getCurrentProject: () => Project | null = () => null,
   ): Promise<boolean> {
     const client = this.getClient();
     if (!client) return false;
@@ -140,10 +147,13 @@ class SharedStudioService {
       });
     });
 
-    // When another user asks for current state, respond with our project (if we have one)
+    // When another user asks for current state, respond with the live project.
+    // getCurrentProject() is called at request time (not at join time) so late
+    // joiners always receive the current state, not a snapshot frozen at session start.
     this.channel.on('broadcast', { event: 'request_state' }, ({ payload }) => {
       if (payload.userId === this.userId) return; // ignore our own broadcast
-      if (!currentProject) return;
+      const liveProject = getCurrentProject();
+      if (!liveProject) return;
       this.channel?.send({
         type: 'broadcast',
         event: 'state_response',
@@ -151,7 +161,7 @@ class SharedStudioService {
           type: 'state_response',
           userId: this.userId,
           targetUserId: payload.userId,
-          project: this.stripBinaryFields(currentProject),
+          project: this.stripBinaryFields(liveProject),
         },
       });
     });
@@ -179,9 +189,10 @@ class SharedStudioService {
       });
     });
 
-    // Store for reconnect before the async subscribe resolves
+    // Store for reconnect before the async subscribe resolves.
+    // We store the getter (not a snapshot) so reconnects always send live project state.
     this._reconnectProjectId = projectId;
-    this._reconnectCurrentProject = currentProject;
+    this._reconnectGetCurrentProject = getCurrentProject;
 
     await new Promise<void>((resolve) => {
       let resolved = false;
