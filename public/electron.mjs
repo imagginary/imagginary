@@ -1079,16 +1079,25 @@ function ensureOllamaRunner() {
   const runnerDir = '/Applications/Ollama.app/Contents/Resources';
   if (fs.existsSync(path.join(runnerDir, 'ollama'))) return;
   console.log('[Ollama] Copying bundled Ollama runner to system location…');
-  fs.mkdirSync(runnerDir, { recursive: true });
-  const srcDir = path.join(process.resourcesPath, 'bin');
-  for (const file of fs.readdirSync(srcDir)) {
-    const src = path.join(srcDir, file);
-    if (!fs.statSync(src).isFile()) continue;
-    const dest = path.join(runnerDir, file);
-    fs.copyFileSync(src, dest);
-    fs.chmodSync(dest, 0o755);
+  try {
+    fs.mkdirSync(runnerDir, { recursive: true });
+    const srcDir = path.join(process.resourcesPath, 'bin');
+    for (const file of fs.readdirSync(srcDir)) {
+      const src = path.join(srcDir, file);
+      if (!fs.statSync(src).isFile()) continue;
+      const dest = path.join(runnerDir, file);
+      fs.copyFileSync(src, dest);
+      fs.chmodSync(dest, 0o755);
+    }
+    console.log('[Ollama] Ollama runner ready.');
+  } catch (err) {
+    console.error('[Ollama] Failed to install runner (permission issue?):', err.message);
+    dialog.showErrorBox(
+      'Setup Error',
+      `Imagginary couldn't set up a required component.\n\nTry moving the app to your Applications folder and relaunching.\n\nDetails: ${err.message}`
+    );
+    throw err;
   }
-  console.log('[Ollama] Ollama runner ready.');
 }
 
 async function startBundledServices(loadingWin) {
@@ -1182,12 +1191,11 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // In the packaged app the renderer loads from file:// which gives it a null origin.
-      // Chromium's CORS implementation does NOT match null origin against
-      // Access-Control-Allow-Origin: * — so every fetch() to localhost is rejected before
-      // it even leaves the renderer. Disabling webSecurity for the packaged build removes
-      // that restriction. All content is local so the security trade-off is acceptable.
-      webSecurity: !app.isPackaged,
+      // All localhost traffic from the renderer is routed through the ComfyUI proxy
+      // (startComfyUIProxy), which adds the correct Origin header so ComfyUI accepts it.
+      // webSecurity must stay true — disabling it removes Chromium's same-origin policy
+      // and mixed-content protections globally, which is not acceptable in a packaged build.
+      webSecurity: true,
     },
   });
 
@@ -1651,7 +1659,17 @@ ipcMain.handle('download-absolute-reality', async (event) => {
 ipcMain.handle('save-project', async (_event, projectData, filePath) => {
   try {
     assertSafePath(filePath);
-    fs.writeFileSync(filePath, JSON.stringify(projectData, null, 2), 'utf8');
+    let jsonString;
+    try {
+      jsonString = JSON.stringify(projectData, null, 2);
+    } catch {
+      return { success: false, error: 'Project data contains an invalid structure and cannot be saved' };
+    }
+    const MAX_PROJECT_SIZE = 100 * 1024 * 1024; // 100 MB
+    if (jsonString.length > MAX_PROJECT_SIZE) {
+      return { success: false, error: 'Project file is too large to save — consider removing unused panels or images' };
+    }
+    fs.writeFileSync(filePath, jsonString, 'utf8');
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -2712,9 +2730,15 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
   if (!tempDir || typeof tempDir !== 'string') {
     return { success: false, error: 'No directory path provided' };
   }
+  const resolvedPath = path.resolve(tempDir);
+  const tempRoot = path.resolve(os.tmpdir());
+  if (!resolvedPath.startsWith(tempRoot + path.sep) && resolvedPath !== tempRoot) {
+    console.warn('[VideoTransfer] Refused cleanup-transfer-frames outside tmpdir:', resolvedPath);
+    return { success: false, error: 'Refused to delete a path outside the temp directory' };
+  }
   try {
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+    if (fs.existsSync(resolvedPath)) {
+      fs.rmSync(resolvedPath, { recursive: true, force: true });
     }
     return { success: true };
   } catch (err) {
@@ -3578,7 +3602,7 @@ async function fetchToBase64(url) {
   return buf.toString('base64');
 }
 
-// Atomically deduct credits from the main-process store.
+// Deduct credits from the main-process store (no balance check — caller pre-checked).
 // Must be called AFTER a successful API response and BEFORE returning the result
 // so the deduction is guaranteed even if the renderer crashes or closes.
 function deductCredits(cost) {
@@ -3592,6 +3616,28 @@ function deductCredits(cost) {
     topUpCredits = Math.max(0, topUpCredits - remainder);
   }
   setCredits({ ...bal, subscriptionCredits, topUpCredits });
+}
+
+// Atomic check-and-deduct: reads, validates, and writes in a single synchronous
+// block with no await in between.  Eliminates the TOCTOU window where two
+// concurrent requests both pass a pre-flight balance check before either deducts.
+// Returns { success: true } or { success: false, error: string }.
+function deductCreditsAtomic(cost) {
+  const bal = getCredits();
+  const available = bal.subscriptionCredits + bal.topUpCredits;
+  if (available < cost) {
+    return { success: false, error: 'insufficient credits' };
+  }
+  let { subscriptionCredits, topUpCredits } = bal;
+  if (subscriptionCredits >= cost) {
+    subscriptionCredits -= cost;
+  } else {
+    const remainder = cost - subscriptionCredits;
+    subscriptionCredits = 0;
+    topUpCredits = Math.max(0, topUpCredits - remainder);
+  }
+  setCredits({ ...bal, subscriptionCredits, topUpCredits });
+  return { success: true };
 }
 
 ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => {
@@ -3618,7 +3664,8 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
     const base64 = await fetchToBase64(imageUrl);
-    deductCredits(CREDIT_COST.panelCloud);
+    const deduct0 = deductCreditsAtomic(CREDIT_COST.panelCloud);
+    if (!deduct0.success) console.warn('[Credits] fal-flux-schnell deduction failed post-generation:', deduct0.error);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3647,7 +3694,8 @@ ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
     const base64 = await fetchToBase64(imageUrl);
-    deductCredits(CREDIT_COST.characterPanel);
+    const deduct1 = deductCreditsAtomic(CREDIT_COST.characterPanel);
+    if (!deduct1.success) console.warn('[Credits] fal-ipadapter deduction failed post-generation:', deduct1.error);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3679,7 +3727,8 @@ ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
     const base64 = await fetchToBase64(imageUrl);
-    deductCredits(CREDIT_COST.inpaint);
+    const deduct2 = deductCreditsAtomic(CREDIT_COST.inpaint);
+    if (!deduct2.success) console.warn('[Credits] fal-flux-fill deduction failed post-generation:', deduct2.error);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3748,6 +3797,8 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
         if (!videoUrl) return { error: 'No video URL in Kling response' };
         try {
           const base64Result = await fetchToBase64(videoUrl);
+          const deductKling = deductCreditsAtomic(CREDIT_COST.motionClip);
+          if (!deductKling.success) console.warn('[Credits] fal-kling deduction failed post-generation:', deductKling.error);
           send(100, 'Done');
           return { base64: `data:video/mp4;base64,${base64Result}` };
         } catch (err) {
@@ -3807,6 +3858,8 @@ ipcMain.handle('syncso-lipsync', async (event, { imageBase64, audioBase64 }) => 
       send(pct, `Processing… ${status.status}`);
       if (status.status === 'completed') {
         send(95, 'Finalising…');
+        const deductSync = deductCreditsAtomic(CREDIT_COST.lipSync);
+        if (!deductSync.success) console.warn('[Credits] syncso-lipsync deduction failed post-generation:', deductSync.error);
         return { videoUrl: status.outputUrl ?? '' };
       }
       if (status.status === 'failed') return { error: 'Sync.so generation failed' };
