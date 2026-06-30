@@ -82,6 +82,10 @@
           "to": "bin/ffmpeg-mac"
         },
         {
+          "from": "resources/bin/ffprobe-mac",
+          "to": "bin/ffprobe-mac"
+        },
+        {
           "from": "resources/sounds",
           "to": "sounds"
         }
@@ -113,6 +117,10 @@
         {
           "from": "resources/bin/ffmpeg-win.exe",
           "to": "bin/ffmpeg-win.exe"
+        },
+        {
+          "from": "resources/bin/ffprobe-win.exe",
+          "to": "bin/ffprobe-win.exe"
         },
         {
           "from": "resources/sounds",
@@ -162,6 +170,10 @@
         {
           "from": "resources/bin/ffmpeg-linux",
           "to": "bin/ffmpeg-linux"
+        },
+        {
+          "from": "resources/bin/ffprobe-linux",
+          "to": "bin/ffprobe-linux"
         },
         {
           "from": "resources/sounds",

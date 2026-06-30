@@ -2598,7 +2598,7 @@ ipcMain.handle('validate-transfer-video', async (_event, filePath) => {
   const ffprobeBinName = process.platform === 'win32' ? 'ffprobe-win.exe'
     : process.platform === 'darwin' ? 'ffprobe-mac'
     : 'ffprobe-linux';
-  const bundledFfprobe = path.join(__dirname, '..', 'resources', 'bin', ffprobeBinName);
+  const bundledFfprobe = path.join(process.resourcesPath, 'bin', ffprobeBinName);
   const ffprobePath = fs.existsSync(bundledFfprobe) ? bundledFfprobe : 'ffprobe';
 
   try {
@@ -2718,7 +2718,7 @@ ipcMain.handle('extract-transfer-poses', async (event, videoPath) => {
     sendProgress(5, 'Preparing frame extraction…');
 
     const ffmpegCandidates = [
-      path.join(__dirname, '..', 'resources', 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+      path.join(process.resourcesPath, 'bin', process.platform === 'win32' ? 'ffmpeg-win.exe' : process.platform === 'darwin' ? 'ffmpeg-mac' : 'ffmpeg-linux'),
       'ffmpeg',
     ];
     const ffmpegPath = ffmpegCandidates.find((p) => {
