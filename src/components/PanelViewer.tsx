@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles, Upload, Mic } from 'lucide-react';
+import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles, Upload, Mic, Play, Pause } from 'lucide-react';
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 import { settingsService } from '../services/SettingsService';
@@ -113,6 +113,9 @@ export default function PanelViewer({
   // History / compare state
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareRevisionId, setCompareRevisionId] = useState<string | null>(null);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+
+  const panelAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -131,6 +134,11 @@ export default function PanelViewer({
     setMotionInput('');
     setHistoryOpen(false);
     setCompareRevisionId(null);
+    // Stop voice playback when switching panels
+    if (panelAudioRef.current) {
+      panelAudioRef.current.pause();
+      setIsPlayingVoice(false);
+    }
   }, [panel?.id]);
 
   // Pre-fill motion input from saved description when opening animate mode
@@ -148,6 +156,17 @@ export default function PanelViewer({
       setHasMask(false);
     }
   }, [editMode]);
+
+  // Cleanup panel voice audio on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      if (panelAudioRef.current) {
+        panelAudioRef.current.pause();
+        panelAudioRef.current.src = '';
+        panelAudioRef.current = null;
+      }
+    };
+  }, []);
 
   // Reset drawing refs on unmount so a remounted instance starts clean
   useEffect(() => {
@@ -318,6 +337,20 @@ export default function PanelViewer({
   const hasClip = !!(panel?.motionClipData || panel?.motionClipPath);
   const hasPoseClip = !!(panel?.poseClipData || panel?.poseClipPath);
   const hasRevisions = revisions.length > 0;
+
+  const handlePlayPanelVoice = () => {
+    if (isPlayingVoice) {
+      panelAudioRef.current?.pause();
+      setIsPlayingVoice(false);
+      return;
+    }
+    panelAudioRef.current?.pause();
+    const audio = new Audio(`file://${panel!.voicePath}`);
+    panelAudioRef.current = audio;
+    audio.onended = () => setIsPlayingVoice(false);
+    audio.play();
+    setIsPlayingVoice(true);
+  };
 
   // ── Pro gate for history ─────────────────────────────────────────────────────
   if (historyOpen && !isPro) {
@@ -854,6 +887,16 @@ export default function PanelViewer({
             >
               <Mic className="w-3 h-3" />
               {panel?.voicePath ? 'Voice Ready' : 'Voice'}
+            </button>
+          )}
+
+          {panel?.voicePath && (
+            <button
+              onClick={handlePlayPanelVoice}
+              className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/20 transition-colors"
+              title={isPlayingVoice ? 'Pause voice clip' : 'Preview voice clip'}
+            >
+              {isPlayingVoice ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
             </button>
           )}
 
