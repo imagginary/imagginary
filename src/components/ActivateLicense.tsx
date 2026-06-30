@@ -384,10 +384,11 @@ export default function ActivateLicense({ currentLicense, onLicenseChange, onClo
       onClick={onClose}
     >
       <div
-        className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+        className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800">
+        {/* Sticky header — always visible regardless of scroll position */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800 flex-shrink-0">
           <div className="flex items-center gap-2">
             {isActivated && currentLicense.tier !== 'community' ? (
               <TierBadge tier={currentLicense.tier === 'studio' ? 'studio' : 'pro'} />
@@ -400,15 +401,18 @@ export default function ActivateLicense({ currentLicense, onLicenseChange, onClo
           </button>
         </div>
 
-        {isActivated ? (
-          <ActivatedView
-            license={currentLicense}
-            onLicenseChange={onLicenseChange}
-            onClose={onClose}
-          />
-        ) : (
-          <CommunityView onLicenseChange={onLicenseChange} onClose={onClose} />
-        )}
+        {/* Scrollable content area */}
+        <div className="overflow-y-auto flex-1">
+          {isActivated ? (
+            <ActivatedView
+              license={currentLicense}
+              onLicenseChange={onLicenseChange}
+              onClose={onClose}
+            />
+          ) : (
+            <CommunityView onLicenseChange={onLicenseChange} onClose={onClose} />
+          )}
+        </div>
       </div>
     </div>
   );
