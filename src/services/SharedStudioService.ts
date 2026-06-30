@@ -1,3 +1,16 @@
+// SECURITY MODEL: This app uses Supabase Realtime broadcast only — no tables,
+// no storage, no RLS applicable (broadcast channels are not table-backed and
+// RLS doesn't govern them). Access control is entirely "possession of the
+// Supabase URL + anon key + project_id". The mitigation is user-facing:
+// invite links are framed as sensitive (like a shared doc link), and Settings
+// provides a one-click path to regenerate the anon key, which invalidates
+// all existing invite links instantly.
+//
+// KNOWN LIMITATION: No handling for Supabase Realtime rate limits
+// (free tier: ~200 concurrent connections, ~100 msg/sec per channel) and
+// no schema versioning on broadcast payloads. Both are deferred until
+// real-world usage patterns or a breaking schema change make them necessary.
+
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { Project } from '../types';
 import { settingsService } from './SettingsService';
@@ -6,7 +19,11 @@ export type SharedStudioEvent =
   | { type: 'project_update'; project: Project; userId: string }
   | { type: 'user_joined'; userId: string; userName: string }
   | { type: 'user_left'; userId: string }
-  | { type: 'cursor'; userId: string; panelId: string | null };
+  | { type: 'cursor'; userId: string; userName: string; panelId: string | null; x: number; y: number }
+  | { type: 'request_state'; userId: string }
+  | { type: 'state_response'; userId: string; targetUserId: string; project: Project };
+
+export type SharedStudioConnectionStatus = 'connected' | 'disconnected' | 'reconnecting';
 
 class SharedStudioService {
   private client: SupabaseClient | null = null;
@@ -15,6 +32,11 @@ class SharedStudioService {
   private userName: string = 'Anonymous';
   private projectId: string | null = null;
   private onEventCallback: ((event: SharedStudioEvent) => void) | null = null;
+  private connectionStatus: SharedStudioConnectionStatus = 'disconnected';
+  private onConnectionStatusChange?: (status: SharedStudioConnectionStatus) => void;
+  // Stored for reconnect — set on joinProject, cleared on leaveProject
+  private _reconnectProjectId: string | null = null;
+  private _reconnectCurrentProject: Project | null = null;
 
   isConfigured(): boolean {
     const s = settingsService.get();
@@ -29,6 +51,31 @@ class SharedStudioService {
     this.userName = name;
   }
 
+  setConnectionStatusListener(cb: (status: SharedStudioConnectionStatus) => void): void {
+    this.onConnectionStatusChange = cb;
+  }
+
+  getConnectionStatus(): SharedStudioConnectionStatus {
+    return this.connectionStatus;
+  }
+
+  private async attemptReconnect(): Promise<void> {
+    if (!this._reconnectProjectId || !this.onEventCallback) return;
+    if (this.connectionStatus === 'connected') return;
+    this.connectionStatus = 'reconnecting';
+    this.onConnectionStatusChange?.('reconnecting');
+    try {
+      // leaveProject clears reconnect fields — snapshot before calling
+      const projectId = this._reconnectProjectId;
+      const currentProject = this._reconnectCurrentProject;
+      const onEvent = this.onEventCallback;
+      await this.leaveProject();
+      await this.joinProject(projectId, onEvent, currentProject);
+    } catch {
+      setTimeout(() => this.attemptReconnect(), 8000);
+    }
+  }
+
   private getClient(): SupabaseClient | null {
     const s = settingsService.get();
     if (!s.supabaseUrl || !s.supabaseAnonKey) return null;
@@ -39,9 +86,27 @@ class SharedStudioService {
     return this.client;
   }
 
+  /** Strip binary fields and local-only history before broadcasting.
+   *  Supabase Realtime has a 32KB per-message limit on free tier. */
+  private stripBinaryFields(project: Project): Project {
+    return {
+      ...project,
+      panels: project.panels.map(panel => ({
+        ...panel,
+        generatedImageData: undefined,
+        motionClipData: undefined,
+        voiceClipData: undefined,
+        poseClipData: undefined,
+        editHistory: [],
+        revisions: [],
+      })),
+    };
+  }
+
   async joinProject(
     projectId: string,
-    onEvent: (event: SharedStudioEvent) => void
+    onEvent: (event: SharedStudioEvent) => void,
+    currentProject: Project | null = null,
   ): Promise<boolean> {
     const client = this.getClient();
     if (!client) return false;
@@ -68,7 +133,35 @@ class SharedStudioService {
       onEvent({
         type: 'cursor',
         userId: payload.userId as string,
+        userName: payload.userName as string,
         panelId: payload.panelId as string | null,
+        x: payload.x as number,
+        y: payload.y as number,
+      });
+    });
+
+    // When another user asks for current state, respond with our project (if we have one)
+    this.channel.on('broadcast', { event: 'request_state' }, ({ payload }) => {
+      if (payload.userId === this.userId) return; // ignore our own broadcast
+      if (!currentProject) return;
+      this.channel?.send({
+        type: 'broadcast',
+        event: 'state_response',
+        payload: {
+          type: 'state_response',
+          userId: this.userId,
+          targetUserId: payload.userId,
+          project: this.stripBinaryFields(currentProject),
+        },
+      });
+    });
+
+    this.channel.on('broadcast', { event: 'state_response' }, ({ payload }) => {
+      onEvent({
+        type: 'state_response',
+        userId: payload.userId as string,
+        targetUserId: payload.targetUserId as string,
+        project: payload.project as Project,
       });
     });
 
@@ -86,17 +179,39 @@ class SharedStudioService {
       });
     });
 
+    // Store for reconnect before the async subscribe resolves
+    this._reconnectProjectId = projectId;
+    this._reconnectCurrentProject = currentProject;
+
     await new Promise<void>((resolve) => {
+      let resolved = false;
       this.channel!.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          this.connectionStatus = 'connected';
+          this.onConnectionStatusChange?.('connected');
           await this.channel!.track({
             userId: this.userId,
             userName: this.userName,
             joinedAt: Date.now(),
           });
-          resolve();
+          if (!resolved) { resolved = true; resolve(); }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          this.connectionStatus = 'disconnected';
+          this.onConnectionStatusChange?.('disconnected');
+          if (!resolved) { resolved = true; resolve(); }
+          setTimeout(() => this.attemptReconnect(), 3000);
+        } else if (status === 'CLOSED') {
+          this.connectionStatus = 'disconnected';
+          this.onConnectionStatusChange?.('disconnected');
         }
       });
+    });
+
+    // Ask existing collaborators for current project state
+    await this.channel.send({
+      type: 'broadcast',
+      event: 'request_state',
+      payload: { type: 'request_state', userId: this.userId },
     });
 
     return true;
@@ -107,17 +222,21 @@ class SharedStudioService {
     await this.channel.send({
       type: 'broadcast',
       event: 'project_update',
-      payload: { project, userId: this.userId },
+      payload: { project: this.stripBinaryFields(project), userId: this.userId },
     });
   }
 
-  async broadcastCursor(panelId: string | null): Promise<void> {
+  broadcastCursor(panelId: string | null, x: number, y: number): void {
     if (!this.channel) return;
-    await this.channel.send({
+    this.channel.send({
       type: 'broadcast',
       event: 'cursor',
-      payload: { userId: this.userId, panelId },
+      payload: { userId: this.userId, userName: this.userName, panelId, x, y },
     });
+  }
+
+  isInSession(): boolean {
+    return this.channel !== null;
   }
 
   async leaveProject(): Promise<void> {
@@ -128,6 +247,9 @@ class SharedStudioService {
     }
     this.projectId = null;
     this.onEventCallback = null;
+    this._reconnectProjectId = null;
+    this._reconnectCurrentProject = null;
+    this.connectionStatus = 'disconnected';
   }
 
   getUserId(): string { return this.userId; }

@@ -9,8 +9,8 @@ interface Props {
 
 export default function ShareProjectModal({ projectId, onClose }: Props) {
   const [copied, setCopied] = useState(false);
-  const supabaseUrl = settingsService.get().supabaseUrl;
-  const inviteLink = `imagginary://join?project=${projectId}&url=${encodeURIComponent(supabaseUrl)}`;
+  const supabaseUrl = settingsService.get().supabaseUrl || '';
+  const inviteLink = `imagginary://join?project=${encodeURIComponent(projectId)}&supabase=${encodeURIComponent(supabaseUrl)}`;
 
   function handleCopy() {
     navigator.clipboard.writeText(inviteLink).then(() => {
@@ -68,6 +68,17 @@ export default function ShareProjectModal({ projectId, onClose }: Props) {
               <li>Teammate clicks the link — project loads automatically</li>
               <li>Changes sync in real time</li>
             </ol>
+          </div>
+
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mt-3">
+            <p className="text-amber-400 text-xs font-medium mb-1">
+              Treat this link like a shared document link
+            </p>
+            <p className="text-amber-400/80 text-xs">
+              Anyone with this link can join and edit this project. Don't post it publicly —
+              share it directly with people you trust. If a link is ever leaked, you can revoke
+              access instantly in Settings → Shared Studio.
+            </p>
           </div>
         </div>
       </div>

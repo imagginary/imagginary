@@ -110,6 +110,8 @@ export default function SettingsModal({ isPro, onClose }: Props) {
   const [serviceUrlsSaved, setServiceUrlsSaved] = useState(false);
   const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '');
   const [ollamaModelSaved, setOllamaModelSaved] = useState(false);
+  const [elevenLabsKey, setElevenLabsKey] = useState('');
+  const [elevenLabsSaved, setElevenLabsSaved] = useState(false);
   useEffect(() => {
     comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
   }, []);
@@ -340,35 +342,6 @@ export default function SettingsModal({ isPro, onClose }: Props) {
 
           <div className="border-t border-gray-800" />
 
-          {/* ── Section 3: Character Consistency / Fal.ai ── */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Character Consistency — Fal.ai</p>
-              <ProBadge />
-            </div>
-            <p className="text-[11px] text-gray-500 leading-relaxed">
-              Pro and Studio plans include cloud generation via our shared integration. Add your own Fal.ai key below to use your personal account instead.
-            </p>
-            {isPro ? (
-              <>
-                <KeyInput
-                  label="Your Fal.ai key (optional)"
-                  keyName="falApiKey"
-                  placeholder="Optional — paste your own key for additional usage"
-                  link="https://fal.ai"
-                  linkLabel="Get API key"
-                />
-                <p className="text-[10px] text-gray-700">
-                  If IPAdapter is installed locally in ComfyUI, it will be used automatically — no API key needed.
-                </p>
-              </>
-            ) : (
-              <ProGate />
-            )}
-          </div>
-
-          <div className="border-t border-gray-800" />
-
           {/* ── Section 5: Shared Studio — Supabase ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -422,6 +395,32 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                 >
                   {supabaseSaved ? 'Saved ✓' : 'Save'}
                 </button>
+
+                <div className="border-t border-gray-800 pt-4 mt-4">
+                  <p className="text-xs font-medium text-gray-300 mb-1">Revoke shared access</p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    If an invite link was shared somewhere it shouldn't have been, revoke access
+                    immediately. This generates a new anon key in your Supabase project and
+                    invalidates all existing invite links.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const projectSlug = supabaseUrl.trim().match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+                      const target = projectSlug
+                        ? `${supabaseUrl.trim()}/project/${projectSlug}/settings/api`
+                        : 'https://supabase.com/dashboard';
+                      (window as any).electronAPI?.openExternal(target);
+                    }}
+                    className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-2 rounded-lg border border-red-500/30 flex items-center gap-1.5 transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Regenerate anon key on Supabase →
+                  </button>
+                  <p className="text-xs text-gray-600 mt-2">
+                    After regenerating, paste the new key above and click Save. Update it on
+                    every device you and your collaborators use.
+                  </p>
+                </div>
               </>
             ) : (
               <div className="flex items-center gap-2 py-3">
@@ -430,6 +429,53 @@ export default function SettingsModal({ isPro, onClose }: Props) {
               </div>
             )}
           </div>
+
+          <div className="border-t border-gray-800" />
+
+          {/* ── ElevenLabs BYOK ── */}
+          {isPro && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Voice Cloning — ElevenLabs</p>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 border border-gray-600 font-medium uppercase tracking-wide">Optional BYOK</span>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                By default, voice cloning uses Cartesia Sonic (included in Studio).
+                Paste your own ElevenLabs API key to use ElevenLabs instead —
+                higher naturalness quality, your ElevenLabs subscription required.{' '}
+                <button
+                  onClick={() => (window as any).electronAPI?.openExternal('https://elevenlabs.io/api')}
+                  className="text-violet-400 hover:text-violet-300 transition-colors"
+                >
+                  Get API key →
+                </button>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={elevenLabsKey}
+                  onChange={e => { setElevenLabsKey(e.target.value); setElevenLabsSaved(false); }}
+                  placeholder="sk_... (optional — leave blank to use Cartesia)"
+                  className="flex-1 bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
+                />
+                <button
+                  onClick={async () => {
+                    await (window as any).electronAPI?.saveElevenLabsKey?.({ key: elevenLabsKey.trim() });
+                    setElevenLabsSaved(true);
+                    setTimeout(() => setElevenLabsSaved(false), 2000);
+                  }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                >
+                  {elevenLabsSaved ? 'Saved ✓' : 'Save'}
+                </button>
+              </div>
+              {elevenLabsKey && (
+                <p className="text-[10px] text-green-500">
+                  ✓ ElevenLabs key configured — voice cloning will use ElevenLabs
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="border-t border-gray-800" />
 
@@ -485,11 +531,11 @@ export default function SettingsModal({ isPro, onClose }: Props) {
                     type="text"
                     value={ollamaModel}
                     onChange={(e) => { setOllamaModel(e.target.value); setOllamaModelSaved(false); }}
-                    placeholder="qwen2.5:14b"
+                    placeholder="qwen2.5:3b"
                     className="w-full bg-gray-900 border border-gray-700 focus:border-imagginary-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
                   />
                   <p className="text-[11px] text-gray-500">
-                    Default: qwen2.5:14b. Change only if you have a different model installed.
+                    Default: qwen2.5:3b. Change only if you have a different model installed.
                   </p>
                   <button
                     onClick={() => {

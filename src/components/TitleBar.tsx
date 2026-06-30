@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users } from 'lucide-react';
+import { Save, FolderOpen, Plus, Video, Loader2, HelpCircle, Settings, ScrollText, FileText, FileCode, Lock, X, Clapperboard, Star, Zap, Users, Link } from 'lucide-react';
 import { ServiceStatus } from '../types';
 import type { Tier } from '../utils/tierColors';
 
@@ -27,6 +27,8 @@ interface TitleBarProps {
   onActivateLicense?: () => void;
   isSharedSession?: boolean;
   onStartSharedSession?: () => void;
+  onCopyInviteLink?: () => void;
+  sharedStudioConfigured?: boolean;
   isExportingMotionComic: boolean;
   motionComicProgress: number;
   hasMotionClips: boolean;
@@ -104,6 +106,8 @@ export default function TitleBar({
   hasMotionClips,
   isSharedSession = false,
   onStartSharedSession,
+  onCopyInviteLink,
+  sharedStudioConfigured = false,
 }: TitleBarProps) {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -254,20 +258,32 @@ export default function TitleBar({
           </button>
 
           {isStudio && (
-            <button
-              onClick={onStartSharedSession}
-              className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
-                isSharedSession
-                  ? 'text-green-400 hover:text-green-300 hover:bg-green-900/20'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-              }`}
-              title="Shared Studio — collaborate in real time"
-            >
-              <Users className="w-3.5 h-3.5" />
-              {isSharedSession && (
-                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={onStartSharedSession}
+                className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                  isSharedSession
+                    ? 'text-green-400 hover:text-green-300 hover:bg-green-900/20'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                }`}
+                title={isSharedSession ? 'Leave shared session' : 'Start collaboration session'}
+              >
+                <Users className="w-3.5 h-3.5" />
+                {isSharedSession ? 'Live' : 'Collab'}
+                {isSharedSession && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-400" />
+                )}
+              </button>
+              {sharedStudioConfigured && (
+                <button
+                  onClick={onCopyInviteLink}
+                  className="p-1.5 rounded text-gray-500 hover:text-violet-400 hover:bg-gray-800 transition-colors"
+                  title="Anyone with this link can join. Treat it like a private document link — see Settings to revoke access if needed."
+                >
+                  <Link className="w-3 h-3" />
+                </button>
               )}
-            </button>
+            </div>
           )}
 
           <div className="w-px h-4 bg-gray-700 mx-1" />
@@ -287,7 +303,7 @@ export default function TitleBar({
               onClick={onActivateLicense}
               className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold tracking-widest uppercase transition-colors"
               style={{ color: tierAccent }}
-              title="Pro — manage license"
+              title="Pro active — click to manage or upgrade to Studio"
             >
               <Zap className="w-3 h-3" /> Pro
             </button>
