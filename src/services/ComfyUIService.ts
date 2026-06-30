@@ -427,7 +427,9 @@ export class ComfyUIService {
           height: aspectRatio.height,
         });
         if (result?.base64 && !result.error) {
-          // Credits are deducted atomically in the main process before the result is returned.
+          // Credits were deducted atomically in the main process. Sync the renderer
+          // cache so the UI reflects the correct balance without waiting for a restart.
+          await licenseService.refreshBalanceFromStore();
           telemetryService.track('panel_generated_cloud', { provider: 'flux_schnell' });
           onProgress?.(100, 'Done');
           return `data:image/png;base64,${result.base64}`;
@@ -524,8 +526,9 @@ export class ComfyUIService {
               faceImageData: refData,
             });
             if (result?.base64 && !result.error) {
-              // Main process fetches the CDN URL, converts to base64, and deducts
-              // credits atomically before returning — no renderer-side work needed.
+              // Credits were deducted atomically in the main process. Sync the renderer
+              // cache so the UI reflects the correct balance without waiting for a restart.
+              await licenseService.refreshBalanceFromStore();
               return `data:image/png;base64,${result.base64}`;
             }
           }
@@ -709,7 +712,9 @@ export class ComfyUIService {
             strength:    0.75,
           });
           if (result?.base64 && !result.error) {
-            // Credits deducted atomically in main process.
+            // Credits were deducted atomically in the main process. Sync the renderer
+            // cache so the UI reflects the correct balance without waiting for a restart.
+            await licenseService.refreshBalanceFromStore();
             onProgress?.(100, 'Done');
             telemetryService.track('inpaint_flux_fill');
             return `data:image/png;base64,${result.base64}`;
@@ -1007,7 +1012,10 @@ export class ComfyUIService {
       });
 
       if (result?.base64 && result.base64.length > 1000) {
-        await licenseService.spendCredits(CREDIT_COSTS.motionClip);
+        // Credits were deducted atomically in the main process (deductCreditsAtomic).
+        // Calling spendCredits() here would hit the spend-credits IPC handler and
+        // deduct a SECOND time — 28 credits instead of 14. Refresh the cache instead.
+        await licenseService.refreshBalanceFromStore();
         telemetryService.track('motion_generated_cloud', { provider: 'kling' });
         return result.base64;
       }

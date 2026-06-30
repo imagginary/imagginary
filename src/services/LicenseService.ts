@@ -153,6 +153,21 @@ class LicenseService {
     return result?.success ?? false;
   }
 
+  /**
+   * Re-reads the balance from the main-process electron-store and updates the
+   * renderer cache.  Call this after any cloud handler that deducts credits
+   * atomically in the main process without going through spendCredits(), so the
+   * UI immediately reflects the correct post-generation balance.
+   */
+  async refreshBalanceFromStore(): Promise<void> {
+    const credits = await window.electronAPI?.getCredits?.();
+    if (credits) {
+      this._cache.subscriptionCredits = credits.subscriptionCredits;
+      this._cache.topUpCredits        = credits.topUpCredits;
+      // lastCreditedAt is managed by checkAndAddMonthlyCredits — don't overwrite it
+    }
+  }
+
   async addTopUpCredits(amount: number): Promise<void> {
     this._cache = {
       ...this._cache,

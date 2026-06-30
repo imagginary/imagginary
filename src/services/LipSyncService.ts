@@ -42,7 +42,10 @@ class LipSyncService {
       const result = await window.electronAPI!.syncsoLipSync({ imageBase64, audioBase64 });
 
       if (result?.videoUrl && !result.error) {
-        await licenseService.spendCredits(CREDIT_COSTS.lipSync);
+        // Credits were deducted atomically in the main process (deductCreditsAtomic).
+        // Calling spendCredits() here would hit the spend-credits IPC handler and
+        // deduct a SECOND time — 32 credits instead of 16. Refresh the cache instead.
+        await licenseService.refreshBalanceFromStore();
         return { videoUrl: result.videoUrl, videoData: null };
       }
       console.error('[LipSync] Error from main process:', result?.error);

@@ -3757,9 +3757,15 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
     const data = await res.json();
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
-    const base64 = await fetchToBase64(imageUrl);
+    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
+    // If fetchToBase64 throws (CDN error, corrupt file), credits are still correctly
+    // consumed rather than silently skipped.
     const deduct0 = deductCreditsAtomic(CREDIT_COST.panelCloud);
-    if (!deduct0.success) console.warn('[Credits] fal-flux-schnell deduction failed post-generation:', deduct0.error);
+    if (!deduct0.success) {
+      console.warn('[Credits] fal-flux-schnell deduction failed (insufficient credits at deduction time):', deduct0.error);
+      return { error: 'insufficient credits' };
+    }
+    const base64 = await fetchToBase64(imageUrl);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3787,9 +3793,13 @@ ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
     const data = await res.json();
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
-    const base64 = await fetchToBase64(imageUrl);
+    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
     const deduct1 = deductCreditsAtomic(CREDIT_COST.characterPanel);
-    if (!deduct1.success) console.warn('[Credits] fal-ipadapter deduction failed post-generation:', deduct1.error);
+    if (!deduct1.success) {
+      console.warn('[Credits] fal-ipadapter deduction failed:', deduct1.error);
+      return { error: 'insufficient credits' };
+    }
+    const base64 = await fetchToBase64(imageUrl);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3820,9 +3830,13 @@ ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt
     const data = await res.json();
     const imageUrl = data.images?.[0]?.url;
     if (!imageUrl) return { error: 'No image URL in response' };
-    const base64 = await fetchToBase64(imageUrl);
+    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
     const deduct2 = deductCreditsAtomic(CREDIT_COST.inpaint);
-    if (!deduct2.success) console.warn('[Credits] fal-flux-fill deduction failed post-generation:', deduct2.error);
+    if (!deduct2.success) {
+      console.warn('[Credits] fal-flux-fill deduction failed:', deduct2.error);
+      return { error: 'insufficient credits' };
+    }
+    const base64 = await fetchToBase64(imageUrl);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3890,9 +3904,13 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
         const videoUrl = status.video?.url;
         if (!videoUrl) return { error: 'No video URL in Kling response' };
         try {
-          const base64Result = await fetchToBase64(videoUrl);
+          // Deduct BEFORE downloading — Kling has already rendered and billed us.
           const deductKling = deductCreditsAtomic(CREDIT_COST.motionClip);
-          if (!deductKling.success) console.warn('[Credits] fal-kling deduction failed post-generation:', deductKling.error);
+          if (!deductKling.success) {
+            console.warn('[Credits] fal-kling deduction failed:', deductKling.error);
+            return { error: 'insufficient credits' };
+          }
+          const base64Result = await fetchToBase64(videoUrl);
           send(100, 'Done');
           return { base64: `data:video/mp4;base64,${base64Result}` };
         } catch (err) {
