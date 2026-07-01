@@ -122,6 +122,7 @@ export default function PanelViewer({
   );
 
   // Pro gate tooltip visibility
+  const [showAnimateGate, setShowAnimateGate] = useState(false);
   const [showMotionLibraryGate, setShowMotionLibraryGate] = useState(false);
   const [showVideoTransferGate, setShowVideoTransferGate] = useState(false);
   const [showPoseGate, setShowPoseGate] = useState(false);
@@ -186,15 +187,16 @@ export default function PanelViewer({
 
   // Dismiss gate tooltips on any outside click
   useEffect(() => {
-    if (!showMotionLibraryGate && !showVideoTransferGate && !showPoseGate) return;
+    if (!showAnimateGate && !showMotionLibraryGate && !showVideoTransferGate && !showPoseGate) return;
     const dismiss = () => {
+      setShowAnimateGate(false);
       setShowMotionLibraryGate(false);
       setShowVideoTransferGate(false);
       setShowPoseGate(false);
     };
     document.addEventListener('click', dismiss);
     return () => document.removeEventListener('click', dismiss);
-  }, [showMotionLibraryGate, showVideoTransferGate, showPoseGate]);
+  }, [showAnimateGate, showMotionLibraryGate, showVideoTransferGate, showPoseGate]);
 
   // Reset drawing refs on unmount so a remounted instance starts clean
   useEffect(() => {
@@ -846,25 +848,56 @@ export default function PanelViewer({
           )}
 
           {canAnimate && (
-            <button
-              onClick={() => { setAnimateMode((v) => !v); setEditMode(false); setHasMask(false); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
-                animateMode ? '' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
-              }`}
-              style={animateMode ? {
-                backgroundColor: `${tierAccent}20`,
-                color: tierAccent,
-                border: `1px solid ${tierAccent}40`,
-              } : undefined}
-              title={
-                hasClip
-                  ? 'View or regenerate the motion clip for this panel'
-                  : 'Animate this panel with camera movement and motion. Pro uses Seedance or Veo cloud (~1–2 min). Local needs 24GB GPU.'
-              }
-            >
-              <Film className="w-3 h-3" />
-              {animateMode ? 'Animating…' : hasClip ? 'Clip Ready' : 'Animate'}
-            </button>
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  if (!isPro) {
+                    e.stopPropagation();
+                    setShowAnimateGate((v) => !v);
+                    setShowPoseGate(false);
+                    setShowMotionLibraryGate(false);
+                    setShowVideoTransferGate(false);
+                    return;
+                  }
+                  setAnimateMode((v) => !v);
+                  setEditMode(false);
+                  setHasMask(false);
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                  animateMode ? '' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                }`}
+                style={animateMode ? {
+                  backgroundColor: `${tierAccent}20`,
+                  color: tierAccent,
+                  border: `1px solid ${tierAccent}40`,
+                } : undefined}
+                title={
+                  !isPro
+                    ? 'Animate — Pro feature'
+                    : hasClip
+                      ? 'View or regenerate the motion clip for this panel'
+                      : 'Animate this panel with camera movement and motion. Pro uses Seedance or Veo cloud (~1–2 min).'
+                }
+              >
+                {!isPro && <Lock className="w-3 h-3" />}
+                {isPro && <Film className="w-3 h-3" />}
+                {animateMode ? 'Animating…' : hasClip ? 'Clip Ready' : 'Animate'}
+              </button>
+              {showAnimateGate && (
+                <div
+                  className="absolute bottom-full left-0 mb-2 w-64 bg-gray-950 border border-gray-800 rounded-xl shadow-xl z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ProFeatureGate
+                    feature="Animate"
+                    description="Bring your storyboard panels to life with AI-generated motion clips. Choose Seedance (fast) or Veo 3.1 (premium quality) — no GPU needed."
+                    highlight="Seedance: ~2 min, 14 credits · Veo 3.1: ~1 min, 28 credits"
+                    onUpgrade={() => { setShowAnimateGate(false); onUpgrade?.(); }}
+                    tierRequired="pro"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {/* Pose Engine — Pro gate for Community users with eligible panels */}
@@ -1083,19 +1116,8 @@ export default function PanelViewer({
       {/* Animate panel — expands below toolbar when animateMode is active */}
       {animateMode && (
         <div className="w-full px-6 pb-3 flex flex-col gap-2">
-          {wanModelAvailable === false && !isPro ? (
-            /* No local model and not Pro — show consistent upgrade prompt */
-            <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
-              <ProFeatureGate
-                feature="Animate"
-                description="Bring your panels to life with AI-generated motion clips. Choose Seedance (fast) or Veo 3.1 (premium quality) — no GPU needed."
-                highlight="Seedance: ~2 min, 14 credits · Veo 3.1: ~1 min, 28 credits"
-                onUpgrade={() => onUpgrade?.()}
-                tierRequired="pro"
-              />
-            </div>
-          ) : (
-            /* Local model available (or still checking) — show generation UI */
+          {wanModelAvailable === false && !isPro ? null : (
+            /* Local model available (or still checking), or Pro/Studio — show generation UI */
             <>
               {/* Existing clip controls */}
               {hasClip && (

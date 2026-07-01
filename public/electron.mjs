@@ -3951,7 +3951,7 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
 
   try {
     send(5, 'Sending to Seedance…');
-    const submitRes = await fetch('https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video', {
+    const submitRes = await fetch('https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video', {
       method: 'POST',
       headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3973,14 +3973,14 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
       send(pct, 'Seedance is generating your motion clip…');
 
       const statusRes = await fetch(
-        `https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video/requests/${request_id}/status`,
+        `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
       const status = await statusRes.json();
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video/requests/${request_id}`,
+          `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
         const result = await resultRes.json();
