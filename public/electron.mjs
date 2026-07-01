@@ -3953,17 +3953,28 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.ai/upload', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
-      body: imageBuffer,
-    });
+    console.log('[Seedance] Starting image upload to storage.fal.ai...');
+    console.log('[Seedance] Image buffer size:', imageBuffer.length, 'bytes');
+    let uploadRes;
+    try {
+      uploadRes = await fetch('https://storage.fal.ai/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
+        body: imageBuffer,
+      });
+      console.log('[Seedance] Upload response status:', uploadRes.status);
+    } catch (fetchErr) {
+      console.error('[Seedance] Upload fetch threw:', fetchErr.message, fetchErr.cause?.message, fetchErr.cause?.code);
+      return { error: `Upload failed: ${fetchErr.message} — cause: ${fetchErr.cause?.message ?? 'unknown'} (${fetchErr.cause?.code ?? 'no code'})` };
+    }
     if (!uploadRes.ok) {
       const uploadErr = await uploadRes.text().catch(() => '<empty>');
+      console.error('[Seedance] Upload non-OK:', uploadRes.status, uploadErr);
       return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
     }
     const uploadData = await uploadRes.json();
     const imageUrl = uploadData.url;
+    console.log('[Seedance] Upload succeeded, CDN URL:', imageUrl);
     if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
 
     send(5, 'Sending to Seedance…');
@@ -3978,16 +3989,20 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
         generate_audio: false,
       }),
     });
+    console.log('[Seedance] Submission response status:', submitRes.status);
     if (!submitRes.ok) {
       const rawText = await submitRes.text().catch(() => '<empty>');
+      console.error('[Seedance] Submission failed:', submitRes.status, rawText);
       return { error: `Seedance submission failed: ${submitRes.status} — ${rawText}` };
     }
     let submitData;
     try { submitData = await submitRes.json(); } catch (err) {
       const rawText = await submitRes.text().catch(() => '<empty>');
+      console.error('[Seedance] Submission parse failed:', rawText);
       return { error: `Seedance submission parse failed: ${rawText}` };
     }
     const request_id = submitData?.request_id;
+    console.log('[Seedance] Got request_id:', request_id);
     if (!request_id) return { error: `Seedance submission missing request_id: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 60; i++) {
