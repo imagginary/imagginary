@@ -4081,7 +4081,9 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       console.log('[Seedance] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(response_url, { headers: { 'Authorization': `Key ${key}` } });
+        const resultUrl = `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`;
+        console.log('[Seedance] Fetching result from:', resultUrl);
+        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) return { error: `Seedance result fetch failed: ${resultRes.status}` };
         let result;
         try { result = await resultRes.json(); } catch (err) {
@@ -4182,7 +4184,9 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       console.log('[Veo] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(veo_response_url, { headers: { 'Authorization': `Key ${key}` } });
+        const resultUrl = `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${veo_request_id}`;
+        console.log('[Veo] Fetching result from:', resultUrl);
+        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) return { error: `Veo result fetch failed: ${resultRes.status}` };
         let result;
         try { result = await resultRes.json(); } catch (err) {
@@ -4235,7 +4239,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
     }
 
     send(5, 'Uploading to Wan Motion…');
-    const submitRes = await fetch('https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video', {
+    const submitRes = await fetch('https://queue.fal.run/fal-ai/wan-motion', {
       method: 'POST',
       headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4268,7 +4272,8 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Transferring motion to your character…');
 
-      const statusRes = await fetch(wan_status_url, { headers: { 'Authorization': `Key ${key}` } });
+      const wanStatusUrl = `https://queue.fal.run/fal-ai/wan-motion/requests/${wan_request_id}/status`;
+      const statusRes = await fetch(wanStatusUrl, { headers: { 'Authorization': `Key ${key}` } });
       if (!statusRes.ok) {
         console.warn('[WanMotion] Status poll non-OK:', statusRes.status, '— continuing');
         continue;
@@ -4282,15 +4287,9 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       console.log('[WanMotion] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        // Fal returns response_url as the bare request URL (no /response suffix).
-        // Try response_url first; if 404, fall back to response_url + /response.
-        console.log('[WanMotion] Fetching result from response_url:', wan_response_url);
-        let resultRes = await fetch(wan_response_url, { headers: { 'Authorization': `Key ${key}` } });
-        if (resultRes.status === 404) {
-          const fallback = wan_response_url.replace(/\/?$/, '/response');
-          console.warn('[WanMotion] response_url 404, trying fallback:', fallback);
-          resultRes = await fetch(fallback, { headers: { 'Authorization': `Key ${key}` } });
-        }
+        const resultUrl = `https://queue.fal.run/fal-ai/wan-motion/requests/${wan_request_id}`;
+        console.log('[WanMotion] Fetching result from:', resultUrl);
+        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) {
           const errText = await resultRes.text().catch(() => '<empty>');
           console.error('[WanMotion] Result fetch failed:', resultRes.status, errText);
@@ -4303,7 +4302,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
           return { error: `Wan Motion result parse failed: ${rawText}` };
         }
         console.log('[WanMotion] Result keys:', Object.keys(result));
-        const outUrl = result.video?.url ?? result.output?.url ?? result.url;
+        const outUrl = result.video?.url;
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
         const deductW = deductCreditsAtomic(CREDIT_COST.videoTransfer);
         if (!deductW.success) return { error: 'insufficient credits' };
