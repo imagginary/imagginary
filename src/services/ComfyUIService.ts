@@ -1030,6 +1030,76 @@ export class ComfyUIService {
     }
   }
 
+  async animatePanelSeedance(
+    imageData: string,
+    motionPrompt: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string> {
+    if (!licenseService.hasCredits(CREDIT_COSTS.motionClip)) {
+      throw new Error('Insufficient credits for Seedance motion generation');
+    }
+    let cleanupProgress: (() => void) | null = null;
+    if (window.electronAPI?.onCloudProgress) {
+      cleanupProgress = window.electronAPI!.onCloudProgress(
+        (data: { handler: string; pct: number; msg: string }) => {
+          if (data.handler === 'fal-seedance') onProgress?.(data.pct, data.msg);
+        }
+      );
+    }
+    try {
+      const result = await (window.electronAPI as any).falSeedance({
+        imageUrl: imageData,   // main process sends inline data URL
+        prompt: motionPrompt,
+        duration: 5,
+      });
+      if (result?.error) throw new Error(result.error);
+      if (!result?.base64 || result.base64.length < 1000) {
+        throw new Error('Seedance returned invalid video data');
+      }
+      await licenseService.refreshBalanceFromStore();
+      telemetryService.track('motion_generated_cloud', { provider: 'seedance' });
+      return result.base64;
+    } finally {
+      cleanupProgress?.();
+      (window.electronAPI as any)?.cancelFalVideo?.();
+    }
+  }
+
+  async animatePanelVeo(
+    imageData: string,
+    motionPrompt: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string> {
+    if (!licenseService.hasCredits(CREDIT_COSTS.motionClipPremium)) {
+      throw new Error('Insufficient credits for Veo 3.1 motion generation');
+    }
+    let cleanupProgress: (() => void) | null = null;
+    if (window.electronAPI?.onCloudProgress) {
+      cleanupProgress = window.electronAPI!.onCloudProgress(
+        (data: { handler: string; pct: number; msg: string }) => {
+          if (data.handler === 'fal-veo') onProgress?.(data.pct, data.msg);
+        }
+      );
+    }
+    try {
+      const result = await (window.electronAPI as any).falVeo({
+        imageUrl: imageData,
+        prompt: motionPrompt,
+        duration: 5,
+      });
+      if (result?.error) throw new Error(result.error);
+      if (!result?.base64 || result.base64.length < 1000) {
+        throw new Error('Veo returned invalid video data');
+      }
+      await licenseService.refreshBalanceFromStore();
+      telemetryService.track('motion_generated_cloud', { provider: 'veo' });
+      return result.base64;
+    } finally {
+      cleanupProgress?.();
+      (window.electronAPI as any)?.cancelFalVideo?.();
+    }
+  }
+
   async animatePanel(
     imageData: string,
     motionPrompt: string,

@@ -144,28 +144,82 @@ class VideoTransferService {
     poseSequence: PoseKeyframe[],
     characterImagePath: string,
     motionPrompt: string,
-    onProgress: (pct: number) => void
+    onProgress: (pct: number) => void,
+    sourceVideoPath?: string
   ): Promise<string> {
     if (poseSequence.length === 0) {
       throw new Error('No pose sequence to apply');
     }
 
+    const api = getElectronAPI();
+
+    // ── Cloud path (Pro/Studio): upload character image + source video → wan-motion ─
+    if (sourceVideoPath && api.uploadVideoToFal) {
+      onProgress(5);
+
+      // Read character image as data URL
+      let characterImageUrl: string;
+      if (api.readImage) {
+        const imageResult = (await api.readImage(characterImagePath)) as {
+          success: boolean; data?: string; error?: string;
+        };
+        if (!imageResult.success || !imageResult.data) {
+          throw new Error(`Could not read character image: ${imageResult.error ?? 'unknown error'}`);
+        }
+        characterImageUrl = imageResult.data; // data URL — main process handles inline encoding
+      } else {
+        throw new Error('Image reading not available in this environment');
+      }
+
+      onProgress(15);
+
+      // Upload driving video to Fal storage
+      const videoUpload = (await api.uploadVideoToFal(sourceVideoPath)) as {
+        success: boolean; url?: string; error?: string;
+      };
+      if (!videoUpload.success || !videoUpload.url) {
+        throw new Error(`Failed to upload reference video: ${videoUpload.error ?? 'unknown error'}`);
+      }
+
+      onProgress(30);
+
+      // Listen for progress events
+      const cleanup = (window.electronAPI as any)?.onCloudProgress?.(
+        (data: { handler: string; pct: number }) => {
+          if (data.handler === 'fal-wan-motion') onProgress(data.pct);
+        }
+      );
+
+      try {
+        const result = (await (api.falWanMotion as Function)({
+          imageUrl: characterImageUrl,
+          videoUrl: videoUpload.url,
+          prompt: motionPrompt || 'smooth motion transfer, cinematic character animation',
+        })) as { base64?: string; error?: string };
+
+        if (result?.error) throw new Error(result.error);
+        if (!result?.base64 || result.base64.length < 1000) {
+          throw new Error('Wan Motion returned invalid video data');
+        }
+        onProgress(100);
+        return result.base64;
+      } finally {
+        cleanup?.();
+        (api.cancelFalVideo as Function | undefined)?.();
+      }
+    }
+
+    // ── Local fallback: ComfyUI ControlNet + Wan 2.2 ──────────────────────────
     onProgress(5);
 
-    // Read the character image
-    const api = getElectronAPI();
     let imageDataB64 = '';
-
     if (api.readImage) {
       const imageResult = (await api.readImage(characterImagePath)) as {
-        success: boolean;
-        data?: string;
-        error?: string;
+        success: boolean; data?: string; error?: string;
       };
       if (!imageResult.success || !imageResult.data) {
         throw new Error(`Could not read character image: ${imageResult.error ?? 'unknown error'}`);
       }
-      // Strip data URL prefix if present
       imageDataB64 = imageResult.data.replace(/^data:[^;]+;base64,/, '');
     } else {
       throw new Error('Image reading not available in this environment');
@@ -173,7 +227,6 @@ class VideoTransferService {
 
     onProgress(10);
 
-    // Build the ControlNet temporal workflow
     const workflow = buildPoseControlNetWorkflow({
       imageDataB64,
       poseFrames: poseSequence,
@@ -182,7 +235,6 @@ class VideoTransferService {
 
     onProgress(20);
 
-    // Queue in ComfyUI
     const baseUrl = await this.getComfyBaseUrl();
     const queueRes = await fetch(`${baseUrl}/prompt`, {
       method: 'POST',
@@ -198,7 +250,6 @@ class VideoTransferService {
     const { prompt_id } = (await queueRes.json()) as { prompt_id: string };
     onProgress(25);
 
-    // Poll for result
     return await this.pollForVideo(prompt_id, baseUrl, onProgress);
   }
 
@@ -253,7 +304,14 @@ class VideoTransferService {
 
       return await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result !== 'string') {
+            reject(new Error('Video read produced no data (FileReader.result was not a string)'));
+            return;
+          }
+          resolve(result);
+        };
         reader.onerror = () => reject(new Error('Failed to read video blob'));
         reader.readAsDataURL(blob);
       });

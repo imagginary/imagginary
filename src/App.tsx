@@ -227,6 +227,11 @@ interface ElectronAPI {
   falFluxFill: (params: unknown) => Promise<unknown>;
   falKling: (params: unknown) => Promise<unknown>;
   cancelFalKling: () => void;
+  falSeedance: (params: unknown) => Promise<unknown>;
+  falVeo: (params: unknown) => Promise<unknown>;
+  falWanMotion: (params: unknown) => Promise<unknown>;
+  cancelFalVideo: () => void;
+  uploadVideoToFal: (videoPath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   syncsoLipSync: (params: unknown) => Promise<unknown>;
   deepSeekShot: (params: unknown) => Promise<unknown>;
   deepSeekScreenplay: (params: unknown) => Promise<unknown>;
@@ -1212,7 +1217,7 @@ export default function App() {
     }
   }
 
-  async function handleAnimatePanel(panelId: string, motionDescription: string) {
+  async function handleAnimatePanel(panelId: string, motionDescription: string, motionEngine: 'seedance' | 'veo' = 'seedance') {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.generatedImageData) return;
 
@@ -1230,13 +1235,22 @@ export default function App() {
       let base64Video: string;
 
       if (isProUser) {
-        // Pro/Studio: Kling cloud only — no local Wan fallback
-        setProgress({ panelId, status: 'animating', progress: 5, message: 'Sending to Kling…' });
-        base64Video = await comfyUIService.animatePanelCloud(
-          panel.generatedImageData,
-          motionPrompt,
-          (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
-        );
+        // Pro/Studio: Seedance or Veo cloud — no local Wan fallback
+        const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : 'Seedance';
+        setProgress({ panelId, status: 'animating', progress: 5, message: `Sending to ${engineLabel}…` });
+        if (motionEngine === 'veo') {
+          base64Video = await comfyUIService.animatePanelVeo(
+            panel.generatedImageData,
+            motionPrompt,
+            (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
+          );
+        } else {
+          base64Video = await comfyUIService.animatePanelSeedance(
+            panel.generatedImageData,
+            motionPrompt,
+            (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
+          );
+        }
       } else {
         // Community: local Wan I2V only
         setProgress({ panelId, status: 'animating', progress: 5, message: 'Generating motion clip...' });
@@ -1410,6 +1424,10 @@ export default function App() {
 
   async function handleVideoTransferComplete(videoData: string, clipPath: string | null) {
     if (!activePanelId) return;
+    if (!videoData || typeof videoData !== 'string') {
+      console.error('[VideoTransfer] received non-string videoData:', typeof videoData);
+      return;
+    }
     let savedPath = clipPath;
     if (!savedPath && window.electronAPI?.saveVideo) {
       const isMP4 = videoData.startsWith('data:video/mp4');
@@ -1803,7 +1821,7 @@ export default function App() {
               setShowVoiceStudio(true);
             }}
             onClearError={() => setProgress(null)}
-            onCancelAnimate={() => { window.electronAPI?.cancelFalKling?.(); setProgress(null); }}
+            onCancelAnimate={() => { window.electronAPI?.cancelFalVideo?.(); window.electronAPI?.cancelFalKling?.(); setProgress(null); }}
             onCancelInpaint={() => { window.electronAPI?.interruptComfyUI?.(); setProgress(null); }}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}

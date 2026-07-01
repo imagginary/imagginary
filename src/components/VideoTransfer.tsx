@@ -288,7 +288,8 @@ export default function VideoTransfer({
         poseSequence,
         selectedChar.referenceImagePath,
         motionPrompt,
-        setApplyProgress
+        setApplyProgress,
+        selectedFilePath || undefined  // cloud path: pass source video for wan-motion upload
       );
       setApplyProgress(100);
       setStep('done');

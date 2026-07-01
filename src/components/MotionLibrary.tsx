@@ -210,6 +210,9 @@ export default function MotionLibrary({
   const [applyProgress, setApplyProgress] = useState(0);
   const [applyMsg, setApplyMsg] = useState('');
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [motionEngine, setMotionEngine] = useState<'seedance' | 'veo'>(
+    () => (localStorage.getItem('motionEngine') as 'seedance' | 'veo') || 'seedance'
+  );
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const animFrameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -295,7 +298,7 @@ export default function MotionLibrary({
 
   function handleClose() {
     if (isApplying) {
-      window.electronAPI?.cancelFalKling?.();
+      (window.electronAPI as any)?.cancelFalVideo?.();
     }
     onClose();
   }
@@ -310,7 +313,7 @@ export default function MotionLibrary({
     setApplyMsg('Starting…');
     const cleanupProgress = window.electronAPI?.onCloudProgress?.(
       (data: { handler: string; pct: number; msg: string }) => {
-        if (data.handler === 'fal-kling') {
+        if (data.handler === 'fal-seedance' || data.handler === 'fal-veo') {
           setApplyProgress(data.pct);
           setApplyMsg(data.msg);
         }
@@ -320,7 +323,8 @@ export default function MotionLibrary({
       const { videoData } = await motionLibraryService.applyClipToCharacter(
         selectedClip.id,
         panel.generatedImageData,
-        (pct, msg) => { setApplyProgress(pct); setApplyMsg(msg); }
+        (pct, msg) => { setApplyProgress(pct); setApplyMsg(msg); },
+        motionEngine
       );
       onApply({ clipId: selectedClip.id, videoData });
     } catch (err) {
@@ -355,7 +359,7 @@ export default function MotionLibrary({
 
   const expandedPreview = selectedPoseSeq.length > 0 ? expandSequence(selectedPoseSeq, 4) : [];
   const currentFrame = expandedPreview[previewFrame % Math.max(1, expandedPreview.length)];
-  // Pro/Studio always use Kling cloud — comfyuiConnected only required for Community users
+  // Pro/Studio always use Seedance/Veo cloud — comfyuiConnected only required for Community users
   const canApply = isPro && !!selectedClip && !!panel.generatedImageData && !isApplying
     && (isPro || comfyuiConnected);
 
@@ -573,6 +577,35 @@ export default function MotionLibrary({
                     </div>
                   ) : (
                     <>
+                      {/* Motion engine selector */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Engine:</span>
+                        <div className="flex rounded-lg overflow-hidden border border-gray-700">
+                          <button
+                            onClick={() => { setMotionEngine('seedance'); localStorage.setItem('motionEngine', 'seedance'); }}
+                            className={`px-3 py-1.5 text-xs transition-colors ${
+                              motionEngine === 'seedance'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-900 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            <div className="font-medium">Seedance</div>
+                            <div className="text-[10px] opacity-75">~2 min · 14 cr</div>
+                          </button>
+                          <button
+                            onClick={() => { setMotionEngine('veo'); localStorage.setItem('motionEngine', 'veo'); }}
+                            className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
+                              motionEngine === 'veo'
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-gray-900 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            <div className="font-medium">Veo 3.1 ✦</div>
+                            <div className="text-[10px] opacity-75">~1 min · 28 cr</div>
+                          </button>
+                        </div>
+                      </div>
+
                       {applyError && (
                         <div className="flex items-start gap-2 px-3 py-2 bg-red-950/50 border border-red-800/50 rounded text-xs text-red-400">
                           <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -593,7 +626,7 @@ export default function MotionLibrary({
                             />
                           </div>
                           <p className="text-[10px] text-gray-600">
-                            Wan 2.2 via ControlNet · ~3–5 min on Apple Silicon
+                            {motionEngine === 'veo' ? 'Veo 3.1 Fast · ~1 min' : 'Seedance 1.5 Pro · ~2 min'} · credits deducted on completion
                           </p>
                         </div>
                       )}

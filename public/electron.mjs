@@ -2923,12 +2923,14 @@ const creditDefaults = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt
 
 // Per-feature credit costs (mirrors CREDIT_COSTS in LicenseService.ts)
 const CREDIT_COST = {
-  panelCloud:     2,
-  inpaint:        3,
-  characterPanel: 2,
-  motionClip:    14,
-  lipSync:       16,
-  loraTraining:  50,
+  panelCloud:         2,
+  inpaint:            3,
+  characterPanel:     2,
+  motionClip:        14,   // Seedance 1.5 Pro
+  motionClipPremium: 28,   // Veo 3.1 Fast (2× — higher quality, ~4× upstream cost)
+  videoTransfer:     14,   // Wan Motion cloud transfer
+  lipSync:           16,
+  loraTraining:      50,
 };
 
 function getCredits() {
@@ -3924,6 +3926,238 @@ ipcMain.handle('fal-kling', async (event, { imageData, motionPrompt, duration = 
     return { error: err.message };
   } finally {
     activeKlingFlags.delete(flag);
+  }
+});
+
+// ── Shared cancel set for Seedance / Veo / Wan Motion ──────────────────────────
+const activeVideoFlags = new Set();
+ipcMain.on('cancel-fal-video', () => {
+  for (const flag of activeVideoFlags) flag.cancelled = true;
+});
+
+// ── Seedance 1.5 Pro — image to video ──────────────────────────────────────────
+ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _balS = getCredits();
+  if (_balS.subscriptionCredits + _balS.topUpCredits < CREDIT_COST.motionClip) return { error: 'insufficient credits' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'fal-seedance', pct, msg }); } catch {}
+  };
+  const flag = { cancelled: false };
+  activeVideoFlags.add(flag);
+
+  try {
+    send(5, 'Sending to Seedance…');
+    const submitRes = await fetch('https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        prompt: prompt || 'cinematic motion, smooth animation',
+        duration: duration || 5,
+        resolution: '720p',
+        generate_audio: false,
+      }),
+    });
+    if (!submitRes.ok) return { error: `Seedance submission failed: ${submitRes.status}` };
+    const { request_id } = await submitRes.json();
+
+    for (let i = 0; i < 60; i++) {
+      if (flag.cancelled) return { error: 'cancelled' };
+      await new Promise(r => setTimeout(r, 5000));
+      if (flag.cancelled) return { error: 'cancelled' };
+      const pct = Math.min(90, 15 + i * 1.5);
+      send(pct, 'Seedance is generating your motion clip…');
+
+      const statusRes = await fetch(
+        `https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video/requests/${request_id}/status`,
+        { headers: { 'Authorization': `Key ${key}` } }
+      );
+      const status = await statusRes.json();
+
+      if (status.status === 'COMPLETED') {
+        const resultRes = await fetch(
+          `https://queue.fal.run/fal-ai/seedance-v1-5-pro/image-to-video/requests/${request_id}`,
+          { headers: { 'Authorization': `Key ${key}` } }
+        );
+        const result = await resultRes.json();
+        const videoUrl = result.video?.url;
+        if (!videoUrl) return { error: 'No video URL in Seedance response' };
+        const deductS = deductCreditsAtomic(CREDIT_COST.motionClip);
+        if (!deductS.success) return { error: 'insufficient credits' };
+        send(92, 'Downloading your motion clip…');
+        const base64 = await fetchToBase64(videoUrl);
+        send(100, 'Done');
+        return { base64: `data:video/mp4;base64,${base64}` };
+      }
+      if (status.status === 'FAILED') return { error: 'Seedance generation failed' };
+    }
+    return { error: 'Seedance timed out' };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    activeVideoFlags.delete(flag);
+  }
+});
+
+// ── Veo 3.1 Fast — image to video (premium) ────────────────────────────────────
+ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _balV = getCredits();
+  if (_balV.subscriptionCredits + _balV.topUpCredits < CREDIT_COST.motionClipPremium) return { error: 'insufficient credits' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'fal-veo', pct, msg }); } catch {}
+  };
+  const flag = { cancelled: false };
+  activeVideoFlags.add(flag);
+
+  try {
+    send(5, 'Sending to Veo 3.1…');
+    const submitRes = await fetch('https://queue.fal.run/fal-ai/veo3/image-to-video', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        prompt: prompt || 'cinematic motion, smooth animation',
+        duration: duration || 5,
+        generate_audio: false,
+      }),
+    });
+    if (!submitRes.ok) return { error: `Veo submission failed: ${submitRes.status}` };
+    const { request_id } = await submitRes.json();
+
+    for (let i = 0; i < 30; i++) {
+      if (flag.cancelled) return { error: 'cancelled' };
+      await new Promise(r => setTimeout(r, 5000));
+      if (flag.cancelled) return { error: 'cancelled' };
+      const pct = Math.min(90, 15 + i * 3);
+      send(pct, 'Veo 3.1 is generating your motion clip…');
+
+      const statusRes = await fetch(
+        `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/status`,
+        { headers: { 'Authorization': `Key ${key}` } }
+      );
+      const status = await statusRes.json();
+
+      if (status.status === 'COMPLETED') {
+        const resultRes = await fetch(
+          `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}`,
+          { headers: { 'Authorization': `Key ${key}` } }
+        );
+        const result = await resultRes.json();
+        const videoUrl = result.video?.url;
+        if (!videoUrl) return { error: 'No video URL in Veo response' };
+        const deductV = deductCreditsAtomic(CREDIT_COST.motionClipPremium);
+        if (!deductV.success) return { error: 'insufficient credits' };
+        send(92, 'Downloading your motion clip…');
+        const base64 = await fetchToBase64(videoUrl);
+        send(100, 'Done');
+        return { base64: `data:video/mp4;base64,${base64}` };
+      }
+      if (status.status === 'FAILED') return { error: 'Veo generation failed' };
+    }
+    return { error: 'Veo timed out' };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    activeVideoFlags.delete(flag);
+  }
+});
+
+// ── Wan Motion — cloud Video Transfer (character image + driving video) ─────────
+ipcMain.handle('fal-wan-motion', async (event, { imageUrl, videoUrl, prompt }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  const _balW = getCredits();
+  if (_balW.subscriptionCredits + _balW.topUpCredits < CREDIT_COST.videoTransfer) return { error: 'insufficient credits' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'fal-wan-motion', pct, msg }); } catch {}
+  };
+  const flag = { cancelled: false };
+  activeVideoFlags.add(flag);
+
+  try {
+    send(5, 'Uploading to Wan Motion…');
+    const submitRes = await fetch('https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        video_url: videoUrl,
+        prompt: prompt || 'smooth motion transfer, cinematic character animation',
+      }),
+    });
+    if (!submitRes.ok) return { error: `Wan Motion submission failed: ${submitRes.status}` };
+    const { request_id } = await submitRes.json();
+
+    for (let i = 0; i < 60; i++) {
+      if (flag.cancelled) return { error: 'cancelled' };
+      await new Promise(r => setTimeout(r, 5000));
+      if (flag.cancelled) return { error: 'cancelled' };
+      const pct = Math.min(90, 15 + i * 1.5);
+      send(pct, 'Transferring motion to your character…');
+
+      const statusRes = await fetch(
+        `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/status`,
+        { headers: { 'Authorization': `Key ${key}` } }
+      );
+      const status = await statusRes.json();
+
+      if (status.status === 'COMPLETED') {
+        const resultRes = await fetch(
+          `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}`,
+          { headers: { 'Authorization': `Key ${key}` } }
+        );
+        const result = await resultRes.json();
+        const outUrl = result.video?.url;
+        if (!outUrl) return { error: 'No video URL in Wan Motion response' };
+        const deductW = deductCreditsAtomic(CREDIT_COST.videoTransfer);
+        if (!deductW.success) return { error: 'insufficient credits' };
+        send(92, 'Downloading motion clip…');
+        const base64 = await fetchToBase64(outUrl);
+        send(100, 'Done');
+        return { base64: `data:video/mp4;base64,${base64}` };
+      }
+      if (status.status === 'FAILED') return { error: 'Wan Motion generation failed' };
+    }
+    return { error: 'Wan Motion timed out' };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    activeVideoFlags.delete(flag);
+  }
+});
+
+// ── Upload a local video file to Fal storage ────────────────────────────────────
+ipcMain.handle('upload-video-to-fal', async (event, videoPath) => {
+  if (!isProOrStudio()) return { success: false, error: 'Pro or Studio required' };
+  const key = FAL_API_KEY;
+  if (!key) return { success: false, error: 'FAL_API_KEY not configured' };
+  try {
+    assertSafePath(videoPath);
+    const buffer = fs.readFileSync(videoPath);
+    const response = await fetch('https://storage.fal.ai/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${key}`,
+        'Content-Type': 'video/mp4',
+        'X-Fal-File-Name': path.basename(videoPath),
+      },
+      body: buffer,
+    });
+    if (!response.ok) return { success: false, error: `Upload failed: ${response.status}` };
+    const data = await response.json();
+    return { success: true, url: data.url };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 

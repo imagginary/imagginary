@@ -11,7 +11,7 @@ interface PanelViewerProps {
   effectiveAspectRatio?: AspectRatio;
   onInpaintEdit?: (panelId: string, maskData: string, editDescription: string) => void;
   onUndoEdit?: (panelId: string) => void;
-  onAnimatePanel?: (panelId: string, motionDescription: string) => void;
+  onAnimatePanel?: (panelId: string, motionDescription: string, motionEngine: 'seedance' | 'veo') => void;
   onClearMotion?: (panelId: string) => void;
   onRemoveVoice?: (panelId: string) => void;
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
@@ -114,6 +114,9 @@ export default function PanelViewer({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareRevisionId, setCompareRevisionId] = useState<string | null>(null);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [motionEngine, setMotionEngine] = useState<'seedance' | 'veo'>(
+    () => (localStorage.getItem('motionEngine') as 'seedance' | 'veo') || 'seedance'
+  );
 
   const panelAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -167,6 +170,11 @@ export default function PanelViewer({
       }
     };
   }, []);
+
+  // Persist motion engine selection
+  useEffect(() => {
+    localStorage.setItem('motionEngine', motionEngine);
+  }, [motionEngine]);
 
   // Reset drawing refs on unmount so a remounted instance starts clean
   useEffect(() => {
@@ -298,7 +306,7 @@ export default function PanelViewer({
 
   function handleGenerateMotion() {
     if (!panel || !motionInput.trim() || !onAnimatePanel || isGenerating) return;
-    onAnimatePanel(panel.id, motionInput.trim());
+    onAnimatePanel(panel.id, motionInput.trim(), motionEngine);
   }
 
   function handleOpenHistory() {
@@ -830,7 +838,7 @@ export default function PanelViewer({
               title={
                 hasClip
                   ? 'View or regenerate the motion clip for this panel'
-                  : 'Animate this panel with camera movement and motion. Pro uses Kling cloud (~60s). Local needs 24GB GPU.'
+                  : 'Animate this panel with camera movement and motion. Pro uses Seedance or Veo cloud (~1–2 min). Local needs 24GB GPU.'
               }
             >
               <Film className="w-3 h-3" />
@@ -1034,10 +1042,43 @@ export default function PanelViewer({
                 className="w-full bg-gray-800 border border-gray-700 focus:border-violet-500 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none transition-colors resize-none"
               />
 
+              {/* Motion engine selector — Pro/Studio only */}
+              {isPro && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Engine:</span>
+                  <div className="flex rounded-lg overflow-hidden border border-gray-700">
+                    <button
+                      onClick={() => setMotionEngine('seedance')}
+                      className={`px-3 py-1.5 text-xs transition-colors ${
+                        motionEngine === 'seedance'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-900 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="font-medium">Seedance</div>
+                      <div className="text-[10px] opacity-75">~2 min · 14 credits</div>
+                    </button>
+                    <button
+                      onClick={() => setMotionEngine('veo')}
+                      className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
+                        motionEngine === 'veo'
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-gray-900 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="font-medium">Veo 3.1 ✦</div>
+                      <div className="text-[10px] opacity-75">~1 min · 28 credits</div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Duration info */}
               {isPro ? (
                 <p className="text-xs text-gray-500">
-                  Motion clip via Kling AI · typically 3–7 min · credits deducted on completion
+                  {motionEngine === 'veo'
+                    ? 'Motion clip via Veo 3.1 Fast · typically ~1 min · credits deducted on completion'
+                    : 'Motion clip via Seedance 1.5 Pro · typically ~2 min · credits deducted on completion'}
                 </p>
               ) : (
                 <p className="text-[10px] text-gray-600">

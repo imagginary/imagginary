@@ -194,7 +194,8 @@ class MotionLibraryService {
   async applyClipToCharacter(
     clipId: string,
     panelImageData: string,
-    onProgress?: (pct: number, msg: string) => void
+    onProgress?: (pct: number, msg: string) => void,
+    motionEngine: 'seedance' | 'veo' = 'seedance'
   ): Promise<{ videoData: string; videoPath: string | null }> {
     const clip = this.allClips.find((c) => c.id === clipId);
     const motionPrompt = clip
@@ -202,11 +203,12 @@ class MotionLibraryService {
       : 'smooth character animation, cinematic quality';
 
     if (licenseService.isPro() || licenseService.isStudio()) {
-      // Pro/Studio: cloud only — errors propagate to caller, no local Wan fallback
-      onProgress?.(5, 'Sending to Kling cloud…');
-      const cloudVideo = await comfyUIService.animatePanelCloud(
-        panelImageData, motionPrompt, onProgress
-      );
+      // Pro/Studio: Seedance or Veo cloud — no local Wan fallback
+      const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : 'Seedance';
+      onProgress?.(5, `Sending to ${engineLabel} cloud…`);
+      const cloudVideo = motionEngine === 'veo'
+        ? await comfyUIService.animatePanelVeo(panelImageData, motionPrompt, onProgress)
+        : await comfyUIService.animatePanelSeedance(panelImageData, motionPrompt, onProgress);
       onProgress?.(100, 'Animation complete');
       return { videoData: cloudVideo, videoPath: null };
     }

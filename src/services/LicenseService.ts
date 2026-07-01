@@ -14,8 +14,10 @@ export const CREDIT_COSTS = {
   panelCloud:      2,
   inpaint:         3,
   characterPanel:  2,
-  motionClip:     14,
-  lipSync:        16,
+  motionClip:         14,   // Seedance 1.5 Pro
+  motionClipPremium:  28,   // Veo 3.1 Fast
+  videoTransfer:      14,   // Wan Motion cloud
+  lipSync:            16,
   turntable:       2,
   loraTraining:   50,
 };
