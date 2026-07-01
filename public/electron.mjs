@@ -3936,7 +3936,7 @@ ipcMain.on('cancel-fal-video', () => {
 });
 
 // ── Seedance 1.5 Pro — image to video ──────────────────────────────────────────
-ipcMain.handle('fal-seedance', async (event, { imageData, prompt, duration }) => {
+ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
@@ -3973,7 +3973,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt, duration }) =>
       body: JSON.stringify({
         image_url: imageUrl,
         prompt: prompt || 'cinematic motion, smooth animation',
-        duration: duration || 5,
+        duration: "5",
         resolution: '720p',
         generate_audio: false,
       }),
@@ -4039,7 +4039,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt, duration }) =>
 });
 
 // ── Veo 3.1 Fast — image to video (premium) ────────────────────────────────────
-ipcMain.handle('fal-veo', async (event, { imageData, prompt, duration }) => {
+ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
@@ -4076,7 +4076,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt, duration }) => {
       body: JSON.stringify({
         image_url: imageUrl,
         prompt: prompt || 'cinematic motion, smooth animation',
-        duration: duration || 5,
+        duration: "6s",
         generate_audio: false,
       }),
     });

@@ -1050,7 +1050,6 @@ export class ComfyUIService {
       const result = await (window.electronAPI as any).falSeedance({
         imageData,
         prompt: motionPrompt,
-        duration: 5,
       });
       if (result?.error) throw new Error(result.error);
       if (!result?.base64 || result.base64.length < 1000) {
@@ -1085,7 +1084,6 @@ export class ComfyUIService {
       const result = await (window.electronAPI as any).falVeo({
         imageData,
         prompt: motionPrompt,
-        duration: 5,
       });
       if (result?.error) throw new Error(result.error);
       if (!result?.base64 || result.base64.length < 1000) {
