@@ -330,6 +330,7 @@ export default function MotionLibrary({
         motionEngine
       );
       onApply({ clipId: selectedClip.id, videoData });
+      onClose();
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
