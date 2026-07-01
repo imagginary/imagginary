@@ -192,7 +192,7 @@ class VideoTransferService {
 
       try {
         const result = (await (api.falWanMotion as Function)({
-          imageUrl: characterImageUrl,
+          imageData: characterImageUrl,
           videoUrl: videoUpload.url,
           prompt: motionPrompt || 'smooth motion transfer, cinematic character animation',
         })) as { base64?: string; error?: string };

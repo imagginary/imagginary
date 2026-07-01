@@ -3936,7 +3936,7 @@ ipcMain.on('cancel-fal-video', () => {
 });
 
 // ── Seedance 1.5 Pro — image to video ──────────────────────────────────────────
-ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => {
+ipcMain.handle('fal-seedance', async (event, { imageData, prompt, duration }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
@@ -3950,6 +3950,22 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
   activeVideoFlags.add(flag);
 
   try {
+    send(3, 'Uploading image to Fal storage…');
+    const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    const uploadRes = await fetch('https://storage.fal.run/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
+      body: imageBuffer,
+    });
+    if (!uploadRes.ok) {
+      const uploadErr = await uploadRes.text().catch(() => '<empty>');
+      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    }
+    const uploadData = await uploadRes.json();
+    const imageUrl = uploadData.url;
+    if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
+
     send(5, 'Sending to Seedance…');
     const submitRes = await fetch('https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video', {
       method: 'POST',
@@ -3962,8 +3978,17 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
         generate_audio: false,
       }),
     });
-    if (!submitRes.ok) return { error: `Seedance submission failed: ${submitRes.status}` };
-    const { request_id } = await submitRes.json();
+    if (!submitRes.ok) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Seedance submission failed: ${submitRes.status} — ${rawText}` };
+    }
+    let submitData;
+    try { submitData = await submitRes.json(); } catch (err) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Seedance submission parse failed: ${rawText}` };
+    }
+    const request_id = submitData?.request_id;
+    if (!request_id) return { error: `Seedance submission missing request_id: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 60; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -3976,14 +4001,24 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
         `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      const status = await statusRes.json();
+      if (!statusRes.ok) return { error: `Seedance status check failed: ${statusRes.status}` };
+      let status;
+      try { status = await statusRes.json(); } catch (err) {
+        const rawText = await statusRes.text().catch(() => '<empty>');
+        return { error: `Seedance status parse failed: ${rawText}` };
+      }
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
           `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
-        const result = await resultRes.json();
+        if (!resultRes.ok) return { error: `Seedance result fetch failed: ${resultRes.status}` };
+        let result;
+        try { result = await resultRes.json(); } catch (err) {
+          const rawText = await resultRes.text().catch(() => '<empty>');
+          return { error: `Seedance result parse failed: ${rawText}` };
+        }
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Seedance response' };
         const deductS = deductCreditsAtomic(CREDIT_COST.motionClip);
@@ -4004,7 +4039,7 @@ ipcMain.handle('fal-seedance', async (event, { imageUrl, prompt, duration }) => 
 });
 
 // ── Veo 3.1 Fast — image to video (premium) ────────────────────────────────────
-ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
+ipcMain.handle('fal-veo', async (event, { imageData, prompt, duration }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
@@ -4018,6 +4053,22 @@ ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
   activeVideoFlags.add(flag);
 
   try {
+    send(3, 'Uploading image to Fal storage…');
+    const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    const uploadRes = await fetch('https://storage.fal.run/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
+      body: imageBuffer,
+    });
+    if (!uploadRes.ok) {
+      const uploadErr = await uploadRes.text().catch(() => '<empty>');
+      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    }
+    const uploadData = await uploadRes.json();
+    const imageUrl = uploadData.url;
+    if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
+
     send(5, 'Sending to Veo 3.1…');
     const submitRes = await fetch('https://queue.fal.run/fal-ai/veo3/image-to-video', {
       method: 'POST',
@@ -4029,8 +4080,17 @@ ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
         generate_audio: false,
       }),
     });
-    if (!submitRes.ok) return { error: `Veo submission failed: ${submitRes.status}` };
-    const { request_id } = await submitRes.json();
+    if (!submitRes.ok) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Veo submission failed: ${submitRes.status} — ${rawText}` };
+    }
+    let submitData;
+    try { submitData = await submitRes.json(); } catch (err) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Veo submission parse failed: ${rawText}` };
+    }
+    const request_id = submitData?.request_id;
+    if (!request_id) return { error: `Veo submission missing request_id: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 30; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4043,14 +4103,24 @@ ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
         `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      const status = await statusRes.json();
+      if (!statusRes.ok) return { error: `Veo status check failed: ${statusRes.status}` };
+      let status;
+      try { status = await statusRes.json(); } catch (err) {
+        const rawText = await statusRes.text().catch(() => '<empty>');
+        return { error: `Veo status parse failed: ${rawText}` };
+      }
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
           `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
-        const result = await resultRes.json();
+        if (!resultRes.ok) return { error: `Veo result fetch failed: ${resultRes.status}` };
+        let result;
+        try { result = await resultRes.json(); } catch (err) {
+          const rawText = await resultRes.text().catch(() => '<empty>');
+          return { error: `Veo result parse failed: ${rawText}` };
+        }
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Veo response' };
         const deductV = deductCreditsAtomic(CREDIT_COST.motionClipPremium);
@@ -4071,7 +4141,7 @@ ipcMain.handle('fal-veo', async (event, { imageUrl, prompt, duration }) => {
 });
 
 // ── Wan Motion — cloud Video Transfer (character image + driving video) ─────────
-ipcMain.handle('fal-wan-motion', async (event, { imageUrl, videoUrl, prompt }) => {
+ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const key = FAL_API_KEY;
   if (!key) return { error: 'FAL_API_KEY not configured' };
@@ -4085,6 +4155,22 @@ ipcMain.handle('fal-wan-motion', async (event, { imageUrl, videoUrl, prompt }) =
   activeVideoFlags.add(flag);
 
   try {
+    send(3, 'Uploading image to Fal storage…');
+    const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    const uploadRes = await fetch('https://storage.fal.run/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
+      body: imageBuffer,
+    });
+    if (!uploadRes.ok) {
+      const uploadErr = await uploadRes.text().catch(() => '<empty>');
+      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    }
+    const uploadData = await uploadRes.json();
+    const imageUrl = uploadData.url;
+    if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
+
     send(5, 'Uploading to Wan Motion…');
     const submitRes = await fetch('https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video', {
       method: 'POST',
@@ -4095,8 +4181,17 @@ ipcMain.handle('fal-wan-motion', async (event, { imageUrl, videoUrl, prompt }) =
         prompt: prompt || 'smooth motion transfer, cinematic character animation',
       }),
     });
-    if (!submitRes.ok) return { error: `Wan Motion submission failed: ${submitRes.status}` };
-    const { request_id } = await submitRes.json();
+    if (!submitRes.ok) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Wan Motion submission failed: ${submitRes.status} — ${rawText}` };
+    }
+    let submitData;
+    try { submitData = await submitRes.json(); } catch (err) {
+      const rawText = await submitRes.text().catch(() => '<empty>');
+      return { error: `Wan Motion submission parse failed: ${rawText}` };
+    }
+    const request_id = submitData?.request_id;
+    if (!request_id) return { error: `Wan Motion submission missing request_id: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 60; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4109,14 +4204,24 @@ ipcMain.handle('fal-wan-motion', async (event, { imageUrl, videoUrl, prompt }) =
         `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      const status = await statusRes.json();
+      if (!statusRes.ok) return { error: `Wan Motion status check failed: ${statusRes.status}` };
+      let status;
+      try { status = await statusRes.json(); } catch (err) {
+        const rawText = await statusRes.text().catch(() => '<empty>');
+        return { error: `Wan Motion status parse failed: ${rawText}` };
+      }
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
           `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
-        const result = await resultRes.json();
+        if (!resultRes.ok) return { error: `Wan Motion result fetch failed: ${resultRes.status}` };
+        let result;
+        try { result = await resultRes.json(); } catch (err) {
+          const rawText = await resultRes.text().catch(() => '<empty>');
+          return { error: `Wan Motion result parse failed: ${rawText}` };
+        }
         const outUrl = result.video?.url;
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
         const deductW = deductCreditsAtomic(CREDIT_COST.videoTransfer);

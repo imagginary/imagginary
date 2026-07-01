@@ -1048,7 +1048,7 @@ export class ComfyUIService {
     }
     try {
       const result = await (window.electronAPI as any).falSeedance({
-        imageUrl: imageData,   // main process sends inline data URL
+        imageData,
         prompt: motionPrompt,
         duration: 5,
       });
@@ -1083,7 +1083,7 @@ export class ComfyUIService {
     }
     try {
       const result = await (window.electronAPI as any).falVeo({
-        imageUrl: imageData,
+        imageData,
         prompt: motionPrompt,
         duration: 5,
       });
