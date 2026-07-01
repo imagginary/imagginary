@@ -1422,7 +1422,7 @@ app.whenReady().then(async () => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://v3.fal.media https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*;",
         ],
       },
@@ -3690,16 +3690,15 @@ ipcMain.handle('delete-file', (_event, filePath) => {
 // any external API. Progress is streamed back via 'cloud-progress' IPC events.
 
 /** Fetch a URL and return the body as a base64 string. */
-// Upload a Buffer to storage.fal.ai using https.request directly.
-// The global fetch() in Electron's Node runtime throws UNABLE_TO_VERIFY_LEAF_SIGNATURE
-// against storage.fal.ai because its intermediate CA isn't in Electron's bundled cert
-// store. Using https.request with rejectUnauthorized:false scopes the bypass to this
-// one CDN rather than disabling TLS globally with NODE_TLS_REJECT_UNAUTHORIZED=0.
+// Upload a Buffer to Fal's CDN (v3.fal.media) using https.request directly.
+// storage.fal.ai does not resolve (ENOTFOUND) — the real upload host is v3.fal.media.
+// Using https.request rather than fetch() so we can set rejectUnauthorized:false
+// scoped to this one host, avoiding a global NODE_TLS_REJECT_UNAUTHORIZED=0.
 function falStorageUpload(buffer, apiKey) {
   return new Promise((resolve, reject) => {
     const req = https.request({
-      hostname: 'storage.fal.ai',
-      path: '/upload',
+      hostname: 'v3.fal.media',
+      path: '/files/upload',
       method: 'POST',
       rejectUnauthorized: false,
       headers: {
@@ -3985,7 +3984,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    console.log('[Seedance] Starting image upload to storage.fal.ai...');
+    console.log('[Seedance] Starting image upload to v3.fal.media...');
     console.log('[Seedance] Image buffer size:', imageBuffer.length, 'bytes');
     let uploadResult;
     try {
@@ -4296,7 +4295,7 @@ ipcMain.handle('upload-video-to-fal', async (event, videoPath) => {
   try {
     assertSafePath(videoPath);
     const buffer = fs.readFileSync(videoPath);
-    const response = await fetch('https://storage.fal.ai/upload', {
+    const response = await fetch('https://v3.fal.media/files/upload', {
       method: 'POST',
       headers: {
         'Authorization': `Key ${key}`,
@@ -4538,7 +4537,7 @@ ipcMain.handle('upload-training-images', async (event, { imagePaths }) => {
       const fileName = path.basename(filePath);
       const mimeType = fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 
-      const uploadRes = await fetch('https://storage.fal.ai/upload', {
+      const uploadRes = await fetch('https://v3.fal.media/files/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Key ${FAL_API_KEY}`,
