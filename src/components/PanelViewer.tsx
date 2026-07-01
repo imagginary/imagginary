@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ImageOff, Loader2, AlertCircle, Pencil, X, Undo2, Trash2, Check, Film, RefreshCw, History, Columns2, RotateCcw, ChevronLeft, Lock, Sparkles, Upload, Mic, Play, Pause } from 'lucide-react';
+import { ProFeatureGate } from './ProFeatureGate';
 import { Panel, PanelRevision, GenerationProgress } from '../types';
 import { AspectRatio, getAspectRatio, DEFAULT_ASPECT_RATIO_ID } from '../data/AspectRatios';
 import { settingsService } from '../services/SettingsService';
@@ -28,6 +29,7 @@ interface PanelViewerProps {
   wanModelWarning?: string;
   isPro?: boolean;
   tierAccent?: string;
+  onUpgrade?: () => void;
   onCursorMove?: (panelId: string, x: number, y: number) => void;
   collaboratorCursors?: Map<string, { userId: string; userName: string; panelId: string | null; x: number; y: number }>;
 }
@@ -87,6 +89,7 @@ export default function PanelViewer({
   wanModelWarning,
   isPro = false,
   tierAccent = '#ceaf82',
+  onUpgrade,
   onCursorMove,
   collaboratorCursors,
 }: PanelViewerProps) {
@@ -117,6 +120,11 @@ export default function PanelViewer({
   const [motionEngine, setMotionEngine] = useState<'seedance' | 'veo'>(
     () => (localStorage.getItem('motionEngine') as 'seedance' | 'veo') || 'seedance'
   );
+
+  // Pro gate tooltip visibility
+  const [showMotionLibraryGate, setShowMotionLibraryGate] = useState(false);
+  const [showVideoTransferGate, setShowVideoTransferGate] = useState(false);
+  const [showPoseGate, setShowPoseGate] = useState(false);
 
   const panelAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -175,6 +183,18 @@ export default function PanelViewer({
   useEffect(() => {
     localStorage.setItem('motionEngine', motionEngine);
   }, [motionEngine]);
+
+  // Dismiss gate tooltips on any outside click
+  useEffect(() => {
+    if (!showMotionLibraryGate && !showVideoTransferGate && !showPoseGate) return;
+    const dismiss = () => {
+      setShowMotionLibraryGate(false);
+      setShowVideoTransferGate(false);
+      setShowPoseGate(false);
+    };
+    document.addEventListener('click', dismiss);
+    return () => document.removeEventListener('click', dismiss);
+  }, [showMotionLibraryGate, showVideoTransferGate, showPoseGate]);
 
   // Reset drawing refs on unmount so a remounted instance starts clean
   useEffect(() => {
@@ -341,7 +361,8 @@ export default function PanelViewer({
   const canEdit = !!panel?.generatedImageData && !isGenerating;
   const canUndo = (panel?.editHistory?.length ?? 0) > 0 && !isGenerating;
   const canAnimate = !!panel?.generatedImageData;
-  const canPose = !!panel?.generatedImageData && (panel?.characters?.length ?? 0) > 0;
+  const hasPoseEligiblePanel = !!panel?.generatedImageData && (panel?.characters?.length ?? 0) > 0;
+  const canPose = hasPoseEligiblePanel && isPro;
   const hasClip = !!(panel?.motionClipData || panel?.motionClipPath);
   const hasPoseClip = !!(panel?.poseClipData || panel?.poseClipPath);
   const hasRevisions = revisions.length > 0;
@@ -846,6 +867,7 @@ export default function PanelViewer({
             </button>
           )}
 
+          {/* Pose Engine — Pro gate for Community users with eligible panels */}
           {canPose && (
             <button
               onClick={() => onOpenPoseEditor?.()}
@@ -860,27 +882,99 @@ export default function PanelViewer({
               {hasPoseClip ? 'Pose Ready' : 'Pose'}
             </button>
           )}
-
-          {canAnimate && (
-            <button
-              onClick={() => onOpenMotionLibrary?.()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-              title="Motion Library — apply a pre-built cinematic motion to this panel"
-            >
-              <Film className="w-3 h-3" />
-              Motion Library
-            </button>
+          {hasPoseEligiblePanel && !isPro && (
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowPoseGate((v) => !v); setShowMotionLibraryGate(false); setShowVideoTransferGate(false); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-gray-600 hover:text-gray-400 hover:bg-gray-800 transition-colors"
+                title="Pose Engine — Pro feature"
+              >
+                <Lock className="w-3 h-3" />
+                Pose
+              </button>
+              {showPoseGate && (
+                <div
+                  className="absolute bottom-full left-0 mb-2 w-64 bg-gray-950 border border-gray-800 rounded-xl shadow-xl z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ProFeatureGate
+                    feature="Pose Engine"
+                    description="Select a pose template and generate your character in that exact pose. Perfect for action shots and specific blocking."
+                    highlight="ControlNet cloud · outputs a new panel image · 3 credits"
+                    onUpgrade={() => { setShowPoseGate(false); onUpgrade?.(); }}
+                    tierRequired="pro"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
+          {/* Motion Library — Pro gate for Community users */}
           {canAnimate && (
-            <button
-              onClick={() => onOpenVideoTransfer?.()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-              title="Video Transfer — upload any video and apply its movement to your character (Pro)"
-            >
-              <Upload className="w-3 h-3" />
-              Video Transfer
-            </button>
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  if (!isPro) { e.stopPropagation(); setShowMotionLibraryGate((v) => !v); setShowPoseGate(false); setShowVideoTransferGate(false); return; }
+                  onOpenMotionLibrary?.();
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                  isPro ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:text-gray-400 hover:bg-gray-800'
+                }`}
+                title={isPro ? 'Motion Library — apply a pre-built cinematic motion to this panel' : 'Motion Library — Pro feature'}
+              >
+                {!isPro && <Lock className="w-3 h-3" />}
+                {isPro && <Film className="w-3 h-3" />}
+                Motion Library
+              </button>
+              {showMotionLibraryGate && (
+                <div
+                  className="absolute bottom-full left-0 mb-2 w-64 bg-gray-950 border border-gray-800 rounded-xl shadow-xl z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ProFeatureGate
+                    feature="Motion Library"
+                    description="Browse 40+ cinematic motion clips — dolly push, handheld shake, whip pan, and more. Apply any clip to your panel in one click."
+                    highlight="Seedance cloud · ~2 min per clip · no GPU needed"
+                    onUpgrade={() => { setShowMotionLibraryGate(false); onUpgrade?.(); }}
+                    tierRequired="pro"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Video Transfer — Pro gate for Community users */}
+          {canAnimate && (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  if (!isPro) { e.stopPropagation(); setShowVideoTransferGate((v) => !v); setShowPoseGate(false); setShowMotionLibraryGate(false); return; }
+                  onOpenVideoTransfer?.();
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
+                  isPro ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:text-gray-400 hover:bg-gray-800'
+                }`}
+                title={isPro ? 'Video Transfer — upload any video and apply its movement to your character' : 'Video Transfer — Pro feature'}
+              >
+                {!isPro && <Lock className="w-3 h-3" />}
+                {isPro && <Upload className="w-3 h-3" />}
+                Video Transfer
+              </button>
+              {showVideoTransferGate && (
+                <div
+                  className="absolute bottom-full left-0 mb-2 w-64 bg-gray-950 border border-gray-800 rounded-xl shadow-xl z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ProFeatureGate
+                    feature="Video Transfer"
+                    description="Record yourself doing an action and transfer the exact motion to your character. Pose retargeting via Wan Motion cloud."
+                    highlight="Upload any MP4 · motion transfers in ~2 min · no GPU needed"
+                    onUpgrade={() => { setShowVideoTransferGate(false); onUpgrade?.(); }}
+                    tierRequired="pro"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {canEdit && (
@@ -990,16 +1084,15 @@ export default function PanelViewer({
       {animateMode && (
         <div className="w-full px-6 pb-3 flex flex-col gap-2">
           {wanModelAvailable === false && !isPro ? (
-            /* No local model — show upgrade prompt */
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-center">
-              <p className="text-sm text-gray-300 font-medium mb-1">Motion generation requires Pro</p>
-              <p className="text-xs text-gray-500 mb-3">
-                Local motion needs a 14B model (~14GB) — too large for most machines.
-                Pro generates in the cloud in under 60 seconds.
-              </p>
-              <button className="px-4 py-2 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors">
-                Upgrade to Pro — $19/month
-              </button>
+            /* No local model and not Pro — show consistent upgrade prompt */
+            <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
+              <ProFeatureGate
+                feature="Animate"
+                description="Bring your panels to life with AI-generated motion clips. Choose Seedance (fast) or Veo 3.1 (premium quality) — no GPU needed."
+                highlight="Seedance: ~2 min, 14 credits · Veo 3.1: ~1 min, 28 credits"
+                onUpgrade={() => onUpgrade?.()}
+                tierRequired="pro"
+              />
             </div>
           ) : (
             /* Local model available (or still checking) — show generation UI */

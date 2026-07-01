@@ -1813,6 +1813,7 @@ export default function App() {
             onClearMotion={handleClearMotion}
             onRemoveVoice={handleRemoveVoice}
             onRestoreRevision={handleRestoreRevision}
+            onUpgrade={() => setShowActivateLicense(true)}
             onOpenPoseEditor={() => setShowPoseEditor(true)}
             onOpenMotionLibrary={() => setShowMotionLibrary(true)}
             onOpenVideoTransfer={() => setShowVideoTransfer(true)}
@@ -1881,6 +1882,7 @@ export default function App() {
           comfyuiConnected={serviceStatus.comfyui === 'connected'}
           onApply={handleApplyMotionClip}
           onClose={() => setShowMotionLibrary(false)}
+          onUpgrade={() => setShowActivateLicense(true)}
         />
       )}
 
@@ -1892,6 +1894,7 @@ export default function App() {
           isPro={licenseService.isPro() || licenseService.isStudio()}
           onComplete={handleVideoTransferComplete}
           onClose={() => setShowVideoTransfer(false)}
+          onUpgrade={() => setShowActivateLicense(true)}
         />
       )}
 

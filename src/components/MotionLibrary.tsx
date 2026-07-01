@@ -22,6 +22,7 @@ import { MotionClip, MotionCategory, Panel } from '../types';
 import { PoseKeyframe, SKELETON_CONNECTIONS } from '../data/PoseVocabulary';
 import { motionLibraryService } from '../services/MotionLibraryService';
 import { renderPoseToDataURL, expandSequence } from '../services/PoseEngineService';
+import { ProFeatureGate } from './ProFeatureGate';
 
 // ── Category list ─────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ interface MotionLibraryProps {
   comfyuiConnected: boolean;
   onApply: (params: { clipId: string; videoData: string }) => void;
   onClose: () => void;
+  onUpgrade?: () => void;
 }
 
 // ── Animated stick figure (reuses PoseEditor SVG renderer) ───────────────────
@@ -196,6 +198,7 @@ export default function MotionLibrary({
   comfyuiConnected,
   onApply,
   onClose,
+  onUpgrade,
 }: MotionLibraryProps) {
   const [clips, setClips] = useState<MotionClip[]>([]);
   const [filtered, setFiltered] = useState<MotionClip[]>([]);
@@ -362,6 +365,30 @@ export default function MotionLibrary({
   // Pro/Studio always use Seedance/Veo cloud — comfyuiConnected only required for Community users
   const canApply = isPro && !!selectedClip && !!panel.generatedImageData && !isApplying
     && (isPro || comfyuiConnected);
+
+  // Defense-in-depth: Community users should be gated at the toolbar button,
+  // but if this modal is somehow opened, show the upgrade prompt.
+  if (!isPro) {
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="bg-gray-950 border border-gray-800 rounded-xl max-w-sm w-full mx-4">
+          <ProFeatureGate
+            feature="Motion Library"
+            description="Browse 40+ cinematic motion clips and apply them to any panel. No local GPU needed."
+            highlight="Cloud-powered via Seedance · ~2 min per clip"
+            onUpgrade={() => { onUpgrade?.(); onClose(); }}
+            tierRequired="pro"
+          />
+          <button
+            onClick={onClose}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors w-full text-center pb-5"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">

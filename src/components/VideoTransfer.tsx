@@ -22,6 +22,7 @@ import {
 import { Character, VideoValidationResult, Panel } from '../types';
 import { PoseKeyframe, SKELETON_CONNECTIONS } from '../data/PoseVocabulary';
 import { videoTransferService } from '../services/VideoTransferService';
+import { ProFeatureGate } from './ProFeatureGate';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ interface VideoTransferProps {
   isPro: boolean;
   onComplete: (videoData: string, clipPath: string | null) => void;
   onClose: () => void;
+  onUpgrade?: () => void;
 }
 
 type Step = 'upload' | 'validating' | 'validated' | 'extracting' | 'extracted' | 'applying' | 'done';
@@ -157,6 +159,7 @@ export default function VideoTransfer({
   isPro,
   onComplete,
   onClose,
+  onUpgrade,
 }: VideoTransferProps) {
   const [step, setStep] = useState<Step>('upload');
   const [dragOver, setDragOver] = useState(false);
@@ -175,25 +178,21 @@ export default function VideoTransfer({
 
   const selectedChar = characters.find((c) => c.id === selectedCharId) ?? null;
 
-  // ── Pro gate ─────────────────────────────────────────────────────────────────
+  // ── Pro gate (defense-in-depth — toolbar button already blocks Community users) ──
   if (!isPro) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl mx-4">
-          <Lock className="w-10 h-10 text-imagginary-400 mx-auto mb-4" />
-          <h2 className="text-base font-bold text-gray-100 mb-2">Video Transfer</h2>
-          <p className="text-sm text-gray-400 mb-2 leading-relaxed">
-            Upload any reference video and transfer its pose sequence to your character.
-          </p>
-          <p className="text-xs text-gray-500 mb-5 leading-relaxed">
-            Powered by ControlNet + Wan 2.2. Requires Pro+ for GPU-accelerated frame extraction and pose-driven rendering.
-          </p>
-          <button className="w-full px-4 py-2.5 bg-imagginary-500 hover:bg-imagginary-400 text-black text-sm font-semibold rounded-lg transition-colors mb-3">
-            Upgrade to Pro — $19/month
-          </button>
+        <div className="bg-gray-950 border border-gray-800 rounded-xl max-w-sm w-full mx-4">
+          <ProFeatureGate
+            feature="Video Transfer"
+            description="Record yourself doing an action and transfer the exact motion to your character. Pose retargeting via Wan Motion cloud."
+            highlight="Upload any MP4 · motion transfers in ~2 min · no GPU needed"
+            onUpgrade={() => { onUpgrade?.(); onClose(); }}
+            tierRequired="pro"
+          />
           <button
             onClick={onClose}
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors w-full text-center pb-5"
           >
             Maybe later
           </button>
