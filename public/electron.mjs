@@ -3953,7 +3953,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.run/upload', {
+    const uploadRes = await fetch('https://storage.fal.ai/upload', {
       method: 'POST',
       headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
       body: imageBuffer,
@@ -4056,7 +4056,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.run/upload', {
+    const uploadRes = await fetch('https://storage.fal.ai/upload', {
       method: 'POST',
       headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
       body: imageBuffer,
@@ -4158,7 +4158,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.run/upload', {
+    const uploadRes = await fetch('https://storage.fal.ai/upload', {
       method: 'POST',
       headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
       body: imageBuffer,
