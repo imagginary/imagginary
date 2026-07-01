@@ -4052,9 +4052,13 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       console.error('[Seedance] Submission parse failed:', rawText);
       return { error: `Seedance submission parse failed: ${rawText}` };
     }
-    const request_id = submitData?.request_id;
+    const { request_id, response_url, status_url } = submitData ?? {};
     console.log('[Seedance] Got request_id:', request_id);
+    console.log('[Seedance] status_url:', status_url);
+    console.log('[Seedance] response_url:', response_url);
     if (!request_id) return { error: `Seedance submission missing request_id: ${JSON.stringify(submitData)}` };
+    if (!status_url)  return { error: `Seedance submission missing status_url: ${JSON.stringify(submitData)}` };
+    if (!response_url) return { error: `Seedance submission missing response_url: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 60; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4063,10 +4067,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Seedance is generating your motion clip…');
 
-      const statusRes = await fetch(
-        `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/status`,
-        { headers: { 'Authorization': `Key ${key}` } }
-      );
+      const statusRes = await fetch(status_url, { headers: { 'Authorization': `Key ${key}` } });
       if (!statusRes.ok) {
         console.warn('[Seedance] Status poll non-OK:', statusRes.status, '— continuing');
         continue;
@@ -4080,10 +4081,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       console.log('[Seedance] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/response`,
-          { headers: { 'Authorization': `Key ${key}` } }
-        );
+        const resultRes = await fetch(response_url, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) return { error: `Seedance result fetch failed: ${resultRes.status}` };
         let result;
         try { result = await resultRes.json(); } catch (err) {
@@ -4155,8 +4153,13 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       const rawText = await submitRes.text().catch(() => '<empty>');
       return { error: `Veo submission parse failed: ${rawText}` };
     }
-    const request_id = submitData?.request_id;
-    if (!request_id) return { error: `Veo submission missing request_id: ${JSON.stringify(submitData)}` };
+    const { request_id: veo_request_id, response_url: veo_response_url, status_url: veo_status_url } = submitData ?? {};
+    console.log('[Veo] Got request_id:', veo_request_id);
+    console.log('[Veo] status_url:', veo_status_url);
+    console.log('[Veo] response_url:', veo_response_url);
+    if (!veo_request_id)  return { error: `Veo submission missing request_id: ${JSON.stringify(submitData)}` };
+    if (!veo_status_url)  return { error: `Veo submission missing status_url: ${JSON.stringify(submitData)}` };
+    if (!veo_response_url) return { error: `Veo submission missing response_url: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 30; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4165,10 +4168,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       const pct = Math.min(90, 15 + i * 3);
       send(pct, 'Veo 3.1 is generating your motion clip…');
 
-      const statusRes = await fetch(
-        `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/status`,
-        { headers: { 'Authorization': `Key ${key}` } }
-      );
+      const statusRes = await fetch(veo_status_url, { headers: { 'Authorization': `Key ${key}` } });
       if (!statusRes.ok) {
         console.warn('[Veo] Status poll non-OK:', statusRes.status, '— continuing');
         continue;
@@ -4182,10 +4182,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       console.log('[Veo] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/response`,
-          { headers: { 'Authorization': `Key ${key}` } }
-        );
+        const resultRes = await fetch(veo_response_url, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) return { error: `Veo result fetch failed: ${resultRes.status}` };
         let result;
         try { result = await resultRes.json(); } catch (err) {
@@ -4256,8 +4253,13 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       const rawText = await submitRes.text().catch(() => '<empty>');
       return { error: `Wan Motion submission parse failed: ${rawText}` };
     }
-    const request_id = submitData?.request_id;
-    if (!request_id) return { error: `Wan Motion submission missing request_id: ${JSON.stringify(submitData)}` };
+    const { request_id: wan_request_id, response_url: wan_response_url, status_url: wan_status_url } = submitData ?? {};
+    console.log('[WanMotion] Got request_id:', wan_request_id);
+    console.log('[WanMotion] status_url:', wan_status_url);
+    console.log('[WanMotion] response_url:', wan_response_url);
+    if (!wan_request_id)  return { error: `Wan Motion submission missing request_id: ${JSON.stringify(submitData)}` };
+    if (!wan_status_url)  return { error: `Wan Motion submission missing status_url: ${JSON.stringify(submitData)}` };
+    if (!wan_response_url) return { error: `Wan Motion submission missing response_url: ${JSON.stringify(submitData)}` };
 
     for (let i = 0; i < 60; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4266,10 +4268,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Transferring motion to your character…');
 
-      const statusRes = await fetch(
-        `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/status`,
-        { headers: { 'Authorization': `Key ${key}` } }
-      );
+      const statusRes = await fetch(wan_status_url, { headers: { 'Authorization': `Key ${key}` } });
       if (!statusRes.ok) {
         console.warn('[WanMotion] Status poll non-OK:', statusRes.status, '— continuing');
         continue;
@@ -4283,10 +4282,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       console.log('[WanMotion] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/response`,
-          { headers: { 'Authorization': `Key ${key}` } }
-        );
+        const resultRes = await fetch(wan_response_url, { headers: { 'Authorization': `Key ${key}` } });
         if (!resultRes.ok) return { error: `Wan Motion result fetch failed: ${resultRes.status}` };
         let result;
         try { result = await resultRes.json(); } catch (err) {
