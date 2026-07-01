@@ -4282,14 +4282,28 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       console.log('[WanMotion] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultRes = await fetch(wan_response_url, { headers: { 'Authorization': `Key ${key}` } });
-        if (!resultRes.ok) return { error: `Wan Motion result fetch failed: ${resultRes.status}` };
+        // Fal returns response_url as the bare request URL (no /response suffix).
+        // Try response_url first; if 404, fall back to response_url + /response.
+        console.log('[WanMotion] Fetching result from response_url:', wan_response_url);
+        let resultRes = await fetch(wan_response_url, { headers: { 'Authorization': `Key ${key}` } });
+        if (resultRes.status === 404) {
+          const fallback = wan_response_url.replace(/\/?$/, '/response');
+          console.warn('[WanMotion] response_url 404, trying fallback:', fallback);
+          resultRes = await fetch(fallback, { headers: { 'Authorization': `Key ${key}` } });
+        }
+        if (!resultRes.ok) {
+          const errText = await resultRes.text().catch(() => '<empty>');
+          console.error('[WanMotion] Result fetch failed:', resultRes.status, errText);
+          return { error: `Wan Motion result fetch failed: ${resultRes.status} — ${errText}` };
+        }
         let result;
         try { result = await resultRes.json(); } catch (err) {
           const rawText = await resultRes.text().catch(() => '<empty>');
+          console.error('[WanMotion] Result parse failed:', rawText);
           return { error: `Wan Motion result parse failed: ${rawText}` };
         }
-        const outUrl = result.video?.url;
+        console.log('[WanMotion] Result keys:', Object.keys(result));
+        const outUrl = result.video?.url ?? result.output?.url ?? result.url;
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
         const deductW = deductCreditsAtomic(CREDIT_COST.videoTransfer);
         if (!deductW.success) return { error: 'insufficient credits' };
