@@ -160,6 +160,14 @@ export default function PanelViewer({
     }
   }, [animateMode]);
 
+  // Exit animate mode whenever a clip is applied externally (e.g. from Motion Library)
+  // while generation is not in progress. This returns the toolbar to its default state.
+  useEffect(() => {
+    if (panel?.motionClipData && !isGenerating) {
+      setAnimateMode(false);
+    }
+  }, [panel?.motionClipData]);
+
   // Clear canvas when entering edit mode
   useEffect(() => {
     if (editMode && canvasRef.current) {
