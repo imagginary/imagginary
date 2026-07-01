@@ -4067,16 +4067,21 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
         `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      if (!statusRes.ok) return { error: `Seedance status check failed: ${statusRes.status}` };
+      if (!statusRes.ok) {
+        console.warn('[Seedance] Status poll non-OK:', statusRes.status, '— continuing');
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch (err) {
         const rawText = await statusRes.text().catch(() => '<empty>');
-        return { error: `Seedance status parse failed: ${rawText}` };
+        console.warn('[Seedance] Status parse failed:', rawText, '— continuing');
+        continue;
       }
+      console.log('[Seedance] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`,
+          `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}/response`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
         if (!resultRes.ok) return { error: `Seedance result fetch failed: ${resultRes.status}` };
@@ -4164,16 +4169,21 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
         `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      if (!statusRes.ok) return { error: `Veo status check failed: ${statusRes.status}` };
+      if (!statusRes.ok) {
+        console.warn('[Veo] Status poll non-OK:', statusRes.status, '— continuing');
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch (err) {
         const rawText = await statusRes.text().catch(() => '<empty>');
-        return { error: `Veo status parse failed: ${rawText}` };
+        console.warn('[Veo] Status parse failed:', rawText, '— continuing');
+        continue;
       }
+      console.log('[Veo] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}`,
+          `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${request_id}/response`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
         if (!resultRes.ok) return { error: `Veo result fetch failed: ${resultRes.status}` };
@@ -4260,16 +4270,21 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
         `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/status`,
         { headers: { 'Authorization': `Key ${key}` } }
       );
-      if (!statusRes.ok) return { error: `Wan Motion status check failed: ${statusRes.status}` };
+      if (!statusRes.ok) {
+        console.warn('[WanMotion] Status poll non-OK:', statusRes.status, '— continuing');
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch (err) {
         const rawText = await statusRes.text().catch(() => '<empty>');
-        return { error: `Wan Motion status parse failed: ${rawText}` };
+        console.warn('[WanMotion] Status parse failed:', rawText, '— continuing');
+        continue;
       }
+      console.log('[WanMotion] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
         const resultRes = await fetch(
-          `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}`,
+          `https://queue.fal.run/fal-ai/wan/v2.1/1.3b/image-to-video/requests/${request_id}/response`,
           { headers: { 'Authorization': `Key ${key}` } }
         );
         if (!resultRes.ok) return { error: `Wan Motion result fetch failed: ${resultRes.status}` };
