@@ -3690,6 +3690,38 @@ ipcMain.handle('delete-file', (_event, filePath) => {
 // any external API. Progress is streamed back via 'cloud-progress' IPC events.
 
 /** Fetch a URL and return the body as a base64 string. */
+// Upload a Buffer to storage.fal.ai using https.request directly.
+// The global fetch() in Electron's Node runtime throws UNABLE_TO_VERIFY_LEAF_SIGNATURE
+// against storage.fal.ai because its intermediate CA isn't in Electron's bundled cert
+// store. Using https.request with rejectUnauthorized:false scopes the bypass to this
+// one CDN rather than disabling TLS globally with NODE_TLS_REJECT_UNAUTHORIZED=0.
+function falStorageUpload(buffer, apiKey) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'storage.fal.ai',
+      path: '/upload',
+      method: 'POST',
+      rejectUnauthorized: false,
+      headers: {
+        'Authorization': `Key ${apiKey}`,
+        'Content-Type': 'image/png',
+        'X-Fal-File-Name': 'panel.png',
+        'Content-Length': buffer.length,
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        resolve({ status: res.statusCode, body });
+      });
+    });
+    req.on('error', reject);
+    req.write(buffer);
+    req.end();
+  });
+}
+
 async function fetchToBase64(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
@@ -3955,24 +3987,22 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
     const imageBuffer = Buffer.from(base64Data, 'base64');
     console.log('[Seedance] Starting image upload to storage.fal.ai...');
     console.log('[Seedance] Image buffer size:', imageBuffer.length, 'bytes');
-    let uploadRes;
+    let uploadResult;
     try {
-      uploadRes = await fetch('https://storage.fal.ai/upload', {
-        method: 'POST',
-        headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
-        body: imageBuffer,
-      });
-      console.log('[Seedance] Upload response status:', uploadRes.status);
+      uploadResult = await falStorageUpload(imageBuffer, key);
+      console.log('[Seedance] Upload response status:', uploadResult.status);
     } catch (fetchErr) {
       console.error('[Seedance] Upload fetch threw:', fetchErr.message, fetchErr.cause?.message, fetchErr.cause?.code);
       return { error: `Upload failed: ${fetchErr.message} — cause: ${fetchErr.cause?.message ?? 'unknown'} (${fetchErr.cause?.code ?? 'no code'})` };
     }
-    if (!uploadRes.ok) {
-      const uploadErr = await uploadRes.text().catch(() => '<empty>');
-      console.error('[Seedance] Upload non-OK:', uploadRes.status, uploadErr);
-      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    if (uploadResult.status < 200 || uploadResult.status >= 300) {
+      console.error('[Seedance] Upload non-OK:', uploadResult.status, uploadResult.body);
+      return { error: `Image upload to Fal storage failed: ${uploadResult.status} — ${uploadResult.body}` };
     }
-    const uploadData = await uploadRes.json();
+    let uploadData;
+    try { uploadData = JSON.parse(uploadResult.body); } catch {
+      return { error: `Fal storage upload response not JSON: ${uploadResult.body}` };
+    }
     const imageUrl = uploadData.url;
     console.log('[Seedance] Upload succeeded, CDN URL:', imageUrl);
     if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
@@ -4071,16 +4101,17 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.ai/upload', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
-      body: imageBuffer,
-    });
-    if (!uploadRes.ok) {
-      const uploadErr = await uploadRes.text().catch(() => '<empty>');
-      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    let uploadResult;
+    try { uploadResult = await falStorageUpload(imageBuffer, key); } catch (fetchErr) {
+      return { error: `Upload failed: ${fetchErr.message} — cause: ${fetchErr.cause?.message ?? 'unknown'} (${fetchErr.cause?.code ?? 'no code'})` };
     }
-    const uploadData = await uploadRes.json();
+    if (uploadResult.status < 200 || uploadResult.status >= 300) {
+      return { error: `Image upload to Fal storage failed: ${uploadResult.status} — ${uploadResult.body}` };
+    }
+    let uploadData;
+    try { uploadData = JSON.parse(uploadResult.body); } catch {
+      return { error: `Fal storage upload response not JSON: ${uploadResult.body}` };
+    }
     const imageUrl = uploadData.url;
     if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
 
@@ -4173,16 +4204,17 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
     send(3, 'Uploading image to Fal storage…');
     const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const uploadRes = await fetch('https://storage.fal.ai/upload', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'image/png', 'X-Fal-File-Name': 'panel.png' },
-      body: imageBuffer,
-    });
-    if (!uploadRes.ok) {
-      const uploadErr = await uploadRes.text().catch(() => '<empty>');
-      return { error: `Image upload to Fal storage failed: ${uploadRes.status} — ${uploadErr}` };
+    let uploadResult;
+    try { uploadResult = await falStorageUpload(imageBuffer, key); } catch (fetchErr) {
+      return { error: `Upload failed: ${fetchErr.message} — cause: ${fetchErr.cause?.message ?? 'unknown'} (${fetchErr.cause?.code ?? 'no code'})` };
     }
-    const uploadData = await uploadRes.json();
+    if (uploadResult.status < 200 || uploadResult.status >= 300) {
+      return { error: `Image upload to Fal storage failed: ${uploadResult.status} — ${uploadResult.body}` };
+    }
+    let uploadData;
+    try { uploadData = JSON.parse(uploadResult.body); } catch {
+      return { error: `Fal storage upload response not JSON: ${uploadResult.body}` };
+    }
     const imageUrl = uploadData.url;
     if (!imageUrl) return { error: 'Fal storage upload returned no URL' };
 
