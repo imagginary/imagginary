@@ -225,8 +225,6 @@ interface ElectronAPI {
   falFluxSchnell: (params: unknown) => Promise<unknown>;
   falIPAdapter: (params: unknown) => Promise<unknown>;
   falFluxFill: (params: unknown) => Promise<unknown>;
-  falKling: (params: unknown) => Promise<unknown>;
-  cancelFalKling: () => void;
   falSeedance: (params: unknown) => Promise<unknown>;
   falVeo: (params: unknown) => Promise<unknown>;
   falWanMotion: (params: unknown) => Promise<unknown>;
@@ -1301,7 +1299,7 @@ export default function App() {
           status: 'error',
           progress: 0,
           message: 'Motion generation requires Pro',
-          error: 'Upgrade to Pro to generate motion clips via Kling cloud — no local GPU required.',
+          error: 'Upgrade to Pro to generate motion clips via Seedance or Veo cloud — no local GPU required.',
           errorLink: { label: 'Upgrade to Pro →', url: 'https://imagginary.com/pro' },
         });
         return;
@@ -1833,7 +1831,7 @@ export default function App() {
               setShowVoiceStudio(true);
             }}
             onClearError={() => setProgress(null)}
-            onCancelAnimate={() => { window.electronAPI?.cancelFalVideo?.(); window.electronAPI?.cancelFalKling?.(); setProgress(null); }}
+            onCancelAnimate={() => { window.electronAPI?.cancelFalVideo?.(); setProgress(null); }}
             onCancelInpaint={() => { window.electronAPI?.interruptComfyUI?.(); setProgress(null); }}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}

@@ -983,53 +983,6 @@ export class ComfyUIService {
     };
   }
 
-  async animatePanelCloud(
-    imageData: string,
-    motionPrompt: string,
-    onProgress?: (progress: number, message: string) => void
-  ): Promise<string | null> {
-    if (!licenseService.hasCredits(CREDIT_COSTS.motionClip)) {
-      onProgress?.(0, 'Insufficient credits for motion generation');
-      return null;
-    }
-
-    // Listen for progress events from main process poll loop
-    let cleanupProgress: (() => void) | null = null;
-    if (window.electronAPI?.onCloudProgress) {
-      cleanupProgress = window.electronAPI!.onCloudProgress(
-        (data: { handler: string; pct: number; msg: string }) => {
-          if (data.handler === 'fal-kling') onProgress?.(data.pct, data.msg);
-        }
-      );
-    }
-
-    try {
-      const result = await window.electronAPI!.falKling({
-        imageData,
-        motionPrompt,
-        duration: '5',
-        aspectRatio: '16:9',
-      });
-
-      if (result?.base64 && result.base64.length > 1000) {
-        // Credits were deducted atomically in the main process (deductCreditsAtomic).
-        // Calling spendCredits() here would hit the spend-credits IPC handler and
-        // deduct a SECOND time — 28 credits instead of 14. Refresh the cache instead.
-        await licenseService.refreshBalanceFromStore();
-        telemetryService.track('motion_generated_cloud', { provider: 'kling' });
-        return result.base64;
-      }
-      const errMsg = result?.error || 'Cloud animation failed — no video data received';
-      console.warn('[Kling] Error from main process:', errMsg);
-      throw new Error(errMsg);
-    } catch (err) {
-      throw err;
-    } finally {
-      cleanupProgress?.();
-      window.electronAPI?.cancelFalKling?.();
-    }
-  }
-
   async animatePanelSeedance(
     imageData: string,
     motionPrompt: string,
@@ -1107,13 +1060,6 @@ export class ComfyUIService {
 
     const wanAvailable = await this.isNodeAvailable('WanVideoModelLoader');
     if (!wanAvailable) {
-      if (licenseService.isPro() || licenseService.isStudio()) {
-        const cloudResult = await this.animatePanelCloud(imageData, motionPrompt, onProgress);
-        if (cloudResult === null) {
-          throw new Error('Insufficient credits for cloud animation. Add credits or upgrade your plan.');
-        }
-        return cloudResult;
-      }
       throw new Error(
         'Wan 2.2 not installed in ComfyUI.\n' +
         'To install: follow the ComfyUI custom nodes setup guide in the project README.\n' +
@@ -1222,7 +1168,7 @@ export class ComfyUIService {
       }
     }
 
-    throw new Error('Animation is taking too long. Your GPU may not have enough memory for motion generation. Pro users can use Kling cloud instead.');
+    throw new Error('Animation is taking too long. Your GPU may not have enough memory for motion generation.');
   }
 
   private async pollForCompletion(

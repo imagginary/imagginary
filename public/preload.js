@@ -185,8 +185,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   falFluxSchnell:      (params) => ipcRenderer.invoke('fal-flux-schnell', params),
   falIPAdapter:        (params) => ipcRenderer.invoke('fal-ipadapter', params),
   falFluxFill:         (params) => ipcRenderer.invoke('fal-flux-fill', params),
-  falKling:            (params) => ipcRenderer.invoke('fal-kling', params),
-  cancelFalKling:      () => ipcRenderer.send('cancel-fal-kling'),
   falSeedance:         (params) => ipcRenderer.invoke('fal-seedance', params),
   falVeo:              (params) => ipcRenderer.invoke('fal-veo', params),
   falWanMotion:        (params) => ipcRenderer.invoke('fal-wan-motion', params),
