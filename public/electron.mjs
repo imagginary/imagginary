@@ -4027,9 +4027,8 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       console.log('[Seedance] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultUrl = `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`;
-        console.log('[Seedance] COMPLETED — hardcoded resultUrl:', resultUrl);
-        console.log('[Seedance] COMPLETED — response_url from submission:', response_url);
+        const resultUrl = response_url; // use Fal's own response_url — hardcoded path returned 405
+        console.log('[Seedance] COMPLETED — fetching result from response_url:', resultUrl);
         let result;
         try {
           const resultJson = await new Promise((resolve, reject) => {
@@ -4151,8 +4150,8 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       console.log('[Veo] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultUrl = `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${veo_request_id}`;
-        console.log('[Veo] Fetching result from:', resultUrl);
+        const resultUrl = veo_response_url; // use Fal's own response_url — hardcoded path may return 405
+        console.log('[Veo] COMPLETED — fetching result from response_url:', resultUrl);
         let result;
         try {
           const resultJson = await new Promise((resolve, reject) => {
