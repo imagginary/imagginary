@@ -4028,7 +4028,8 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
       if (status.status === 'COMPLETED') {
         const resultUrl = `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`;
-        console.log('[Seedance] Fetching result from:', resultUrl);
+        console.log('[Seedance] COMPLETED — hardcoded resultUrl:', resultUrl);
+        console.log('[Seedance] COMPLETED — response_url from submission:', response_url);
         let result;
         try {
           const resultJson = await new Promise((resolve, reject) => {
@@ -4041,7 +4042,9 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
               let data = '';
               res.on('data', chunk => { data += chunk; });
               res.on('end', () => {
+                console.log('[Seedance] Result fetch status:', res.statusCode);
                 if (res.statusCode < 200 || res.statusCode >= 300) {
+                  console.error('[Seedance] Result fetch failed body:', data);
                   return reject(new Error(`Seedance result fetch failed: ${res.statusCode}`));
                 }
                 try { resolve(JSON.parse(data)); } catch { reject(new Error(`Seedance result parse failed: ${data}`)); }
