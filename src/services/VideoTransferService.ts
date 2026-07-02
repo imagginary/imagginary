@@ -20,6 +20,7 @@ export type { VideoValidationResult };
 
 const SUPPORTED_FORMATS = ['.mp4', '.mov', '.avi', '.webm'];
 const MAX_DURATION_S = 30;
+const MAX_WAN_MOTION_DURATION_S = 6; // Wan Motion output mirrors input duration — cap to control cost
 
 function getElectronAPI(): Record<string, (...args: unknown[]) => unknown> {
   return window.electronAPI ?? {};
@@ -155,6 +156,15 @@ class VideoTransferService {
 
     // ── Cloud path (Pro/Studio): upload character image + source video → wan-motion ─
     if (sourceVideoPath && api.uploadVideoToFal) {
+      // Validate video duration before uploading — Wan Motion output mirrors input length
+      const validation = await this.validateVideo(sourceVideoPath);
+      if (validation.duration > MAX_WAN_MOTION_DURATION_S) {
+        throw new Error(
+          `Video is too long (${validation.duration.toFixed(1)}s) — maximum is ${MAX_WAN_MOTION_DURATION_S} seconds for Video Transfer. ` +
+          `Trim your clip to under ${MAX_WAN_MOTION_DURATION_S} seconds and try again.`
+        );
+      }
+
       onProgress(5);
 
       // Read character image as data URL

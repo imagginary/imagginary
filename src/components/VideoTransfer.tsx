@@ -148,7 +148,7 @@ const BEST_RESULTS = [
   'Moderate motion speed',
   'Stable camera',
   'Good lighting',
-  'Under 30 seconds',
+  'Under 6 seconds',
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -387,7 +387,7 @@ export default function VideoTransfer({
                     <Upload className="w-8 h-8 text-gray-500" />
                     <div className="text-center">
                       <p className="text-sm text-gray-300 font-medium">Drop video here or click to browse</p>
-                      <p className="text-xs text-gray-600 mt-1">MP4, MOV, AVI, WebM · max 30 seconds</p>
+                      <p className="text-xs text-gray-600 mt-1">MP4, MOV · Max 6 seconds · 1080p recommended</p>
                     </div>
                   </>
                 )}

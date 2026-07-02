@@ -2928,7 +2928,7 @@ const CREDIT_COST = {
   characterPanel:     2,
   motionClip:         20,  // Seedance 1.5 Pro
   motionClipPremium:  160, // Veo 3.1 Fast
-  videoTransfer:      45,  // Wan Motion cloud transfer
+  videoTransfer:      55,  // Wan Motion cloud transfer
   lipSync:            16,
   loraTraining:       275, // Studio only, 5 runs/month
   poseEngine:         6,   // ControlNet cloud
