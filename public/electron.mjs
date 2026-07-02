@@ -4029,12 +4029,30 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       if (status.status === 'COMPLETED') {
         const resultUrl = `https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video/requests/${request_id}`;
         console.log('[Seedance] Fetching result from:', resultUrl);
-        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
-        if (!resultRes.ok) return { error: `Seedance result fetch failed: ${resultRes.status}` };
         let result;
-        try { result = await resultRes.json(); } catch (err) {
-          const rawText = await resultRes.text().catch(() => '<empty>');
-          return { error: `Seedance result parse failed: ${rawText}` };
+        try {
+          const resultJson = await new Promise((resolve, reject) => {
+            const u = new URL(resultUrl);
+            const req = https.request({
+              hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+              rejectUnauthorized: false,
+              headers: { 'Authorization': `Key ${key}` },
+            }, (res) => {
+              let data = '';
+              res.on('data', chunk => { data += chunk; });
+              res.on('end', () => {
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                  return reject(new Error(`Seedance result fetch failed: ${res.statusCode}`));
+                }
+                try { resolve(JSON.parse(data)); } catch { reject(new Error(`Seedance result parse failed: ${data}`)); }
+              });
+            });
+            req.on('error', reject);
+            req.end();
+          });
+          result = resultJson;
+        } catch (err) {
+          return { error: err.message };
         }
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Seedance response' };
@@ -4132,12 +4150,30 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       if (status.status === 'COMPLETED') {
         const resultUrl = `https://queue.fal.run/fal-ai/veo3/image-to-video/requests/${veo_request_id}`;
         console.log('[Veo] Fetching result from:', resultUrl);
-        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
-        if (!resultRes.ok) return { error: `Veo result fetch failed: ${resultRes.status}` };
         let result;
-        try { result = await resultRes.json(); } catch (err) {
-          const rawText = await resultRes.text().catch(() => '<empty>');
-          return { error: `Veo result parse failed: ${rawText}` };
+        try {
+          const resultJson = await new Promise((resolve, reject) => {
+            const u = new URL(resultUrl);
+            const req = https.request({
+              hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+              rejectUnauthorized: false,
+              headers: { 'Authorization': `Key ${key}` },
+            }, (res) => {
+              let data = '';
+              res.on('data', chunk => { data += chunk; });
+              res.on('end', () => {
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                  return reject(new Error(`Veo result fetch failed: ${res.statusCode}`));
+                }
+                try { resolve(JSON.parse(data)); } catch { reject(new Error(`Veo result parse failed: ${data}`)); }
+              });
+            });
+            req.on('error', reject);
+            req.end();
+          });
+          result = resultJson;
+        } catch (err) {
+          return { error: err.message };
         }
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Veo response' };
