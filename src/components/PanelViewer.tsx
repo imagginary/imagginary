@@ -1009,7 +1009,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Video Transfer"
                     description="Record yourself doing an action and transfer the exact motion to your character. Pose retargeting via Wan Motion cloud."
-                    highlight="Upload any MP4 · motion transfers in ~2 min · no GPU needed"
+                    highlight="Upload a upto 5s MP4 · 55 credits"
                     onUpgrade={() => { setShowVideoTransferGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
