@@ -17,6 +17,7 @@ import {
   Joint,
 } from '../data/PoseVocabulary';
 import { getComfyUIUrl } from '../config/services';
+import { licenseService } from './LicenseService';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -266,11 +267,18 @@ class PoseEngineService {
   }
 
   /**
-   * Generate a posed panel image via DreamShaper 8 + ControlNet OpenPose.
-   * Returns a still image that replaces the panel's generatedImageData.
+   * Generate a posed panel image.
+   * Pro/Studio → Fal.ai ControlNet cloud (no local model needed).
+   * Community  → local ComfyUI ControlNet OpenPose.
    */
   async generatePoseAnimation(params: PoseGenerationParams): Promise<PoseGenerationResult> {
     const { imageData, description, poseTemplateIds, onProgress } = params;
+
+    if (licenseService.isPro() || licenseService.isStudio()) {
+      return this.generatePoseAnimationCloud(imageData, poseTemplateIds, description, onProgress);
+    }
+
+    // Community — local ComfyUI path
     const progress = (pct: number, msg: string) => onProgress?.(pct, msg);
 
     progress(5, 'Checking ControlNet model…');
@@ -290,13 +298,11 @@ class PoseEngineService {
 
     progress(10, 'Rendering pose image…');
 
-    // Use the first selected template's keyframe for the ControlNet pose image
     const firstTemplate = POSE_VOCABULARY.find((p) => p.id === selectedIds[0]);
     if (!firstTemplate) throw new Error('Pose template not found.');
 
     const poseImageDataUrl = renderPoseToOpenposePNG(firstTemplate.keyframe, 512, 512);
 
-    // Build prompt
     const templateNames = selectedIds
       .map((id) => POSE_VOCABULARY.find((p) => p.id === id)?.name ?? '')
       .filter(Boolean)
@@ -327,6 +333,58 @@ class PoseEngineService {
     const imageResult = await this.pollForImage(prompt_id, baseUrl, progress);
     progress(100, 'Pose complete');
     return { imageData: imageResult };
+  }
+
+  /**
+   * Cloud path: upload panel + pose skeleton to Fal storage, run ControlNet SDXL.
+   * Used for Pro/Studio users — no local ComfyUI or model download required.
+   */
+  private async generatePoseAnimationCloud(
+    imageData: string,
+    poseTemplateIds: string[],
+    description: string,
+    onProgress?: (pct: number, msg: string) => void,
+  ): Promise<PoseGenerationResult> {
+    const progress = (pct: number, msg: string) => onProgress?.(pct, msg);
+
+    progress(10, 'Rendering pose skeleton…');
+
+    const selectedIds = poseTemplateIds.length > 0
+      ? poseTemplateIds
+      : matchPoseTemplates(description).map((t) => t.id);
+
+    if (selectedIds.length === 0) {
+      throw new Error('No matching pose templates found. Try describing the pose differently.');
+    }
+
+    const firstTemplate = POSE_VOCABULARY.find((p) => p.id === selectedIds[0]);
+    if (!firstTemplate) throw new Error('Pose template not found.');
+
+    const poseImageDataUrl = renderPoseToOpenposePNG(firstTemplate.keyframe, 768, 432);
+
+    const templateNames = selectedIds
+      .map((id) => POSE_VOCABULARY.find((p) => p.id === id)?.name ?? '')
+      .filter(Boolean)
+      .join(', ');
+    const prompt = [description, templateNames, 'cinematic storyboard illustration, film style, detailed']
+      .filter(Boolean)
+      .join(', ');
+
+    progress(30, 'Generating posed panel via cloud…');
+
+    const result = await (window.electronAPI as any).falControlnetPose({
+      imageData,
+      poseImageData: poseImageDataUrl,
+      prompt,
+    });
+
+    if (result?.error) throw new Error(result.error);
+    if (!result?.base64 || result.base64.length < 1024) {
+      throw new Error('Cloud pose generation returned invalid image data');
+    }
+
+    progress(100, 'Pose complete');
+    return { imageData: `data:image/png;base64,${result.base64}` };
   }
 
   /** Poll /history until SaveImage output is ready, return as base64 PNG data URL. */

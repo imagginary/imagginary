@@ -225,6 +225,7 @@ interface ElectronAPI {
   falFluxSchnell: (params: unknown) => Promise<unknown>;
   falIPAdapter: (params: unknown) => Promise<unknown>;
   falFluxFill: (params: unknown) => Promise<unknown>;
+  falControlnetPose: (params: unknown) => Promise<unknown>;
   falSeedance: (params: unknown) => Promise<unknown>;
   falVeo: (params: unknown) => Promise<unknown>;
   falWanMotion: (params: unknown) => Promise<unknown>;
@@ -1384,7 +1385,13 @@ export default function App() {
         revisions: newRevisions,
       });
 
-      await licenseService.spendCredits(CREDIT_COSTS.poseEngine);
+      // Cloud path (Pro/Studio): credits already deducted atomically in main process
+      // Local path (Community): charge client-side
+      if (licenseService.isPro() || licenseService.isStudio()) {
+        await licenseService.refreshBalanceFromStore();
+      } else {
+        await licenseService.spendCredits(CREDIT_COSTS.poseEngine);
+      }
       setProgress({
         panelId: activePanelId,
         status: 'complete',

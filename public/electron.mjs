@@ -4478,6 +4478,64 @@ function generateSyntheticPoseSequence(frameCount, duration) {
   return sequence;
 }
 
+// ── ControlNet Pose — cloud path via Fal.ai ──────────────────────────────────
+
+ipcMain.handle('fal-controlnet-pose', async (_event, { imageData, poseImageData, prompt }) => {
+  const key = FAL_API_KEY;
+  if (!key) return { error: 'FAL_API_KEY not configured' };
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+
+  try {
+    console.log('[PoseEngine] Uploading panel image…');
+    const imageBuffer = Buffer.from(imageData.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
+    const imageUrl = await falStorageUpload(imageBuffer, 'image/png', 'panel.png', key);
+
+    console.log('[PoseEngine] Uploading pose skeleton image…');
+    const poseBuffer = Buffer.from(poseImageData.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
+    const poseUrl = await falStorageUpload(poseBuffer, 'image/png', 'pose.png', key);
+
+    console.log('[PoseEngine] Submitting to ControlNet…');
+    const response = await fetch('https://fal.run/fal-ai/controlnet-union-sdxl', {
+      method: 'POST',
+      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        control_image_url: poseUrl,
+        control_type: 'openpose',
+        prompt,
+        negative_prompt: 'blurry, bad anatomy, watermark, worst quality, low quality, distorted',
+        num_inference_steps: 30,
+        guidance_scale: 7,
+        strength: 0.75,
+        num_images: 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '<empty>');
+      return { error: `ControlNet failed: ${response.status} — ${errText}` };
+    }
+
+    const data = await response.json();
+    const imageOutputUrl = data.images?.[0]?.url;
+    if (!imageOutputUrl) return { error: 'No image in ControlNet response' };
+
+    console.log('[PoseEngine] Downloading result…');
+    const base64 = await fetchToBase64(imageOutputUrl);
+
+    const deduct = deductCreditsAtomic(CREDIT_COST.poseEngine);
+    if (!deduct.success) {
+      console.warn('[Credits] fal-controlnet-pose deduction failed:', deduct.error);
+      return { error: 'insufficient credits' };
+    }
+
+    return { base64 };
+  } catch (err) {
+    console.error('[PoseEngine] Error:', err.message);
+    return { error: err.message };
+  }
+});
+
 // ── ControlNet OpenPose model — check + download ─────────────────────────────
 
 ipcMain.handle('check-controlnet-openpose', async () => {

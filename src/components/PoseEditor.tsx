@@ -578,6 +578,10 @@ export default function PoseEditor({
                   Upgrade to Pro — $19/month
                 </button>
               </div>
+            ) : showControlnetDownload && isPro ? (
+              <div className="shrink-0 bg-gray-900 border border-gray-700 rounded-xl p-4 text-center">
+                <p className="text-xs text-red-400">Cloud pose generation failed. Please try again.</p>
+              </div>
             ) : showControlnetDownload ? (
               <div className="shrink-0 bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
                 <p className="text-xs font-semibold text-gray-200">OpenPose ControlNet required</p>
