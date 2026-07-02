@@ -3759,11 +3759,40 @@ async function falStorageUpload(buffer, contentType, fileName, apiKey) {
 }
 
 async function fetchToBase64(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < 1024) throw new Error(`Downloaded file is too small (${buf.length} bytes) — likely corrupt or empty`);
-  return buf.toString('base64');
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      rejectUnauthorized: false, // handles Fal CDN cert issues (same as falStorageUpload)
+    };
+
+    const req = https.request(options, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        reject(new Error(`fetchToBase64 failed: HTTP ${res.statusCode} from ${url}`));
+        res.resume();
+        return;
+      }
+
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        if (buffer.length < 1024) {
+          reject(new Error(`fetchToBase64: response too small (${buffer.length} bytes) — likely corrupt or empty`));
+          return;
+        }
+        resolve(buffer.toString('base64'));
+      });
+    });
+
+    req.on('error', (err) => {
+      reject(new Error(`fetchToBase64 network error: ${err.message}`));
+    });
+
+    req.end();
+  });
 }
 
 // Deduct credits from the main-process store (no balance check — caller pre-checked).
