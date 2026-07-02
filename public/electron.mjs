@@ -2924,13 +2924,14 @@ const creditDefaults = { subscriptionCredits: 0, topUpCredits: 0, lastCreditedAt
 // Per-feature credit costs (mirrors CREDIT_COSTS in LicenseService.ts)
 const CREDIT_COST = {
   panelCloud:         2,
-  inpaint:            3,
+  inpaint:            6,   // FLUX.1 Fill — $0.035 upstream
   characterPanel:     2,
-  motionClip:        14,   // Seedance 1.5 Pro
-  motionClipPremium: 28,   // Veo 3.1 Fast (2× — higher quality, ~4× upstream cost)
-  videoTransfer:     14,   // Wan Motion cloud transfer
-  lipSync:           16,
-  loraTraining:      50,
+  motionClip:         20,  // Seedance 1.5 Pro
+  motionClipPremium:  160, // Veo 3.1 Fast
+  videoTransfer:      45,  // Wan Motion cloud transfer
+  lipSync:            16,
+  loraTraining:       275, // Studio only, 5 runs/month
+  poseEngine:         6,   // ControlNet cloud
 };
 
 function getCredits() {

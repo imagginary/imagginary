@@ -5,21 +5,22 @@ const BILLING_CYCLE = 30 * 24 * 60 * 60 * 1000;
 const LEGACY_BALANCE_KEY = 'imagginary_credit_balance';
 
 export const CREDIT_POOLS: Record<LicenseTier, number> = {
-  pro:       532,
-  studio:    2239,
+  pro:       800,
+  studio:    800,  // LoRA training runs tracked separately (5/month)
   community: 0,
 };
 
 export const CREDIT_COSTS = {
-  panelCloud:      2,
-  inpaint:         3,
-  characterPanel:  2,
-  motionClip:         14,   // Seedance 1.5 Pro
-  motionClipPremium:  28,   // Veo 3.1 Fast
-  videoTransfer:      14,   // Wan Motion cloud
+  panelCloud:         2,
+  inpaint:            6,   // FLUX.1 Fill — $0.035 upstream
+  characterPanel:     2,
+  motionClip:         20,  // Seedance 1.5 Pro
+  motionClipPremium:  160, // Veo 3.1 Fast
+  videoTransfer:      45,  // Wan Motion cloud
   lipSync:            16,
-  turntable:       2,
-  loraTraining:   50,
+  turntable:          2,
+  loraTraining:       275, // Studio only, 5 runs/month
+  poseEngine:         6,   // ControlNet cloud, similar cost to inpaint
 };
 
 // In-memory cache of the balance — kept in sync after every async mutation.

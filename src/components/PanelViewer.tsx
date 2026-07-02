@@ -899,7 +899,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Animate"
                     description="Bring your storyboard panels to life with AI-generated motion clips. Choose Seedance (fast) or Veo 3.1 (premium quality) — no GPU needed."
-                    highlight="Seedance: ~2 min, 14 credits · Veo 3.1: ~1 min, 28 credits"
+                    highlight="Seedance: ~2 min, 20 credits · Veo 3.1: ~1 min, 160 credits"
                     onUpgrade={() => { setShowAnimateGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
@@ -941,7 +941,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Pose Engine"
                     description="Select a pose template and generate your character in that exact pose. Perfect for action shots and specific blocking."
-                    highlight="ControlNet cloud · outputs a new panel image · 3 credits"
+                    highlight="ControlNet · outputs a new panel image · 6 credits"
                     onUpgrade={() => { setShowPoseGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
@@ -1179,7 +1179,7 @@ export default function PanelViewer({
                       }`}
                     >
                       <div className="font-medium">Seedance</div>
-                      <div className="text-[10px] opacity-75">~2 min · 14 credits</div>
+                      <div className="text-[10px] opacity-75">~2 min · 20 credits</div>
                     </button>
                     <button
                       onClick={() => setMotionEngine('veo')}
@@ -1190,7 +1190,7 @@ export default function PanelViewer({
                       }`}
                     >
                       <div className="font-medium">Veo 3.1 ✦</div>
-                      <div className="text-[10px] opacity-75">~1 min · 28 credits</div>
+                      <div className="text-[10px] opacity-75">~1 min · 160 credits</div>
                     </button>
                   </div>
                 </div>

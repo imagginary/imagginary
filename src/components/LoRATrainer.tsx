@@ -17,6 +17,36 @@ interface SelectedImage {
   path: string;
   previewUrl: string;
   name: string;
+  size: number;
+}
+
+const QUALITY_CHECK_ITEMS = [
+  { id: 'resolution', label: 'Images are high resolution (min 512×512px)' },
+  { id: 'consistent', label: 'Images share a consistent style, character, or aesthetic' },
+  { id: 'lighting',   label: 'Lighting and composition are clean — no blur or heavy grain' },
+  { id: 'notext',     label: 'No watermarks, logos, or overlaid text' },
+  { id: 'variety',    label: 'Images show variety (different angles, contexts) not copies' },
+] as const;
+
+function getMonthlyTrainingRuns(): { count: number; month: string } {
+  try {
+    const raw = localStorage.getItem('loraMonthlyRuns');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { count: 0, month: '' };
+}
+
+function recordMonthlyTrainingRun() {
+  const month = new Date().toISOString().slice(0, 7);
+  const prev = getMonthlyTrainingRuns();
+  const count = prev.month === month ? prev.count + 1 : 1;
+  localStorage.setItem('loraMonthlyRuns', JSON.stringify({ count, month }));
+}
+
+function getMonthlyRunsUsed(): number {
+  const { count, month } = getMonthlyTrainingRuns();
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  return month === currentMonth ? count : 0;
 }
 
 const TRAINING_COST = CREDIT_COSTS.loraTraining;
@@ -38,7 +68,11 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
   // Upload step state
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [qualityChecks, setQualityChecks] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const monthlyRunsUsed = getMonthlyRunsUsed();
+  const MONTHLY_RUN_LIMIT = 5;
 
   // Configure step state
   const [styleName, setStyleName] = useState('');
@@ -87,10 +121,20 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
         path: (f as any).path ?? f.name, // Electron exposes .path; fallback for tests
         previewUrl: URL.createObjectURL(f),
         name: f.name,
+        size: f.size,
       }));
       return [...prev, ...toAdd];
     });
   }
+
+  // Simple look-alike heuristic: coefficient of variation of file sizes < 3%
+  const hasTooManyLookAlike = selectedImages.length >= 5 && (() => {
+    const sizes = selectedImages.map(img => img.size);
+    const mean = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+    if (mean === 0) return false;
+    const stddev = Math.sqrt(sizes.map(s => (s - mean) ** 2).reduce((a, b) => a + b, 0) / sizes.length);
+    return (stddev / mean) < 0.03;
+  })();
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     addFiles(e.target.files);
@@ -113,6 +157,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
 
   const handleStartTraining = useCallback(async () => {
     if (trainingInFlight.current) return;
+    if (getMonthlyRunsUsed() >= MONTHLY_RUN_LIMIT) return;
     trainingInFlight.current = true;
     setStep('training');
     setTrainingError(null);
@@ -129,6 +174,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
       const uploadedUrls: string[] = uploadResult.urls;
 
       // 2. Submit training job
+      recordMonthlyTrainingRun();
       setTrainingMessage('Submitting training job to Fal.ai…');
       const trainingResult = await window.electronAPI!.startLoraTraining({
         imageUrls: uploadResult.urls,
@@ -245,6 +291,7 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
             <div>
               <h2 className="text-white font-semibold text-base">Train Brand Style</h2>
               <p className="text-gray-500 text-xs mt-0.5">Upload 10–20 reference images that represent your visual style</p>
+              <p className="text-violet-400/70 text-xs mt-1">{monthlyRunsUsed} of {MONTHLY_RUN_LIMIT} training runs used this month</p>
             </div>
           )}
           {step === 'configure' && (
@@ -317,23 +364,44 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
                 </p>
               )}
 
-              {/* Tips */}
-              <div className="bg-gray-900 rounded-lg p-4">
-                <p className="text-xs font-medium text-gray-300 mb-2">Tips for best results:</p>
-                <ul className="text-xs text-gray-500 space-y-1">
-                  <li>· Use images from your existing storyboards or artwork</li>
-                  <li>· Consistent lighting, color palette, and line style trains better</li>
-                  <li>· Mix of different subjects (people, environments, objects) improves generalization</li>
-                  <li>· Avoid watermarks, text overlays, or low-resolution images</li>
-                </ul>
-              </div>
+              {/* Look-alike warning */}
+              {hasTooManyLookAlike && (
+                <p className="text-amber-400 text-xs mb-4">
+                  ⚠ Your images look very similar — add variety for better style generalization
+                </p>
+              )}
+
+              {/* Quality checklist */}
+              {selectedImages.length > 0 && (
+                <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 mt-4">
+                  <p className="text-xs font-semibold text-gray-300 mb-3">
+                    ✦ Before you continue — checklist for best results:
+                  </p>
+                  <div className="space-y-2">
+                    {QUALITY_CHECK_ITEMS.map(item => (
+                      <label key={item.id} className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={qualityChecks[item.id] || false}
+                          onChange={e => setQualityChecks(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-0.5 accent-violet-500"
+                        />
+                        <span className="text-xs text-gray-400">{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-800 flex items-center justify-between shrink-0">
-              <p className="text-xs text-gray-500">{TRAINING_COST} credits · ~15 minutes training time</p>
+              <div>
+                <p className="text-xs text-gray-500">{TRAINING_COST} credits · ~15 minutes training time</p>
+                <p className="text-xs text-gray-600 mt-0.5">{monthlyRunsUsed} of {MONTHLY_RUN_LIMIT} training runs used this month</p>
+              </div>
               <button
                 onClick={() => setStep('configure')}
-                disabled={selectedImages.length < 10}
+                disabled={selectedImages.length < 10 || Object.values(qualityChecks).filter(Boolean).length < QUALITY_CHECK_ITEMS.length}
                 className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
               >
                 Continue →
@@ -426,12 +494,19 @@ export default function LoRATrainer({ onClose, onStyleCreated, isStudio }: LoRAT
             </div>
 
             <div className="px-6 py-4 border-t border-gray-800 flex items-center justify-between shrink-0">
-              <button onClick={() => setStep('upload')} className="text-sm text-gray-400 hover:text-white transition-colors">
-                ← Back
-              </button>
+              <div>
+                <button onClick={() => setStep('upload')} className="text-sm text-gray-400 hover:text-white transition-colors">
+                  ← Back
+                </button>
+                {monthlyRunsUsed >= MONTHLY_RUN_LIMIT && (
+                  <p className="text-amber-400 text-xs mt-1">
+                    You've used all {MONTHLY_RUN_LIMIT} training runs for this month. Runs reset on the 1st of next month.
+                  </p>
+                )}
+              </div>
               <button
                 onClick={handleStartTraining}
-                disabled={!styleName.trim() || !triggerWordBase.trim() || !canAfford}
+                disabled={!styleName.trim() || !triggerWordBase.trim() || !canAfford || monthlyRunsUsed >= MONTHLY_RUN_LIMIT}
                 className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
               >
                 Start Training — {TRAINING_COST} credits

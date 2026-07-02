@@ -1331,6 +1331,16 @@ export default function App() {
     const panel = project.panels.find((p) => p.id === activePanelId);
     if (!panel?.generatedImageData) return;
 
+    if (!licenseService.hasCredits(CREDIT_COSTS.poseEngine)) {
+      setProgress({
+        panelId: activePanelId,
+        status: 'error',
+        progress: 0,
+        message: `Insufficient credits for Pose Engine (need ${CREDIT_COSTS.poseEngine}). Add credits to continue.`,
+      });
+      return;
+    }
+
     setIsPoseGenerating(true);
     setProgress({
       panelId: activePanelId,
@@ -1376,6 +1386,7 @@ export default function App() {
         revisions: newRevisions,
       });
 
+      await licenseService.spendCredits(CREDIT_COSTS.poseEngine);
       setProgress({
         panelId: activePanelId,
         status: 'complete',

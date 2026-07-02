@@ -279,9 +279,9 @@ function ActivatedView({ license, onLicenseChange, onClose }: {
           <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Buy more credits</p>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { pack: 'starter'  as const, credits: 300,  price: '$2.99' },
-              { pack: 'standard' as const, credits: 800,  price: '$6.99' },
-              { pack: 'power'    as const, credits: 2000, price: '$15.99' },
+              { pack: 'starter'  as const, credits: 300,  price: '$3.99' },
+              { pack: 'standard' as const, credits: 800,  price: '$9.99' },
+              { pack: 'power'    as const, credits: 2000, price: '$21.99' },
             ].map(({ pack, credits, price }) => (
               <button
                 key={pack}
