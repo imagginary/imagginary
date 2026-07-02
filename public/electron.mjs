@@ -4182,7 +4182,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
     if (!wan_status_url)  return { error: `Wan Motion submission missing status_url: ${JSON.stringify(submitData)}` };
     if (!wan_response_url) return { error: `Wan Motion submission missing response_url: ${JSON.stringify(submitData)}` };
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
       if (flag.cancelled) return { error: 'cancelled' };
