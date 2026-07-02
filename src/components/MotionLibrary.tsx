@@ -307,11 +307,11 @@ export default function MotionLibrary({
   }
 
   async function handleApply() {
+    setApplyError(null); // clear any previous error before new attempt
     if (!isPro) return;
     const needsComfyUI = !isPro;
     if (!selectedClip || !panel.generatedImageData || (needsComfyUI && !comfyuiConnected)) return;
     setIsApplying(true);
-    setApplyError(null);
     setApplyProgress(0);
     setApplyMsg('Starting…');
     const cleanupProgress = window.electronAPI?.onCloudProgress?.(
