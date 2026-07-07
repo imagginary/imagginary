@@ -29,8 +29,7 @@ jobs:
       - name: Set Edge Function secrets
         run: |
           supabase secrets set FAL_API_KEY="${{ secrets.FAL_API_KEY }}" --project-ref oviyvdauhehjsgusnfbd
-          supabase secrets set SUPABASE_URL="${{ secrets.SUPABASE_URL }}" --project-ref oviyvdauhehjsgusnfbd
-          supabase secrets set SUPABASE_SERVICE_ROLE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" --project-ref oviyvdauhehjsgusnfbd
           supabase secrets set DODO_WEBHOOK_SECRET="${{ secrets.DODO_WEBHOOK_SECRET }}" --project-ref oviyvdauhehjsgusnfbd
+          supabase secrets set GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" --project-ref oviyvdauhehjsgusnfbd
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

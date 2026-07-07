@@ -4,7 +4,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 
 const FAL_API_KEY = Deno.env.get('FAL_API_KEY')!;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_SERVICE_KEY = Deno.env.get('SERVICE_ROLE_KEY')!;
 
 const CREDIT_COSTS: Record<string, number> = {
   panel: 2,
