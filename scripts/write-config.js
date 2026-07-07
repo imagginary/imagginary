@@ -31,6 +31,8 @@ const cfg = {
   DODO_STANDARD_CREDITS_URL:       process.env.DODO_STANDARD_CREDITS_URL       || '',
   DODO_POWER_CREDITS_URL:          process.env.DODO_POWER_CREDITS_URL          || '',
   DODO_CUSTOMER_PORTAL_URL:        process.env.DODO_CUSTOMER_PORTAL_URL        || 'https://customer.dodopayments.com',
+  SUPABASE_URL:                    process.env.SUPABASE_URL                    || '',
+  SUPABASE_ANON_KEY:               process.env.SUPABASE_ANON_KEY               || '',
 };
 
 // LICENSE_HMAC_SECRET is security-critical — abort the build if it's absent

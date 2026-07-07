@@ -1422,7 +1422,7 @@ app.whenReady().then(async () => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://v3.fal.media https://rest.alpha.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io https://generativelanguage.googleapis.com; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://v3.fal.media https://rest.alpha.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io https://generativelanguage.googleapis.com https://oviyvdauhehjsgusnfbd.supabase.co; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*;",
         ],
       },
@@ -2983,6 +2983,9 @@ const CHECKOUT_URLS  = {
   studio_annual: _cfg('DODO_STUDIO_ANNUAL_CHECKOUT_URL') || '',
 };
 
+const SUPABASE_URL      = _cfg('SUPABASE_URL');
+const SUPABASE_ANON_KEY = _cfg('SUPABASE_ANON_KEY');
+
 function getLicensePath() {
   return path.join(app.getPath('userData'), 'imagginary-license.json');
 }
@@ -3040,8 +3043,9 @@ const CREDIT_COST = {
   panelCloud:         2,
   inpaint:            6,   // FLUX.1 Fill — $0.035 upstream
   characterPanel:     2,
-  motionClip:         20,  // Seedance 1.5 Pro
-  motionClipPremium:  160, // Veo 3.1 Fast
+  motionClip:         35,  // Seedance 1.5 Pro
+  motionClipPremium:  160, // Veo 3.1 — BYOK (deduction skipped at runtime)
+  motionClipPremium2: 160, // Seedance 2.0 Fast
   videoTransfer:      55,  // Wan Motion cloud transfer
   lipSync:            16,
   loraTraining:       275, // Studio only, 5 runs/month
@@ -3056,23 +3060,44 @@ function setCredits(val) {
   store.set('credits', val);
 }
 
-ipcMain.handle('get-credits', () => getCredits());
+ipcMain.handle('get-credits', async () => {
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { subscriptionCredits: 0, topUpCredits: 0 };
 
-ipcMain.handle('spend-credits', (_, cost) => {
-  const bal = getCredits();
-  const total = bal.subscriptionCredits + bal.topUpCredits;
-  if (total < cost) return { success: false, remaining: total };
-  // Spend subscription credits first (expire monthly), preserve paid top-ups longest.
-  let toSpend = cost;
-  if (bal.subscriptionCredits >= toSpend) {
-    bal.subscriptionCredits -= toSpend;
-  } else {
-    toSpend -= bal.subscriptionCredits;
-    bal.subscriptionCredits = 0;
-    bal.topUpCredits -= toSpend;
+  try {
+    const result = await callEdgeFunction('get-balance', { license_key: licenseKey });
+
+    // Sync to local cache for offline / fast reads
+    store.set('credits', {
+      subscriptionCredits: result.subscription_credits || 0,
+      topUpCredits: result.topup_credits || 0,
+      lastSyncedAt: Date.now(),
+    });
+
+    return {
+      subscriptionCredits: result.subscription_credits || 0,
+      topUpCredits: result.topup_credits || 0,
+    };
+  } catch (err) {
+    // Fallback to local cache on network error
+    console.warn('[Credits] Supabase get-balance failed, using local cache:', err.message);
+    return store.get('credits', { subscriptionCredits: 0, topUpCredits: 0 });
   }
-  setCredits(bal);
-  return { success: true, remaining: bal.subscriptionCredits + bal.topUpCredits };
+});
+
+ipcMain.handle('spend-credits', async (_event, { feature, amount }) => {
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { success: false, error: 'No license' };
+
+  try {
+    const result = await callEdgeFunction('deduct-credits', {
+      license_key: licenseKey,
+      feature: feature || 'unknown',
+    });
+    return result;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('set-credits', (_, { subscriptionCredits, topUpCredits, lastCreditedAt }) => {
@@ -3196,6 +3221,11 @@ ipcMain.handle('validate-license', async (_event, key, selectedTier = 'pro') => 
     };
     fs.writeFileSync(getLicensePath(), JSON.stringify(signLicense(license), null, 2), 'utf8');
     console.log('[License] tier detected:', tier, '— isPro will return:', tier === 'pro' || tier === 'studio');
+
+    // Auto-provision in Supabase (migration grace — non-blocking, errors are non-fatal)
+    callEdgeFunction('provision-user', { license_key: key.trim(), tier })
+      .catch(err => console.warn('[Supabase] Auto-provision failed (non-critical):', err.message));
+
     return { valid: true, tier, email, expiresAt };
   } catch (err) {
     console.error('[License] validate error:', err.message);
@@ -3245,8 +3275,16 @@ ipcMain.handle('clear-license', () => {
 });
 
 ipcMain.handle('open-checkout', (_event, tier) => {
-  const url = CHECKOUT_URLS[tier] ?? CHECKOUT_URLS.pro;
-  if (url) shell.openExternal(url);
+  const baseUrl = CHECKOUT_URLS[tier] ?? CHECKOUT_URLS.pro;
+  if (!baseUrl) return;
+
+  const licenseKey = getLicenseKey() || '';
+  const url = new URL(baseUrl);
+  if (licenseKey) url.searchParams.set('metadata[license_key]', licenseKey);
+  url.searchParams.set('metadata[tier]', tier);
+  url.searchParams.set('metadata[type]', 'subscription');
+
+  shell.openExternal(url.toString());
 });
 
 ipcMain.handle('open-customer-portal', () => {
@@ -3260,8 +3298,18 @@ const TOPUP_URLS = {
 };
 
 ipcMain.handle('open-topup-checkout', (_event, pack) => {
-  const url = TOPUP_URLS[pack];
-  if (url) shell.openExternal(url);
+  const PACK_CREDITS = { starter: 300, standard: 800, power: 2000 };
+  const baseUrl = TOPUP_URLS[pack];
+  if (!baseUrl) return;
+
+  const licenseKey = getLicenseKey() || '';
+  const credits = PACK_CREDITS[pack] || 0;
+  const url = new URL(baseUrl);
+  if (licenseKey) url.searchParams.set('metadata[license_key]', licenseKey);
+  url.searchParams.set('metadata[credits]', String(credits));
+  url.searchParams.set('metadata[type]', 'topup');
+
+  shell.openExternal(url.toString());
 });
 
 ipcMain.handle('validate-topup', async (_event, code) => {
@@ -3772,6 +3820,15 @@ ipcMain.handle('save-elevenlabs-key', (_event, { key }) => {
   return { success: true };
 });
 
+ipcMain.handle('save-veo-key', (_event, { key }) => {
+  store.set('veoApiKey', key || '');
+  return { success: true };
+});
+
+ipcMain.handle('check-veo-key', () => {
+  return { configured: !!(store.get('veoApiKey', '')) };
+});
+
 ipcMain.handle('get-custom-voices', () => {
   const voices = store.get('customVoices', []);
   return { success: true, voices };
@@ -3959,38 +4016,59 @@ function deductCreditsAtomic(cost) {
   return { success: true };
 }
 
+// ── Supabase Edge Function helpers ────────────────────────────────────────────
+
+// Call a Supabase Edge Function with a JSON body.
+async function callEdgeFunction(functionName, body) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(`Supabase not configured — cannot call ${functionName}`);
+  }
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '<empty>');
+    throw new Error(`Edge function ${functionName} failed: ${res.status} — ${text}`);
+  }
+  return res.json();
+}
+
+// Read the current license key from the signed license file on disk.
+function getLicenseKey() {
+  try {
+    const p = getLicensePath();
+    if (!fs.existsSync(p)) return null;
+    const license = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return license?.key || null;
+  } catch {
+    return null;
+  }
+}
+
 ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => {
   console.log('[Fal] fal-flux-schnell called — isPro check passed, attempting cloud generation');
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _bal0 = getCredits();
-  if (_bal0.subscriptionCredits + _bal0.topUpCredits < CREDIT_COST.panelCloud) return { error: 'insufficient credits' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
   try {
-    const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const result = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'panel',
+      payload: {
         prompt,
         image_size: { width, height },
         num_inference_steps: 4,
         num_images: 1,
         enable_safety_checker: false,
-      }),
+      },
     });
-    if (!res.ok) return { error: `fal-flux-schnell: ${res.status}` };
-    const data = await res.json();
-    const imageUrl = data.images?.[0]?.url;
-    if (!imageUrl) return { error: 'No image URL in response' };
-    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
-    // If fetchToBase64 throws (CDN error, corrupt file), credits are still correctly
-    // consumed rather than silently skipped.
-    const deduct0 = deductCreditsAtomic(CREDIT_COST.panelCloud);
-    if (!deduct0.success) {
-      console.warn('[Credits] fal-flux-schnell deduction failed (insufficient credits at deduction time):', deduct0.error);
-      return { error: 'insufficient credits' };
-    }
-    const base64 = await fetchToBase64(imageUrl);
+    if (result.error) return { error: result.error };
+    const base64 = await fetchToBase64(result.result_url);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -3999,32 +4077,21 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
 
 ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _bal1 = getCredits();
-  if (_bal1.subscriptionCredits + _bal1.topUpCredits < CREDIT_COST.characterPanel) return { error: 'insufficient credits' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
   try {
-    const res = await fetch('https://fal.run/fal-ai/ipadapter-faceid', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const result = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'ipadapter',
+      payload: {
         prompt,
         face_image_url: faceImageData,
         scale: 0.6,
         num_inference_steps: 20,
-      }),
+      },
     });
-    if (!res.ok) return { error: `fal-ipadapter: ${res.status}` };
-    const data = await res.json();
-    const imageUrl = data.images?.[0]?.url;
-    if (!imageUrl) return { error: 'No image URL in response' };
-    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
-    const deduct1 = deductCreditsAtomic(CREDIT_COST.characterPanel);
-    if (!deduct1.success) {
-      console.warn('[Credits] fal-ipadapter deduction failed:', deduct1.error);
-      return { error: 'insufficient credits' };
-    }
-    const base64 = await fetchToBase64(imageUrl);
+    if (result.error) return { error: result.error };
+    const base64 = await fetchToBase64(result.result_url);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -4033,15 +4100,13 @@ ipcMain.handle('fal-ipadapter', async (_event, { prompt, faceImageData }) => {
 
 ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt, steps, strength }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _bal2 = getCredits();
-  if (_bal2.subscriptionCredits + _bal2.topUpCredits < CREDIT_COST.inpaint) return { error: 'insufficient credits' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
   try {
-    const res = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image/inpainting', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const result = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'inpaint',
+      payload: {
         prompt,
         image_url: `data:image/png;base64,${imageBase64}`,
         mask_url:  `data:image/png;base64,${maskBase64}`,
@@ -4049,19 +4114,10 @@ ipcMain.handle('fal-flux-fill', async (_event, { imageBase64, maskBase64, prompt
         strength: strength ?? 0.75,
         guidance_scale: 3.5,
         output_format: 'png',
-      }),
+      },
     });
-    if (!res.ok) return { error: `fal-flux-fill: ${res.status}` };
-    const data = await res.json();
-    const imageUrl = data.images?.[0]?.url;
-    if (!imageUrl) return { error: 'No image URL in response' };
-    // Deduct BEFORE downloading — Fal.ai has already billed us at this point.
-    const deduct2 = deductCreditsAtomic(CREDIT_COST.inpaint);
-    if (!deduct2.success) {
-      console.warn('[Credits] fal-flux-fill deduction failed:', deduct2.error);
-      return { error: 'insufficient credits' };
-    }
-    const base64 = await fetchToBase64(imageUrl);
+    if (result.error) return { error: result.error };
+    const base64 = await fetchToBase64(result.result_url);
     return { base64 };
   } catch (err) {
     return { error: err.message };
@@ -4077,10 +4133,8 @@ ipcMain.on('cancel-fal-video', () => {
 // ── Seedance 1.5 Pro — image to video ──────────────────────────────────────────
 ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _balS = getCredits();
-  if (_balS.subscriptionCredits + _balS.topUpCredits < CREDIT_COST.motionClip) return { error: 'insufficient credits' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-seedance', pct, msg }); } catch {}
@@ -4090,47 +4144,24 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
   try {
     send(3, 'Uploading image to Fal storage…');
-    const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
-    const imageBuffer = Buffer.from(base64Data, 'base64');
-    let imageUrl;
-    try {
-      imageUrl = await falStorageUpload(imageBuffer, 'image/png', 'panel.png', key);
-    } catch (err) {
-      console.error('[Seedance] Upload failed:', err.message);
-      return { error: `Image upload failed: ${err.message}` };
-    }
-
-    send(5, 'Sending to Seedance…');
-    const submitRes = await fetch('https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_url: imageUrl,
+    const submitResult = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'seedance',
+      payload: {
+        imageData,
         prompt: prompt || 'cinematic motion, smooth animation',
-        duration: "5",
+        duration: '5',
         resolution: '720p',
         generate_audio: false,
-      }),
+      },
     });
-    console.log('[Seedance] Submission response status:', submitRes.status);
-    if (!submitRes.ok) {
-      const rawText = await submitRes.text().catch(() => '<empty>');
-      console.error('[Seedance] Submission failed:', submitRes.status, rawText);
-      return { error: `Seedance submission failed: ${submitRes.status} — ${rawText}` };
-    }
-    let submitData;
-    try { submitData = await submitRes.json(); } catch (err) {
-      const rawText = await submitRes.text().catch(() => '<empty>');
-      console.error('[Seedance] Submission parse failed:', rawText);
-      return { error: `Seedance submission parse failed: ${rawText}` };
-    }
-    const { request_id, response_url, status_url } = submitData ?? {};
-    console.log('[Seedance] Got request_id:', request_id);
-    console.log('[Seedance] status_url:', status_url);
-    console.log('[Seedance] response_url:', response_url);
-    if (!request_id) return { error: `Seedance submission missing request_id: ${JSON.stringify(submitData)}` };
-    if (!status_url)  return { error: `Seedance submission missing status_url: ${JSON.stringify(submitData)}` };
-    if (!response_url) return { error: `Seedance submission missing response_url: ${JSON.stringify(submitData)}` };
+
+    if (submitResult.error) return { error: submitResult.error };
+    const { status_url, response_url } = submitResult;
+    if (!status_url)   return { error: 'Seedance submission missing status_url' };
+    if (!response_url) return { error: 'Seedance submission missing response_url' };
+
+    send(5, 'Sending to Seedance…');
 
     for (let i = 0; i < 60; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4139,52 +4170,23 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Seedance is generating your motion clip…');
 
-      const statusRes = await fetch(status_url, { headers: { 'Authorization': `Key ${key}` } });
-      if (!statusRes.ok) {
-        console.warn('[Seedance] Status poll non-OK:', statusRes.status, '— continuing');
-        continue;
-      }
+      const statusRes = await fetch(status_url).catch(() => null);
+      if (!statusRes?.ok) { console.warn('[Seedance] Status poll non-OK — continuing'); continue; }
       let status;
-      try { status = await statusRes.json(); } catch (err) {
-        const rawText = await statusRes.text().catch(() => '<empty>');
-        console.warn('[Seedance] Status parse failed:', rawText, '— continuing');
-        continue;
-      }
+      try { status = await statusRes.json(); } catch { continue; }
       console.log('[Seedance] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultUrl = response_url; // use Fal's own response_url — hardcoded path returned 405
-        console.log('[Seedance] COMPLETED — fetching result from response_url:', resultUrl);
-        let result;
-        try {
-          const resultJson = await new Promise((resolve, reject) => {
-            const u = new URL(resultUrl);
-            const req = https.request({
-              hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
-              rejectUnauthorized: false,
-              headers: { 'Authorization': `Key ${key}` },
-            }, (res) => {
-              let data = '';
-              res.on('data', chunk => { data += chunk; });
-              res.on('end', () => {
-                if (res.statusCode < 200 || res.statusCode >= 300) {
-                  console.error('[Seedance] Result fetch status:', res.statusCode, data);
-                  return reject(new Error(`Seedance result fetch failed: ${res.statusCode}`));
-                }
-                try { resolve(JSON.parse(data)); } catch { reject(new Error(`Seedance result parse failed: ${data}`)); }
-              });
-            });
-            req.on('error', reject);
-            req.end();
-          });
-          result = resultJson;
-        } catch (err) {
-          return { error: err.message };
-        }
+        console.log('[Seedance] COMPLETED — fetching result from response_url:', response_url);
+        const resultRes = await fetch(response_url).catch(() => null);
+        if (!resultRes?.ok) return { error: `Seedance result fetch failed: ${resultRes?.status}` };
+        const result = await resultRes.json().catch(() => ({}));
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Seedance response' };
-        const deductS = deductCreditsAtomic(CREDIT_COST.motionClip);
-        if (!deductS.success) return { error: 'insufficient credits' };
+
+        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance' })
+          .catch(err => console.warn('[Credits] Seedance deduction failed:', err.message));
+
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
         send(100, 'Done');
@@ -4200,13 +4202,83 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
   }
 });
 
-// ── Veo 3.1 Fast — image to video (premium) ────────────────────────────────────
+// ── Seedance 2.0 Fast — image to video (premium) ──────────────────────────────
+ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
+  if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
+
+  const send = (pct, msg) => {
+    try { event.sender.send('cloud-progress', { handler: 'fal-seedance-2', pct, msg }); } catch {}
+  };
+  const flag = { cancelled: false };
+  activeVideoFlags.add(flag);
+
+  try {
+    send(3, 'Uploading image to Fal storage…');
+    const submitResult = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'seedance2',
+      payload: {
+        imageData,
+        prompt: prompt || 'cinematic motion, smooth animation',
+        resolution: '720p',
+        duration: '5',
+        generate_audio: false,
+      },
+    });
+
+    if (submitResult.error) return { error: submitResult.error };
+    const { status_url, response_url } = submitResult;
+    if (!status_url)   return { error: 'Seedance 2.0 submission missing status_url' };
+    if (!response_url) return { error: 'Seedance 2.0 submission missing response_url' };
+
+    send(5, 'Sending to Seedance 2.0…');
+
+    for (let i = 0; i < 60; i++) {
+      if (flag.cancelled) return { error: 'cancelled' };
+      await new Promise(r => setTimeout(r, 5000));
+      if (flag.cancelled) return { error: 'cancelled' };
+      const pct = Math.min(90, 15 + i * 1.5);
+      send(pct, 'Seedance 2.0 is generating your motion clip…');
+
+      const statusRes = await fetch(status_url).catch(() => null);
+      if (!statusRes?.ok) { console.warn('[Seedance2] Status poll non-OK — continuing'); continue; }
+      let status;
+      try { status = await statusRes.json(); } catch { continue; }
+      console.log(`[Seedance2] Poll ${i} status:`, status.status);
+
+      if (status.status === 'COMPLETED') {
+        const resultRes = await fetch(response_url).catch(() => null);
+        if (!resultRes?.ok) return { error: `Seedance 2.0 result fetch failed: ${resultRes?.status}` };
+        const result = await resultRes.json().catch(() => ({}));
+        const videoUrl = result.video?.url;
+        if (!videoUrl) return { error: 'No video URL in Seedance 2.0 response' };
+
+        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance2' })
+          .catch(err => console.warn('[Credits] Seedance2 deduction failed:', err.message));
+
+        send(92, 'Downloading your motion clip…');
+        const base64 = await fetchToBase64(videoUrl);
+        send(100, 'Done');
+        return { base64: `data:video/mp4;base64,${base64}` };
+      }
+      if (status.status === 'FAILED') return { error: 'Seedance 2.0 generation failed' };
+    }
+    return { error: 'Seedance 2.0 timed out' };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    activeVideoFlags.delete(flag);
+  }
+});
+
+// ── Veo 3.1 Fast — BYOK (user provides their own Fal key) ──────────────────────
 ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _balV = getCredits();
-  if (_balV.subscriptionCredits + _balV.topUpCredits < CREDIT_COST.motionClipPremium) return { error: 'insufficient credits' };
+  const userVeoKey = store.get('veoApiKey', '');
+  if (!userVeoKey) return { error: 'VEO_KEY_NOT_CONFIGURED' };
+  const key = userVeoKey;
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-veo', pct, msg }); } catch {}
@@ -4305,8 +4377,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
         }
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Veo response' };
-        const deductV = deductCreditsAtomic(CREDIT_COST.motionClipPremium);
-        if (!deductV.success) return { error: 'insufficient credits' };
+        // Veo is BYOK — billed to the user's own account, no platform credits deducted
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
         send(100, 'Done');
@@ -4325,10 +4396,8 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
 // ── Wan Motion — cloud Video Transfer (character image + driving video) ─────────
 ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
-  const _balW = getCredits();
-  if (_balW.subscriptionCredits + _balW.topUpCredits < CREDIT_COST.videoTransfer) return { error: 'insufficient credits' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-wan-motion', pct, msg }); } catch {}
@@ -4338,42 +4407,22 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
 
   try {
     send(3, 'Uploading image to Fal storage…');
-    const base64Data = imageData.replace(/^data:image\/[^;]+;base64,/, '');
-    const imageBuffer = Buffer.from(base64Data, 'base64');
-    let imageUrl;
-    try {
-      imageUrl = await falStorageUpload(imageBuffer, 'image/png', 'panel.png', key);
-    } catch (err) {
-      console.error('[WanMotion] Upload failed:', err.message);
-      return { error: `Image upload failed: ${err.message}` };
-    }
-
-    send(5, 'Uploading to Wan Motion…');
-    const submitRes = await fetch('https://queue.fal.run/fal-ai/wan-motion', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_url: imageUrl,
+    const submitResult = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'video_transfer',
+      payload: {
+        imageData,
         video_url: videoUrl,
         prompt: prompt || 'smooth motion transfer, cinematic character animation',
-      }),
+      },
     });
-    if (!submitRes.ok) {
-      const rawText = await submitRes.text().catch(() => '<empty>');
-      return { error: `Wan Motion submission failed: ${submitRes.status} — ${rawText}` };
-    }
-    let submitData;
-    try { submitData = await submitRes.json(); } catch (err) {
-      const rawText = await submitRes.text().catch(() => '<empty>');
-      return { error: `Wan Motion submission parse failed: ${rawText}` };
-    }
-    const { request_id: wan_request_id, response_url: wan_response_url, status_url: wan_status_url } = submitData ?? {};
-    console.log('[WanMotion] Got request_id:', wan_request_id);
-    console.log('[WanMotion] status_url:', wan_status_url);
-    console.log('[WanMotion] response_url:', wan_response_url);
-    if (!wan_request_id)  return { error: `Wan Motion submission missing request_id: ${JSON.stringify(submitData)}` };
-    if (!wan_status_url)  return { error: `Wan Motion submission missing status_url: ${JSON.stringify(submitData)}` };
-    if (!wan_response_url) return { error: `Wan Motion submission missing response_url: ${JSON.stringify(submitData)}` };
+
+    if (submitResult.error) return { error: submitResult.error };
+    const { status_url, response_url } = submitResult;
+    if (!status_url)   return { error: 'Wan Motion submission missing status_url' };
+    if (!response_url) return { error: 'Wan Motion submission missing response_url' };
+
+    send(5, 'Uploading to Wan Motion…');
 
     for (let i = 0; i < 120; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4382,40 +4431,24 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Transferring motion to your character…');
 
-      const wanStatusUrl = `https://queue.fal.run/fal-ai/wan-motion/requests/${wan_request_id}/status`;
-      const statusRes = await fetch(wanStatusUrl, { headers: { 'Authorization': `Key ${key}` } });
-      if (!statusRes.ok) {
-        console.warn('[WanMotion] Status poll non-OK:', statusRes.status, '— continuing');
-        continue;
-      }
+      const statusRes = await fetch(status_url).catch(() => null);
+      if (!statusRes?.ok) { console.warn('[WanMotion] Status poll non-OK — continuing'); continue; }
       let status;
-      try { status = await statusRes.json(); } catch (err) {
-        const rawText = await statusRes.text().catch(() => '<empty>');
-        console.warn('[WanMotion] Status parse failed:', rawText, '— continuing');
-        continue;
-      }
+      try { status = await statusRes.json(); } catch { continue; }
       console.log('[WanMotion] Poll', i, 'status:', status.status);
 
       if (status.status === 'COMPLETED') {
-        const resultUrl = `https://queue.fal.run/fal-ai/wan-motion/requests/${wan_request_id}`;
-        console.log('[WanMotion] Fetching result from:', resultUrl);
-        const resultRes = await fetch(resultUrl, { headers: { 'Authorization': `Key ${key}` } });
-        if (!resultRes.ok) {
-          const errText = await resultRes.text().catch(() => '<empty>');
-          console.error('[WanMotion] Result fetch failed:', resultRes.status, errText);
-          return { error: `Wan Motion result fetch failed: ${resultRes.status} — ${errText}` };
-        }
-        let result;
-        try { result = await resultRes.json(); } catch (err) {
-          const rawText = await resultRes.text().catch(() => '<empty>');
-          console.error('[WanMotion] Result parse failed:', rawText);
-          return { error: `Wan Motion result parse failed: ${rawText}` };
-        }
+        console.log('[WanMotion] Fetching result from response_url:', response_url);
+        const resultRes = await fetch(response_url).catch(() => null);
+        if (!resultRes?.ok) return { error: `Wan Motion result fetch failed: ${resultRes?.status}` };
+        const result = await resultRes.json().catch(() => ({}));
         console.log('[WanMotion] Result keys:', Object.keys(result));
         const outUrl = result.video?.url;
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
-        const deductW = deductCreditsAtomic(CREDIT_COST.videoTransfer);
-        if (!deductW.success) return { error: 'insufficient credits' };
+
+        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'video_transfer' })
+          .catch(err => console.warn('[Credits] WanMotion deduction failed:', err.message));
+
         send(92, 'Downloading motion clip…');
         const base64 = await fetchToBase64(outUrl);
         send(100, 'Done');
@@ -4491,8 +4524,11 @@ ipcMain.handle('syncso-lipsync', async (event, { imageBase64, audioBase64 }) => 
       send(pct, `Processing… ${status.status}`);
       if (status.status === 'completed') {
         send(95, 'Finalising…');
-        const deductSync = deductCreditsAtomic(CREDIT_COST.lipSync);
-        if (!deductSync.success) console.warn('[Credits] syncso-lipsync deduction failed post-generation:', deductSync.error);
+        const licenseKeySync = getLicenseKey();
+        if (licenseKeySync) {
+          await callEdgeFunction('deduct-credits', { license_key: licenseKeySync, feature: 'lipsync' })
+            .catch(err => console.warn('[Credits] syncso-lipsync deduction failed:', err.message));
+        }
         return { videoUrl: status.outputUrl ?? '' };
       }
       if (status.status === 'failed') return { error: 'Sync.so generation failed' };
@@ -4609,54 +4645,30 @@ function generateSyntheticPoseSequence(frameCount, duration) {
 // ── ControlNet Pose — cloud path via Fal.ai ──────────────────────────────────
 
 ipcMain.handle('fal-controlnet-pose', async (_event, { imageData, poseImageData, prompt }) => {
-  const key = FAL_API_KEY;
-  if (!key) return { error: 'FAL_API_KEY not configured' };
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
+  const licenseKey = getLicenseKey();
+  if (!licenseKey) return { error: 'No active license' };
 
   try {
-    console.log('[PoseEngine] Uploading panel image…');
-    const imageBuffer = Buffer.from(imageData.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
-    const imageUrl = await falStorageUpload(imageBuffer, 'image/png', 'panel.png', key);
-
-    console.log('[PoseEngine] Uploading pose skeleton image…');
-    const poseBuffer = Buffer.from(poseImageData.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
-    const poseUrl = await falStorageUpload(poseBuffer, 'image/png', 'pose.png', key);
-
-    console.log('[PoseEngine] Submitting to ControlNet…');
-    const response = await fetch('https://fal.run/fal-ai/controlnet-union-sdxl', {
-      method: 'POST',
-      headers: { 'Authorization': `Key ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        control_image_url: poseUrl,
-        control_type: 'openpose',
+    console.log('[PoseEngine] Submitting to ControlNet via Edge Function…');
+    const result = await callEdgeFunction('submit-generation', {
+      license_key: licenseKey,
+      feature: 'pose',
+      payload: {
+        imageData,
+        poseImageData,
         prompt,
         negative_prompt: 'blurry, bad anatomy, watermark, worst quality, low quality, distorted',
         num_inference_steps: 30,
         guidance_scale: 7,
         strength: 0.75,
         num_images: 1,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '<empty>');
-      return { error: `ControlNet failed: ${response.status} — ${errText}` };
-    }
-
-    const data = await response.json();
-    const imageOutputUrl = data.images?.[0]?.url;
-    if (!imageOutputUrl) return { error: 'No image in ControlNet response' };
-
+    if (result.error) return { error: result.error };
     console.log('[PoseEngine] Downloading result…');
-    const base64 = await fetchToBase64(imageOutputUrl);
-
-    const deduct = deductCreditsAtomic(CREDIT_COST.poseEngine);
-    if (!deduct.success) {
-      console.warn('[Credits] fal-controlnet-pose deduction failed:', deduct.error);
-      return { error: 'insufficient credits' };
-    }
-
+    const base64 = await fetchToBase64(result.result_url);
     return { base64 };
   } catch (err) {
     console.error('[PoseEngine] Error:', err.message);
@@ -4755,9 +4767,13 @@ ipcMain.handle('start-lora-training', async (_event, { imageUrls, styleName, tri
   if (!isStudio()) return { success: false, error: 'Studio subscription required' };
   if (!FAL_API_KEY) return { success: false, error: 'FAL_API_KEY not configured' };
 
-  const deductResult = deductCreditsAtomic(CREDIT_COST.loraTraining);
-  if (!deductResult.success) {
-    return { success: false, error: deductResult.error || 'Insufficient credits for training' };
+  const licenseKey = getLicenseKey();
+  if (licenseKey) {
+    const deductResult = await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'lora' })
+      .catch(() => ({ success: false, error: 'Credit deduction failed' }));
+    if (!deductResult.success) {
+      return { success: false, error: deductResult.error || 'Insufficient credits for training' };
+    }
   }
 
   try {

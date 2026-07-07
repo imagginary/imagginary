@@ -66,6 +66,8 @@ jobs:
           ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
+          SUPABASE_URL:                    ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:               ${{ secrets.SUPABASE_ANON_KEY }}
         run: node scripts/write-config.js
 
       - name: Build and package
@@ -168,6 +170,8 @@ jobs:
           ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
+          SUPABASE_URL:                    ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:               ${{ secrets.SUPABASE_ANON_KEY }}
         run: node scripts/write-config.js
 
       - name: Build and package
@@ -250,6 +254,8 @@ jobs:
           ELEVENLABS_API_KEY:              ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
           UMAMI_WEBSITE_ID:                ${{ secrets.UMAMI_WEBSITE_ID }}
+          SUPABASE_URL:                    ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:               ${{ secrets.SUPABASE_ANON_KEY }}
         run: node scripts/write-config.js
 
       - name: Build and package

@@ -1,0 +1,21 @@
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[functions.dodo-webhook]
+verify_jwt = false
+
+[functions.submit-generation]
+verify_jwt = false
+
+[functions.deduct-credits]
+verify_jwt = false
+
+[functions.get-balance]
+verify_jwt = false
+
+[functions.provision-user]
+verify_jwt = false
