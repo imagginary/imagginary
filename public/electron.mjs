@@ -1422,7 +1422,7 @@ app.whenReady().then(async () => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://v3.fal.media https://rest.alpha.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://analytics.umami.is https://api.deepseek.com https://fal.run https://queue.fal.run https://storage.fal.ai https://v3.fal.media https://rest.alpha.fal.ai https://api.sync.so https://api.meshy.ai https://api.tripo3d.ai https://api.cartesia.ai https://api.elevenlabs.io https://generativelanguage.googleapis.com; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*;",
         ],
       },
@@ -2594,12 +2594,7 @@ ipcMain.handle('validate-transfer-video', async (_event, filePath) => {
     };
   }
 
-  // Resolve ffprobe — bundled binary matches the ffmpeg naming convention
-  const ffprobeBinName = process.platform === 'win32' ? 'ffprobe-win.exe'
-    : process.platform === 'darwin' ? 'ffprobe-mac'
-    : 'ffprobe-linux';
-  const bundledFfprobe = path.join(process.resourcesPath, 'bin', ffprobeBinName);
-  const ffprobePath = fs.existsSync(bundledFfprobe) ? bundledFfprobe : 'ffprobe';
+  const ffprobePath = resolveFfprobePath();
 
   try {
     // Run ffprobe to get duration, width, height, fps
@@ -2826,6 +2821,125 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
   } catch (err) {
     console.warn('[VideoTransfer] cleanup-transfer-frames error:', err.message);
     return { success: false, error: err.message };
+  }
+});
+
+/**
+ * Analyze a video's motion using Gemini 1.5 Flash Vision.
+ * Extracts 6 evenly-spaced frames via ffmpeg, sends them to Gemini, and returns
+ * a cinematic motion description usable as an AI video generation prompt.
+ */
+ipcMain.handle('analyze-video-motion', async (_event, { videoPath }) => {
+  const GEMINI_API_KEY = _cfg('GEMINI_API_KEY');
+  if (!GEMINI_API_KEY) return { error: 'GEMINI_API_KEY not configured' };
+
+  let tempDir;
+  try {
+    assertSafePath(videoPath);
+
+    const ffmpegPath = resolveFfmpegBin();
+    const ffprobePath = resolveFfprobePath();
+    tempDir = path.join(os.tmpdir(), `imagginary-frames-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const framePattern = path.join(tempDir, 'frame%02d.jpg');
+
+    const probeResult = await new Promise((resolve, reject) => {
+      const proc = spawn(ffprobePath, [
+        '-v', 'quiet', '-print_format', 'json',
+        '-show_format', videoPath,
+      ]);
+      let output = '';
+      proc.stdout.on('data', (d) => { output += d; });
+      proc.on('error', reject);
+      proc.on('close', (code) => {
+        if (code === 0) resolve(JSON.parse(output));
+        else reject(new Error('ffprobe failed'));
+      });
+    });
+
+    const duration = parseFloat(probeResult.format?.duration || '5');
+    const fps = 6 / duration; // 6 frames spread across duration
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn(ffmpegPath, [
+        '-i', videoPath,
+        '-vf', `fps=${fps.toFixed(4)},scale=512:-1`,
+        '-vframes', '6',
+        '-q:v', '3',
+        framePattern,
+      ]);
+      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error('Frame extraction failed')));
+      proc.on('error', reject);
+    });
+
+    const framePaths = Array.from({ length: 6 }, (_, i) =>
+      path.join(tempDir, `frame${String(i + 1).padStart(2, '0')}.jpg`)
+    ).filter((p) => fs.existsSync(p));
+
+    if (framePaths.length === 0) {
+      return { error: 'No frames extracted from video' };
+    }
+
+    const frameBase64s = framePaths.map((p) => ({
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: fs.readFileSync(p).toString('base64'),
+      },
+    }));
+
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              ...frameBase64s,
+              {
+                text: `These ${framePaths.length} images are evenly-spaced frames from a short video clip showing a person moving. Frame 1 is the start, the last frame is the end.
+
+Analyze the human movement and write a single, precise cinematic prompt (under 120 words) that describes this motion for an AI video generation model. Focus on:
+- Body direction and orientation changes
+- Type of movement (walking, turning, gesturing, etc.)
+- Which body parts move and how
+- Camera perspective relative to the subject
+- The overall action in cinematic terms
+
+Write ONLY the prompt text — no preamble, no explanation, no bullet points. The prompt should be usable directly as an AI video generation instruction.`,
+              },
+            ],
+          }],
+          generationConfig: {
+            maxOutputTokens: 200,
+            temperature: 0.3,
+          },
+        }),
+      }
+    );
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text().catch(() => '<empty>');
+      return { error: `Gemini API error: ${geminiRes.status} — ${errText}` };
+    }
+
+    const geminiData = await geminiRes.json();
+    const motionDescription = geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    if (!motionDescription) {
+      return { error: 'Gemini returned no motion description' };
+    }
+
+    console.log('[VideoTransfer] Gemini motion description:', motionDescription);
+    return { success: true, motionDescription };
+  } catch (err) {
+    console.error('[VideoTransfer] analyze-video-motion error:', err.message);
+    return { error: err.message };
+  } finally {
+    if (tempDir) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   }
 });
 
@@ -3232,6 +3346,18 @@ function resolveFfmpegBin() {
   const bundled = path.join(process.resourcesPath ?? '', 'bin', platformBinary);
   if (fs.existsSync(bundled)) return bundled;
   return 'ffmpeg'; // fall back to system PATH
+}
+
+/**
+ * Resolve the bundled ffprobe binary.
+ */
+function resolveFfprobePath() {
+  const platformBinary = process.platform === 'win32' ? 'ffprobe-win.exe'
+    : process.platform === 'darwin' ? 'ffprobe-mac'
+    : 'ffprobe-linux';
+  const bundled = path.join(process.resourcesPath ?? '', 'bin', platformBinary);
+  if (fs.existsSync(bundled)) return bundled;
+  return 'ffprobe'; // fall back to system PATH
 }
 
 /**

@@ -181,6 +181,7 @@ interface ElectronAPI {
   extractTransferPoses: (filePath: string) => Promise<{ success: boolean; sequence?: unknown; sequencePath?: string; tempDir?: string; frameCount?: number; duration?: number; usedSynthetic?: boolean; error?: string }>;
   cleanupTransferFrames: (tempDir: string) => Promise<{ success: boolean; error?: string }>;
   onTransferPoseProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
+  analyzeVideoMotion: (params: { videoPath: string }) => Promise<{ success?: boolean; motionDescription?: string; error?: string }>;
 
   // Credits
   getCredits: () => Promise<{ subscriptionCredits: number; topUpCredits: number }>;

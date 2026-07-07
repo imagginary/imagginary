@@ -125,6 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('transfer-pose-progress', handler);
     return () => ipcRenderer.removeListener('transfer-pose-progress', handler);
   },
+  analyzeVideoMotion: (params) => ipcRenderer.invoke('analyze-video-motion', params),
 
   // Credits (main-process store — not accessible from DevTools)
   getCredits:   ()    => ipcRenderer.invoke('get-credits'),

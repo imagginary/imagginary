@@ -1008,8 +1008,8 @@ export default function PanelViewer({
                 >
                   <ProFeatureGate
                     feature="Video Transfer"
-                    description="Record yourself doing an action and transfer the exact motion to your character. Pose retargeting via Wan Motion cloud."
-                    highlight="Upload a upto 5s MP4 · 55 credits"
+                    description="Upload a reference video and describe the motion. AI analyzes the movement and animates your panel to match — no skeleton setup needed."
+                    highlight="Powered by Gemini + Seedance · ~2 min · 20 credits"
                     onUpgrade={() => { setShowVideoTransferGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
