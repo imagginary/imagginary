@@ -4054,8 +4054,12 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
   console.log('[Fal] fal-flux-schnell called — isPro check passed, attempting cloud generation');
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const licenseKey = getLicenseKey();
+  console.log('[Supabase] License key present:', !!licenseKey, licenseKey ? `(${licenseKey.slice(0, 8)}...)` : '');
+  console.log('[Supabase] SUPABASE_URL configured:', !!SUPABASE_URL, SUPABASE_URL || '(empty)');
+  console.log('[Supabase] SUPABASE_ANON_KEY configured:', !!SUPABASE_ANON_KEY);
   if (!licenseKey) return { error: 'No active license' };
   try {
+    console.log('[Supabase] Calling submit-generation for panel...');
     const result = await callEdgeFunction('submit-generation', {
       license_key: licenseKey,
       feature: 'panel',
@@ -4067,10 +4071,12 @@ ipcMain.handle('fal-flux-schnell', async (_event, { prompt, width, height }) => 
         enable_safety_checker: false,
       },
     });
+    console.log('[Supabase] submit-generation result:', JSON.stringify(result));
     if (result.error) return { error: result.error };
     const base64 = await fetchToBase64(result.result_url);
     return { base64 };
   } catch (err) {
+    console.error('[Supabase] submit-generation failed:', err.message);
     return { error: err.message };
   }
 });
