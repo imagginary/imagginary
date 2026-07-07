@@ -4041,9 +4041,8 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
               let data = '';
               res.on('data', chunk => { data += chunk; });
               res.on('end', () => {
-                console.log('[Seedance] Result fetch status:', res.statusCode);
                 if (res.statusCode < 200 || res.statusCode >= 300) {
-                  console.error('[Seedance] Result fetch failed body:', data);
+                  console.error('[Seedance] Result fetch status:', res.statusCode, data);
                   return reject(new Error(`Seedance result fetch failed: ${res.statusCode}`));
                 }
                 try { resolve(JSON.parse(data)); } catch { reject(new Error(`Seedance result parse failed: ${data}`)); }
@@ -4165,6 +4164,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
               res.on('data', chunk => { data += chunk; });
               res.on('end', () => {
                 if (res.statusCode < 200 || res.statusCode >= 300) {
+                  console.error('[Veo] Result fetch status:', res.statusCode, data);
                   return reject(new Error(`Veo result fetch failed: ${res.statusCode}`));
                 }
                 try { resolve(JSON.parse(data)); } catch { reject(new Error(`Veo result parse failed: ${data}`)); }
