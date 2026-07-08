@@ -54,11 +54,6 @@ serve(async (req) => {
   try {
     const { license_key, feature, payload } = await req.json();
 
-    console.log('[submit-generation] Request — feature:', feature, 'license_key present:', !!license_key);
-    console.log('[submit-generation] BACKEND_URL configured:', !!SUPABASE_URL);
-    console.log('[submit-generation] SERVICE_ROLE_KEY configured:', !!SUPABASE_SERVICE_KEY);
-    console.log('[submit-generation] FAL_API_KEY configured:', !!FAL_API_KEY);
-
     if (!license_key || !feature || !payload) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -74,8 +69,6 @@ serve(async (req) => {
       .eq('license_key', license_key)
       .single();
 
-    console.log('[submit-generation] Credits fetch:', JSON.stringify(credits), 'Error:', JSON.stringify(fetchError));
-
     const cost = CREDIT_COSTS[feature] || 0;
 
     if (!credits) {
@@ -89,7 +82,6 @@ serve(async (req) => {
         last_credited_at: Date.now(),
         billing_cycle_start: Date.now(),
       }, { onConflict: 'license_key' });
-      console.log('[submit-generation] Grace period upsert error:', JSON.stringify(upsertError));
     } else {
       const total = credits.subscription_credits + credits.topup_credits;
       if (total < cost) {
@@ -133,7 +125,6 @@ serve(async (req) => {
       });
     }
 
-    console.log('[submit-generation] Calling Fal endpoint:', falEndpoint);
     const falRes = await fetch(falEndpoint, {
       method: 'POST',
       headers: {
@@ -152,7 +143,6 @@ serve(async (req) => {
     }
 
     const falData = await falRes.json();
-    console.log('[submit-generation] Fal response keys:', Object.keys(falData));
     const isSynchronous = SYNCHRONOUS_FEATURES.includes(feature);
 
     if (isSynchronous) {
@@ -162,29 +152,21 @@ serve(async (req) => {
         .select('subscription_credits, topup_credits')
         .eq('license_key', license_key)
         .single();
-      console.log('[submit-generation] Pre-deduct refetch:', JSON.stringify(current), 'Error:', JSON.stringify(refetchError));
 
       if (current) {
         const subDeduct = Math.min(cost, current.subscription_credits);
         const topupDeduct = cost - subDeduct;
-        console.log('[submit-generation] Deducting — sub:', subDeduct, 'topup:', topupDeduct);
         const { data: deductResult, error: deductError } = await supabase.rpc('deduct_credits', {
           p_license_key: license_key,
           p_subscription_amount: subDeduct,
           p_topup_amount: topupDeduct,
         });
-        console.log('[submit-generation] Deduct result:', deductResult, 'Error:', JSON.stringify(deductError));
-      } else {
-        console.warn('[submit-generation] Skipping deduction — no credits row found after grace upsert');
       }
 
       const { error: logError } = await supabase.from('generation_log').insert({
         license_key, feature, credits_used: cost, fal_model: falEndpoint,
       });
-      console.log('[submit-generation] Log insert error:', JSON.stringify(logError));
-
       const resultUrl = falData.images?.[0]?.url || falData.image?.url || falData.url;
-      console.log('[submit-generation] Returning result_url:', resultUrl);
       return new Response(JSON.stringify({
         success: true,
         result_url: resultUrl,

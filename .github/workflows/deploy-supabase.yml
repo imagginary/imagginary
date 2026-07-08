@@ -25,6 +25,7 @@ jobs:
           supabase functions deploy provision-user --project-ref oviyvdauhehjsgusnfbd --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        timeout-minutes: 5
 
       - name: Set Edge Function secrets
         run: |

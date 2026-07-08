@@ -69,3 +69,18 @@ BEGIN
   WHERE license_key = p_license_key;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Grant service_role full access (bypasses RLS for Edge Functions)
+GRANT ALL ON public.credits TO service_role;
+GRANT ALL ON public.generation_log TO service_role;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- RLS bypass policies for service_role
+ALTER TABLE public.credits FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.generation_log FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY "service_role_bypass" ON public.credits
+  TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "service_role_bypass" ON public.generation_log
+  TO service_role USING (true) WITH CHECK (true);
