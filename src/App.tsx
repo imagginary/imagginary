@@ -228,9 +228,12 @@ interface ElectronAPI {
   falFluxFill: (params: unknown) => Promise<unknown>;
   falControlnetPose: (params: unknown) => Promise<unknown>;
   falSeedance: (params: unknown) => Promise<unknown>;
+  falSeedance2: (params: unknown) => Promise<unknown>;
   falVeo: (params: unknown) => Promise<unknown>;
   falWanMotion: (params: unknown) => Promise<unknown>;
   cancelFalVideo: () => void;
+  saveVeoKey: (params: { key: string }) => Promise<{ success: boolean }>;
+  checkVeoKey: () => Promise<{ configured: boolean }>;
   uploadVideoToFal: (videoPath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   syncsoLipSync: (params: unknown) => Promise<unknown>;
   deepSeekShot: (params: unknown) => Promise<unknown>;
@@ -1217,7 +1220,7 @@ export default function App() {
     }
   }
 
-  async function handleAnimatePanel(panelId: string, motionDescription: string, motionEngine: 'seedance' | 'veo' = 'seedance') {
+  async function handleAnimatePanel(panelId: string, motionDescription: string, motionEngine: 'seedance' | 'seedance2' | 'veo' = 'seedance') {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.generatedImageData) return;
 
@@ -1236,20 +1239,20 @@ export default function App() {
 
       if (isProUser) {
         // Pro/Studio: Seedance or Veo cloud — no local Wan fallback
-        const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : 'Seedance';
+        const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : motionEngine === 'seedance2' ? 'Seedance 2.0' : 'Seedance';
         setProgress({ panelId, status: 'animating', progress: 5, message: `Sending to ${engineLabel}…` });
+        const onProg = (prog: number, msg: string) => setProgress({ panelId, status: 'animating', progress: prog, message: msg });
         if (motionEngine === 'veo') {
-          base64Video = await comfyUIService.animatePanelVeo(
-            panel.generatedImageData,
-            motionPrompt,
-            (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
-          );
+          const veoCheck = await window.electronAPI!.checkVeoKey();
+          if (!veoCheck.configured) {
+            setProgress({ panelId, status: 'error', progress: 0, message: 'Veo 3.1 requires a Google AI API key. Add it in Settings → Veo 3.1.' });
+            return;
+          }
+          base64Video = await comfyUIService.animatePanelVeo(panel.generatedImageData, motionPrompt, onProg);
+        } else if (motionEngine === 'seedance2') {
+          base64Video = await comfyUIService.animatePanelSeedance2(panel.generatedImageData, motionPrompt, onProg);
         } else {
-          base64Video = await comfyUIService.animatePanelSeedance(
-            panel.generatedImageData,
-            motionPrompt,
-            (prog, msg) => setProgress({ panelId, status: 'animating', progress: prog, message: msg })
-          );
+          base64Video = await comfyUIService.animatePanelSeedance(panel.generatedImageData, motionPrompt, onProg);
         }
       } else {
         // Community: local Wan I2V only

@@ -14,8 +14,9 @@ export const CREDIT_COSTS = {
   panelCloud:         2,
   inpaint:            6,   // FLUX.1 Fill — $0.035 upstream
   characterPanel:     2,
-  motionClip:         20,  // Seedance 1.5 Pro
-  motionClipPremium:  160, // Veo 3.1 Fast
+  motionClip:         35,  // Seedance 1.5 Pro
+  motionClipPremium:  160, // Veo 3.1 — BYOK (no longer deducted)
+  motionClipPremium2: 160, // Seedance 2.0 Fast
   videoTransfer:      55,  // Wan Motion cloud
   lipSync:            16,
   turntable:          2,

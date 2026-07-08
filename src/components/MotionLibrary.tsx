@@ -213,8 +213,8 @@ export default function MotionLibrary({
   const [applyProgress, setApplyProgress] = useState(0);
   const [applyMsg, setApplyMsg] = useState('');
   const [applyError, setApplyError] = useState<string | null>(null);
-  const [motionEngine, setMotionEngine] = useState<'seedance' | 'veo'>(
-    () => (localStorage.getItem('motionEngine') as 'seedance' | 'veo') || 'seedance'
+  const [motionEngine, setMotionEngine] = useState<'seedance' | 'seedance2' | 'veo'>(
+    () => (localStorage.getItem('motionEngine') as 'seedance' | 'seedance2' | 'veo') || 'seedance'
   );
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -617,8 +617,19 @@ export default function MotionLibrary({
                                 : 'bg-gray-900 text-gray-400 hover:text-white'
                             }`}
                           >
-                            <div className="font-medium">Seedance</div>
-                            <div className="text-[10px] opacity-75">~2 min · 14 cr</div>
+                            <div className="font-medium">Seedance 1.5</div>
+                            <div className="text-[10px] opacity-75">~2 min · 35 cr</div>
+                          </button>
+                          <button
+                            onClick={() => { setMotionEngine('seedance2'); localStorage.setItem('motionEngine', 'seedance2'); }}
+                            className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
+                              motionEngine === 'seedance2'
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-gray-900 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            <div className="font-medium">Seedance 2.0 ✦</div>
+                            <div className="text-[10px] opacity-75">~2 min · 160 cr</div>
                           </button>
                           <button
                             onClick={() => { setMotionEngine('veo'); localStorage.setItem('motionEngine', 'veo'); }}
@@ -629,7 +640,7 @@ export default function MotionLibrary({
                             }`}
                           >
                             <div className="font-medium">Veo 3.1 ✦</div>
-                            <div className="text-[10px] opacity-75">~1 min · 28 cr</div>
+                            <div className="text-[10px] opacity-75">BYOK · ~1 min</div>
                           </button>
                         </div>
                       </div>
@@ -654,7 +665,7 @@ export default function MotionLibrary({
                             />
                           </div>
                           <p className="text-[10px] text-gray-600">
-                            {motionEngine === 'veo' ? 'Veo 3.1 Fast · ~1 min' : 'Seedance 1.5 Pro · ~2 min'} · credits deducted on completion
+                            {motionEngine === 'veo' ? 'Veo 3.1 — billed to your Google account' : motionEngine === 'seedance2' ? 'Seedance 2.0 Fast · ~2 min · credits deducted on completion' : 'Seedance 1.5 Pro · ~2 min · credits deducted on completion'}
                           </p>
                         </div>
                       )}

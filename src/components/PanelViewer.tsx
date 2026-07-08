@@ -12,7 +12,7 @@ interface PanelViewerProps {
   effectiveAspectRatio?: AspectRatio;
   onInpaintEdit?: (panelId: string, maskData: string, editDescription: string) => void;
   onUndoEdit?: (panelId: string) => void;
-  onAnimatePanel?: (panelId: string, motionDescription: string, motionEngine: 'seedance' | 'veo') => void;
+  onAnimatePanel?: (panelId: string, motionDescription: string, motionEngine: 'seedance' | 'seedance2' | 'veo') => void;
   onClearMotion?: (panelId: string) => void;
   onRemoveVoice?: (panelId: string) => void;
   onRestoreRevision?: (panelId: string, revision: PanelRevision) => void;
@@ -117,9 +117,10 @@ export default function PanelViewer({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [compareRevisionId, setCompareRevisionId] = useState<string | null>(null);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
-  const [motionEngine, setMotionEngine] = useState<'seedance' | 'veo'>(
-    () => (localStorage.getItem('motionEngine') as 'seedance' | 'veo') || 'seedance'
+  const [motionEngine, setMotionEngine] = useState<'seedance' | 'seedance2' | 'veo'>(
+    () => (localStorage.getItem('motionEngine') as 'seedance' | 'seedance2' | 'veo') || 'seedance'
   );
+  const [veoKeyConfigured, setVeoKeyConfigured] = useState(false);
 
   // Pro gate tooltip visibility
   const [showAnimateGate, setShowAnimateGate] = useState(false);
@@ -192,6 +193,11 @@ export default function PanelViewer({
   useEffect(() => {
     localStorage.setItem('motionEngine', motionEngine);
   }, [motionEngine]);
+
+  // Check whether the user's Veo API key is configured
+  useEffect(() => {
+    window.electronAPI?.checkVeoKey?.().then((r) => setVeoKeyConfigured(r.configured)).catch(() => {});
+  }, []);
 
   // Dismiss gate tooltips on any outside click
   useEffect(() => {
@@ -899,7 +905,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Animate"
                     description="Bring your storyboard panels to life with AI-generated motion clips. Choose Seedance (fast) or Veo 3.1 (premium quality) — no GPU needed."
-                    highlight="Seedance: ~2 min, 20 credits · Veo 3.1: ~1 min, 160 credits"
+                    highlight="Seedance 1.5: ~2 min, 35 credits · Seedance 2.0: 160 credits · Veo 3.1: BYOK"
                     onUpgrade={() => { setShowAnimateGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
@@ -975,7 +981,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Motion Library"
                     description="Browse 40+ cinematic motion clips — dolly push, handheld shake, whip pan, and more. Apply any clip to your panel in one click."
-                    highlight="Seedance cloud · ~2 min per clip · no GPU needed"
+                    highlight="Seedance 1.5 cloud · ~2 min per clip · 35 credits"
                     onUpgrade={() => { setShowMotionLibraryGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
@@ -1009,7 +1015,7 @@ export default function PanelViewer({
                   <ProFeatureGate
                     feature="Video Transfer"
                     description="Upload a reference video and describe the motion. AI analyzes the movement and animates your panel to match — no skeleton setup needed."
-                    highlight="Powered by Gemini + Seedance · ~2 min · 20 credits"
+                    highlight="Powered by Gemini + Seedance · ~2 min · 35 credits"
                     onUpgrade={() => { setShowVideoTransferGate(false); onUpgrade?.(); }}
                     tierRequired="pro"
                   />
@@ -1167,32 +1173,51 @@ export default function PanelViewer({
 
               {/* Motion engine selector — Pro/Studio only */}
               {isPro && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Engine:</span>
-                  <div className="flex rounded-lg overflow-hidden border border-gray-700">
-                    <button
-                      onClick={() => setMotionEngine('seedance')}
-                      className={`px-3 py-1.5 text-xs transition-colors ${
-                        motionEngine === 'seedance'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-900 text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      <div className="font-medium">Seedance</div>
-                      <div className="text-[10px] opacity-75">~2 min · 20 credits</div>
-                    </button>
-                    <button
-                      onClick={() => setMotionEngine('veo')}
-                      className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
-                        motionEngine === 'veo'
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-gray-900 text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      <div className="font-medium">Veo 3.1 ✦</div>
-                      <div className="text-[10px] opacity-75">~1 min · 160 credits</div>
-                    </button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Engine:</span>
+                    <div className="flex rounded-lg overflow-hidden border border-gray-700">
+                      <button
+                        onClick={() => setMotionEngine('seedance')}
+                        className={`px-3 py-1.5 text-xs transition-colors ${
+                          motionEngine === 'seedance'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-medium">Seedance 1.5</div>
+                        <div className="text-[10px] opacity-75">~2 min · 35 credits</div>
+                      </button>
+                      <button
+                        onClick={() => setMotionEngine('seedance2')}
+                        className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
+                          motionEngine === 'seedance2'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-medium">Seedance 2.0 ✦</div>
+                        <div className="text-[10px] opacity-75">~2 min · 160 credits</div>
+                      </button>
+                      <button
+                        onClick={() => setMotionEngine('veo')}
+                        className={`px-3 py-1.5 text-xs transition-colors border-l border-gray-700 ${
+                          motionEngine === 'veo'
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="font-medium">Veo 3.1 ✦</div>
+                        <div className="text-[10px] opacity-75">BYOK · ~1 min</div>
+                      </button>
+                    </div>
                   </div>
+                  {motionEngine === 'veo' && !veoKeyConfigured && (
+                    <p className="text-xs text-amber-400">
+                      ⚠ Add your Google AI API key in Settings to use Veo 3.1 — generations are billed to your Google account.{' '}
+                      <button onClick={onOpenSettings} className="text-violet-400 underline">Open Settings →</button>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1200,8 +1225,10 @@ export default function PanelViewer({
               {isPro ? (
                 <p className="text-xs text-gray-500">
                   {motionEngine === 'veo'
-                    ? 'Motion clip via Veo 3.1 Fast · typically ~1 min · credits deducted on completion'
-                    : 'Motion clip via Seedance 1.5 Pro · typically ~2 min · credits deducted on completion'}
+                    ? 'Motion clip via Veo 3.1 — billed to your Google account, no Imagginary credits charged'
+                    : motionEngine === 'seedance2'
+                      ? 'Motion clip via Seedance 2.0 Fast · typically ~2 min · credits deducted on completion'
+                      : 'Motion clip via Seedance 1.5 Pro · typically ~2 min · credits deducted on completion'}
                 </p>
               ) : (
                 <p className="text-[10px] text-gray-600">

@@ -49,7 +49,7 @@ export default function VideoTransfer({
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [validating, setValidating] = useState(false);
   const [userPrompt, setUserPrompt] = useState('');
-  const [engine, setEngine] = useState<'seedance' | 'veo'>('seedance');
+  const [engine, setEngine] = useState<'seedance' | 'seedance2' | 'veo'>('seedance');
   const [isGenerating, setIsGenerating] = useState(false);
   const [analysisStep, setAnalysisStep] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function VideoTransfer({
           <ProFeatureGate
             feature="Video Transfer"
             description="Upload a reference video and describe the motion. AI analyzes the movement and animates your panel to match — no skeleton setup needed."
-            highlight="Powered by Gemini + Seedance · ~2 min · 20 credits"
+            highlight="Powered by Gemini + Seedance · ~2 min · 35 credits"
             onUpgrade={() => { onUpgrade?.(); onClose(); }}
             tierRequired="pro"
           />
@@ -155,9 +155,12 @@ export default function VideoTransfer({
       setAnalysisStep('Generating motion clip…');
 
       const onProgress = (_pct: number, msg: string) => setAnalysisStep(msg);
+      const imageData = panel.generatedImageData ?? '';
       const result = engine === 'veo'
-        ? await comfyUIService.animatePanelVeo(panel.generatedImageData ?? '', combinedPrompt, onProgress)
-        : await comfyUIService.animatePanelSeedance(panel.generatedImageData ?? '', combinedPrompt, onProgress);
+        ? await comfyUIService.animatePanelVeo(imageData, combinedPrompt, onProgress)
+        : engine === 'seedance2'
+          ? await comfyUIService.animatePanelSeedance2(imageData, combinedPrompt, onProgress)
+          : await comfyUIService.animatePanelSeedance(imageData, combinedPrompt, onProgress);
 
       onComplete(result, null);
       onClose();
@@ -267,7 +270,7 @@ export default function VideoTransfer({
         {/* Engine selector + Generate button */}
         {selectedFilePath && (
           <div className="px-6 pb-6">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-xs text-gray-500">Engine:</span>
               <button
                 onClick={() => setEngine('seedance')}
@@ -276,7 +279,16 @@ export default function VideoTransfer({
                   engine === 'seedance' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
                 }`}
               >
-                Seedance · ~2 min · 20 cr
+                Seedance 1.5 · ~2 min · 35 cr
+              </button>
+              <button
+                onClick={() => setEngine('seedance2')}
+                disabled={isGenerating}
+                className={`px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50 ${
+                  engine === 'seedance2' ? 'bg-blue-500 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                Seedance 2.0 ✦ · ~2 min · 160 cr
               </button>
               <button
                 onClick={() => setEngine('veo')}
@@ -285,7 +297,7 @@ export default function VideoTransfer({
                   engine === 'veo' ? 'bg-violet-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
                 }`}
               >
-                Veo 3.1 ✦ · ~1 min · 160 cr
+                Veo 3.1 ✦ · BYOK · ~1 min
               </button>
             </div>
 
@@ -299,7 +311,9 @@ export default function VideoTransfer({
             </button>
 
             <p className="text-xs text-gray-600 text-center mt-2">
-              Credits deducted on completion · {engine === 'veo' ? '160' : '20'} credits
+              {engine === 'veo'
+                ? 'Billed to your Google account — no Imagginary credits charged'
+                : `Credits deducted on completion · ${engine === 'seedance2' ? '160' : '35'} credits`}
             </p>
           </div>
         )}

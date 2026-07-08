@@ -1017,14 +1017,46 @@ export class ComfyUIService {
     }
   }
 
+  async animatePanelSeedance2(
+    imageData: string,
+    motionPrompt: string,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<string> {
+    if (!licenseService.hasCredits(CREDIT_COSTS.motionClipPremium2)) {
+      throw new Error('Insufficient credits for Seedance 2.0 motion generation');
+    }
+    let cleanupProgress: (() => void) | null = null;
+    if (window.electronAPI?.onCloudProgress) {
+      cleanupProgress = window.electronAPI!.onCloudProgress(
+        (data: { handler: string; pct: number; msg: string }) => {
+          if (data.handler === 'fal-seedance-2') onProgress?.(data.pct, data.msg);
+        }
+      );
+    }
+    try {
+      const result = await (window.electronAPI as any).falSeedance2({
+        imageData,
+        prompt: motionPrompt,
+      });
+      if (result?.error) throw new Error(result.error);
+      if (!result?.base64 || result.base64.length < 1000) {
+        throw new Error('Seedance 2.0 returned invalid video data');
+      }
+      await licenseService.refreshBalanceFromStore();
+      telemetryService.track('motion_generated_cloud', { provider: 'seedance2' });
+      return result.base64;
+    } finally {
+      cleanupProgress?.();
+      (window.electronAPI as any)?.cancelFalVideo?.();
+    }
+  }
+
   async animatePanelVeo(
     imageData: string,
     motionPrompt: string,
     onProgress?: (progress: number, message: string) => void
   ): Promise<string> {
-    if (!licenseService.hasCredits(CREDIT_COSTS.motionClipPremium)) {
-      throw new Error('Insufficient credits for Veo 3.1 motion generation');
-    }
+    // Veo is BYOK — no platform credit check; billed to user's own account
     let cleanupProgress: (() => void) | null = null;
     if (window.electronAPI?.onCloudProgress) {
       cleanupProgress = window.electronAPI!.onCloudProgress(
@@ -1042,7 +1074,6 @@ export class ComfyUIService {
       if (!result?.base64 || result.base64.length < 1000) {
         throw new Error('Veo returned invalid video data');
       }
-      await licenseService.refreshBalanceFromStore();
       telemetryService.track('motion_generated_cloud', { provider: 'veo' });
       return result.base64;
     } finally {

@@ -113,6 +113,8 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
   const [ollamaModelSaved, setOllamaModelSaved] = useState(false);
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [elevenLabsSaved, setElevenLabsSaved] = useState(false);
+  const [veoApiKey, setVeoApiKey] = useState('');
+  const [veoSaved, setVeoSaved] = useState(false);
   useEffect(() => {
     comfyUIService.getAvailableCheckpoints().then(setAvailableCheckpoints).catch(() => {});
   }, []);
@@ -473,6 +475,52 @@ export default function SettingsModal({ isPro, isStudio = false, onClose }: Prop
               {elevenLabsKey && (
                 <p className="text-[10px] text-green-500">
                   ✓ ElevenLabs key configured — voice cloning will use ElevenLabs
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="border-t border-gray-800" />
+
+          {/* ── Veo 3.1 BYOK ── */}
+          {isPro && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Veo 3.1 — Google AI</p>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 border border-gray-600 font-medium uppercase tracking-wide">BYOK</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-700/30 font-medium uppercase tracking-wide">Pro+</span>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                Veo 3.1 requires your own Google AI API key. Generations are billed directly to your Google account — no Imagginary credits charged.{' '}
+                <button
+                  onClick={() => window.electronAPI?.openExternal('https://aistudio.google.com/app/apikey')}
+                  className="text-violet-400 hover:text-violet-300 transition-colors"
+                >
+                  Get API key →
+                </button>
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={veoApiKey}
+                  onChange={(e) => { setVeoApiKey(e.target.value); setVeoSaved(false); }}
+                  placeholder="AIza... (your Google AI API key)"
+                  className="flex-1 bg-gray-900 border border-gray-700 focus:border-violet-500 rounded px-3 py-2 text-xs text-gray-100 placeholder-gray-600 outline-none font-mono transition-colors"
+                />
+                <button
+                  onClick={async () => {
+                    await window.electronAPI?.saveVeoKey?.({ key: veoApiKey.trim() });
+                    setVeoSaved(true);
+                    setTimeout(() => setVeoSaved(false), 2000);
+                  }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                >
+                  {veoSaved ? 'Saved ✓' : 'Save'}
+                </button>
+              </div>
+              {veoApiKey && (
+                <p className="text-[10px] text-green-500">
+                  ✓ Google AI key configured — Veo 3.1 will use your key
                 </p>
               )}
             </div>

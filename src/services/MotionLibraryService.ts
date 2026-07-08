@@ -195,7 +195,7 @@ class MotionLibraryService {
     clipId: string,
     panelImageData: string,
     onProgress?: (pct: number, msg: string) => void,
-    motionEngine: 'seedance' | 'veo' = 'seedance'
+    motionEngine: 'seedance' | 'seedance2' | 'veo' = 'seedance'
   ): Promise<{ videoData: string; videoPath: string | null }> {
     const clip = this.allClips.find((c) => c.id === clipId);
     const motionPrompt = clip
@@ -204,11 +204,13 @@ class MotionLibraryService {
 
     if (licenseService.isPro() || licenseService.isStudio()) {
       // Pro/Studio: Seedance or Veo cloud — no local Wan fallback
-      const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : 'Seedance';
+      const engineLabel = motionEngine === 'veo' ? 'Veo 3.1' : motionEngine === 'seedance2' ? 'Seedance 2.0' : 'Seedance';
       onProgress?.(5, `Sending to ${engineLabel} cloud…`);
       const cloudVideo = motionEngine === 'veo'
         ? await comfyUIService.animatePanelVeo(panelImageData, motionPrompt, onProgress)
-        : await comfyUIService.animatePanelSeedance(panelImageData, motionPrompt, onProgress);
+        : motionEngine === 'seedance2'
+          ? await comfyUIService.animatePanelSeedance2(panelImageData, motionPrompt, onProgress)
+          : await comfyUIService.animatePanelSeedance(panelImageData, motionPrompt, onProgress);
       onProgress?.(100, 'Animation complete');
       return { videoData: cloudVideo, videoPath: null };
     }
