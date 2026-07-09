@@ -2,7 +2,7 @@
  * Phase 6E — VideoTransfer (Gemini-assisted)
  *
  * Modal for uploading a reference video and transferring its motion onto a
- * panel via Gemini 1.5 Flash motion analysis + Seedance/Veo cloud generation.
+ * panel via Gemini 2.5 Flash motion analysis + Seedance/Veo cloud generation.
  *
  * Flow:
  *   1. Drop zone → file selected, duration read via ffprobe

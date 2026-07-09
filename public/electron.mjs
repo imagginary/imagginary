@@ -2825,7 +2825,7 @@ ipcMain.handle('cleanup-transfer-frames', async (_event, tempDir) => {
 });
 
 /**
- * Analyze a video's motion using Gemini 1.5 Flash Vision.
+ * Analyze a video's motion using Gemini 2.5 Flash Vision.
  * Extracts 6 evenly-spaced frames via ffmpeg, sends them to Gemini, and returns
  * a cinematic motion description usable as an AI video generation prompt.
  */
@@ -2889,7 +2889,7 @@ ipcMain.handle('analyze-video-motion', async (_event, { videoPath }) => {
     }));
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

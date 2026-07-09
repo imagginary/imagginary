@@ -59,6 +59,7 @@ jobs:
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
@@ -71,6 +72,7 @@ jobs:
 
       - name: Build and package
         env:
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
@@ -161,6 +163,7 @@ jobs:
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
@@ -179,6 +182,7 @@ jobs:
           APPLE_TEAM_ID:                   ${{ secrets.APPLE_TEAM_ID }}
           CSC_KEYCHAIN:                    ${{ runner.temp }}/app-signing.keychain-db
           CSC_KEY_PASSWORD:                ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
@@ -243,6 +247,7 @@ jobs:
           DODO_STANDARD_CREDITS_URL:       ${{ secrets.DODO_STANDARD_CREDITS_URL }}
           DODO_POWER_CREDITS_URL:          ${{ secrets.DODO_POWER_CREDITS_URL }}
           DODO_CUSTOMER_PORTAL_URL:        ${{ secrets.DODO_CUSTOMER_PORTAL_URL }}
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           CARTESIA_API_KEY:                ${{ secrets.CARTESIA_API_KEY }}
@@ -255,6 +260,7 @@ jobs:
 
       - name: Build and package
         env:
+          FAL_API_KEY:                     ${{ secrets.FAL_API_KEY }}
           GEMINI_API_KEY:                  ${{ secrets.GEMINI_API_KEY }}
           SYNCSO_API_KEY:                  ${{ secrets.SYNCSO_API_KEY }}
           DEEPSEEK_API_KEY:                ${{ secrets.DEEPSEEK_API_KEY }}
