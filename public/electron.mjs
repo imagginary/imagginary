@@ -2898,22 +2898,27 @@ ipcMain.handle('analyze-video-motion', async (_event, { videoPath }) => {
             parts: [
               ...frameBase64s,
               {
-                text: `These ${framePaths.length} images are evenly-spaced frames from a short video clip showing a person moving. Frame 1 is the start, the last frame is the end.
+                text: `These ${frameBase64s.length} images are evenly-spaced frames from a short video clip. Frame 1 is the start, the last frame is the end. A real person is moving in this footage.
 
-Analyze the human movement and write a single, precise cinematic prompt (under 120 words) that describes this motion for an AI video generation model. Focus on:
-- Body direction and orientation changes
-- Type of movement (walking, turning, gesturing, etc.)
-- Which body parts move and how
-- Camera perspective relative to the subject
-- The overall action in cinematic terms
+Your job is to produce a single precise video generation prompt that would cause an AI model to replicate this motion onto a different character.
 
-Write ONLY the prompt text — no preamble, no explanation, no bullet points. The prompt should be usable directly as an AI video generation instruction.`,
+Analyze the frames in order and extract:
+
+BODY TRAJECTORY: For each major body part that moves (head, torso, arms, hands, legs), describe the arc of movement from frame 1 to last frame. Be specific — "right arm raises from hip level to shoulder height, elbow leads" not "arm moves up".
+
+TIMING AND WEIGHT: Is the motion slow/fast, heavy/light, sudden/gradual? Where does it accelerate or pause?
+
+ORIENTATION: Does the subject turn, rotate, or change facing direction? From what angle to what angle?
+
+CAMERA: Is the camera static, pushing in, pulling out, or panning? What is the shot framing (wide, medium, close)?
+
+Then synthesise all of the above into a single fluid video generation prompt. Be as specific and detailed as needed — do not truncate or summarise. Completeness and precision matter more than brevity. Write ONLY the final prompt — no headers, no bullet points, no preamble. It must be specific enough that an AI video model replicates the motion faithfully onto a different character in a different visual style.`,
               },
             ],
           }],
           generationConfig: {
-            maxOutputTokens: 200,
-            temperature: 0.3,
+            maxOutputTokens: 800,
+            temperature: 0.2,
           },
         }),
       }
@@ -2931,7 +2936,7 @@ Write ONLY the prompt text — no preamble, no explanation, no bullet points. Th
       return { error: 'Gemini returned no motion description' };
     }
 
-    console.log('[VideoTransfer] Gemini motion description:', motionDescription);
+    console.log('[VideoTransfer] Gemini motion description:\n', motionDescription);
     return { success: true, motionDescription };
   } catch (err) {
     console.error('[VideoTransfer] analyze-video-motion error:', err.message);
