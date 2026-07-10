@@ -2,7 +2,7 @@
  * Phase 6E — VideoTransfer (Gemini-assisted)
  *
  * Modal for uploading a reference video and transferring its motion onto a
- * panel via Gemini 2.5 Flash motion analysis + Seedance/Veo cloud generation.
+ * panel via Gemini 3.5 Flash motion analysis + Seedance/Veo cloud generation.
  *
  * Flow:
  *   1. Drop zone → file selected, duration read via ffprobe
@@ -62,7 +62,7 @@ export default function VideoTransfer({
           <ProFeatureGate
             feature="Video Transfer"
             description="Upload a reference video and describe the motion. AI analyzes the movement and animates your panel to match — no skeleton setup needed."
-            highlight="Powered by Gemini + Seedance · ~2 min · 35 credits"
+            highlight="Powered by Gemini 3.5 + Seedance · ~2 min · 35 credits"
             onUpgrade={() => { onUpgrade?.(); onClose(); }}
             tierRequired="pro"
           />
