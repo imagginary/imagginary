@@ -187,6 +187,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   falIPAdapter:        (params) => ipcRenderer.invoke('fal-ipadapter', params),
   falFluxFill:         (params) => ipcRenderer.invoke('fal-flux-fill', params),
   falControlnetPose:   (params) => ipcRenderer.invoke('fal-controlnet-pose', params),
+  pollPoseGeneration:  (args)   => ipcRenderer.invoke('poll-pose-generation', args),
+  cancelPoseGeneration:(args)   => ipcRenderer.invoke('cancel-pose-generation', args),
   falSeedance:         (params) => ipcRenderer.invoke('fal-seedance', params),
   falSeedance2:        (params) => ipcRenderer.invoke('fal-seedance-2', params),
   falVeo:              (params) => ipcRenderer.invoke('fal-veo', params),
