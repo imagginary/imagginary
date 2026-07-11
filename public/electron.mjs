@@ -4207,7 +4207,9 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
       if (status.status === 'COMPLETED') {
         console.log('[Seedance] COMPLETED — fetching response_url:', response_url);
-        const resultRes = await fetch(response_url).catch(() => null);
+        const resultRes = await fetch(response_url, {
+          headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+        }).catch(() => null);
         if (!resultRes?.ok) return { error: `Seedance result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
         console.log('[Seedance] Response JSON keys:', Object.keys(result));
@@ -4309,7 +4311,9 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
 
       if (status.status === 'COMPLETED') {
         console.log('[Seedance2] COMPLETED — fetching response_url:', response_url);
-        const resultRes = await fetch(response_url).catch(() => null);
+        const resultRes = await fetch(response_url, {
+          headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+        }).catch(() => null);
         if (!resultRes?.ok) return { error: `Seedance 2.0 result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
         console.log('[Seedance2] Response JSON keys:', Object.keys(result));
@@ -4543,7 +4547,9 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
 
       if (status.status === 'COMPLETED') {
         console.log('[WanMotion] COMPLETED — fetching response_url:', response_url);
-        const resultRes = await fetch(response_url).catch(() => null);
+        const resultRes = await fetch(response_url, {
+          headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+        }).catch(() => null);
         if (!resultRes?.ok) return { error: `Wan Motion result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
         console.log('[WanMotion] Response JSON keys:', Object.keys(result));
