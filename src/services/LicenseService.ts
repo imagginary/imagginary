@@ -72,9 +72,33 @@ class LicenseService {
         this.license = stored as License;
         await this.checkAndAddMonthlyCredits();
         this.maybeRevalidate();
+        this.syncBalanceFromSupabase(); // non-blocking — updates cache when it resolves
       }
     } catch {
       this.license = null;
+    }
+  }
+
+  /**
+   * Silently syncs the balance from Supabase (via the get-balance edge function).
+   * Called non-blocking on load — corrects any drift between local store and server.
+   * Never throws; network failures are swallowed.
+   */
+  private async syncBalanceFromSupabase(): Promise<void> {
+    if (!this.license || this.getTier() === 'community') return;
+    try {
+      const credits = await window.electronAPI?.getCredits?.();
+      if (credits) {
+        this._cache.subscriptionCredits = credits.subscriptionCredits;
+        this._cache.topUpCredits        = credits.topUpCredits;
+        await window.electronAPI?.setCredits?.({
+          subscriptionCredits: credits.subscriptionCredits,
+          topUpCredits:        credits.topUpCredits,
+          lastCreditedAt:      this._cache.lastCreditedAt,
+        });
+      }
+    } catch {
+      // Offline or edge function unavailable — local cache wins
     }
   }
 
