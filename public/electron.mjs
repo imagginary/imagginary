@@ -3948,6 +3948,7 @@ async function falStorageUpload(buffer, contentType, fileName, apiKey) {
 
 async function fetchToBase64(url) {
   return new Promise((resolve, reject) => {
+    console.log('[fetchToBase64] Starting download:', url.slice(0, 80));
     const parsedUrl = new URL(url);
     const options = {
       hostname: parsedUrl.hostname,
@@ -3957,6 +3958,7 @@ async function fetchToBase64(url) {
     };
 
     const req = https.request(options, (res) => {
+      console.log('[fetchToBase64] HTTP status:', res.statusCode);
       if (res.statusCode < 200 || res.statusCode >= 300) {
         reject(new Error(`fetchToBase64 failed: HTTP ${res.statusCode} from ${url}`));
         res.resume();
@@ -3964,9 +3966,10 @@ async function fetchToBase64(url) {
       }
 
       const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
+      res.on('data', chunk => { chunks.push(chunk); console.log('[fetchToBase64] Data chunk received, size:', chunk.length); });
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
+        console.log('[fetchToBase64] Download complete, total bytes:', buffer.length);
         if (buffer.length < 1024) {
           reject(new Error(`fetchToBase64: response too small (${buffer.length} bytes) — likely corrupt or empty`));
           return;
@@ -4150,6 +4153,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const licenseKey = getLicenseKey();
   if (!licenseKey) return { error: 'No active license' };
+  console.log('[Seedance] Handler started, licenseKey:', licenseKey ? 'present' : 'missing');
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-seedance', pct, msg }); } catch {}
@@ -4159,6 +4163,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
   try {
     send(3, 'Uploading image to Fal storage…');
+    console.log('[Seedance] Submitting to edge function...');
     const submitResult = await callEdgeFunction('submit-generation', {
       license_key: licenseKey,
       feature: 'seedance',
@@ -4171,10 +4176,12 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       },
     });
 
+    console.log('[Seedance] Edge function response:', JSON.stringify(submitResult).slice(0, 200));
     if (submitResult.error) return { error: submitResult.error };
     const { status_url, response_url } = submitResult;
     if (!status_url)   return { error: 'Seedance submission missing status_url' };
     if (!response_url) return { error: 'Seedance submission missing response_url' };
+    console.log('[Seedance] Got request_id:', submitResult.request_id);
 
     send(5, 'Sending to Seedance…');
 
@@ -4185,25 +4192,32 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Seedance is generating your motion clip…');
 
+      console.log(`[Seedance] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
       if (!statusRes?.ok) { console.warn('[Seedance] Status poll non-OK — continuing'); continue; }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
-      console.log('[Seedance] Poll', i, 'status:', status.status);
+      console.log(`[Seedance] Poll ${i+1} response status:`, status.status);
 
       if (status.status === 'COMPLETED') {
-        console.log('[Seedance] COMPLETED — fetching result from response_url:', response_url);
+        console.log('[Seedance] COMPLETED — fetching response_url:', response_url);
         const resultRes = await fetch(response_url).catch(() => null);
         if (!resultRes?.ok) return { error: `Seedance result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
+        console.log('[Seedance] Response JSON keys:', Object.keys(result));
         const videoUrl = result.video?.url;
+        console.log('[Seedance] Video URL:', videoUrl);
         if (!videoUrl) return { error: 'No video URL in Seedance response' };
 
+        console.log('[Seedance] Firing deduct-credits (non-blocking)');
         callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance' })
           .catch(err => console.warn('[Credits] Seedance deduction failed:', err.message));
+        console.log('[Seedance] Starting fetchToBase64 download...');
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
+        console.log('[Seedance] fetchToBase64 complete, base64 length:', base64.length);
         send(100, 'Done');
+        console.log('[Seedance] Returning result to renderer');
         return { base64: `data:video/mp4;base64,${base64}` };
       }
       if (status.status === 'FAILED') return { error: 'Seedance generation failed' };
@@ -4235,6 +4249,7 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const licenseKey = getLicenseKey();
   if (!licenseKey) return { error: 'No active license' };
+  console.log('[Seedance2] Handler started, licenseKey:', licenseKey ? 'present' : 'missing');
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-seedance-2', pct, msg }); } catch {}
@@ -4244,6 +4259,7 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
 
   try {
     send(3, 'Uploading image to Fal storage…');
+    console.log('[Seedance2] Submitting to edge function...');
     const submitResult = await callEdgeFunction('submit-generation', {
       license_key: licenseKey,
       feature: 'seedance2',
@@ -4256,10 +4272,12 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
       },
     });
 
+    console.log('[Seedance2] Edge function response:', JSON.stringify(submitResult).slice(0, 200));
     if (submitResult.error) return { error: submitResult.error };
     const { status_url, response_url } = submitResult;
     if (!status_url)   return { error: 'Seedance 2.0 submission missing status_url' };
     if (!response_url) return { error: 'Seedance 2.0 submission missing response_url' };
+    console.log('[Seedance2] Got request_id:', submitResult.request_id);
 
     send(5, 'Sending to Seedance 2.0…');
 
@@ -4270,24 +4288,32 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Seedance 2.0 is generating your motion clip…');
 
+      console.log(`[Seedance2] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
       if (!statusRes?.ok) { console.warn('[Seedance2] Status poll non-OK — continuing'); continue; }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
-      console.log(`[Seedance2] Poll ${i} status:`, status.status);
+      console.log(`[Seedance2] Poll ${i+1} response status:`, status.status);
 
       if (status.status === 'COMPLETED') {
+        console.log('[Seedance2] COMPLETED — fetching response_url:', response_url);
         const resultRes = await fetch(response_url).catch(() => null);
         if (!resultRes?.ok) return { error: `Seedance 2.0 result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
+        console.log('[Seedance2] Response JSON keys:', Object.keys(result));
         const videoUrl = result.video?.url;
+        console.log('[Seedance2] Video URL:', videoUrl);
         if (!videoUrl) return { error: 'No video URL in Seedance 2.0 response' };
 
+        console.log('[Seedance2] Firing deduct-credits (non-blocking)');
         callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance2' })
           .catch(err => console.warn('[Credits] Seedance2 deduction failed:', err.message));
+        console.log('[Seedance2] Starting fetchToBase64 download...');
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
+        console.log('[Seedance2] fetchToBase64 complete, base64 length:', base64.length);
         send(100, 'Done');
+        console.log('[Seedance2] Returning result to renderer');
         return { base64: `data:video/mp4;base64,${base64}` };
       }
       if (status.status === 'FAILED') return { error: 'Seedance 2.0 generation failed' };
@@ -4453,6 +4479,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
   if (!isProOrStudio()) return { error: 'Pro or Studio required' };
   const licenseKey = getLicenseKey();
   if (!licenseKey) return { error: 'No active license' };
+  console.log('[WanMotion] Handler started, licenseKey:', licenseKey ? 'present' : 'missing');
 
   const send = (pct, msg) => {
     try { event.sender.send('cloud-progress', { handler: 'fal-wan-motion', pct, msg }); } catch {}
@@ -4462,6 +4489,7 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
 
   try {
     send(3, 'Uploading image to Fal storage…');
+    console.log('[WanMotion] Submitting to edge function...');
     const submitResult = await callEdgeFunction('submit-generation', {
       license_key: licenseKey,
       feature: 'video_transfer',
@@ -4472,10 +4500,12 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       },
     });
 
+    console.log('[WanMotion] Edge function response:', JSON.stringify(submitResult).slice(0, 200));
     if (submitResult.error) return { error: submitResult.error };
     const { status_url, response_url } = submitResult;
     if (!status_url)   return { error: 'Wan Motion submission missing status_url' };
     if (!response_url) return { error: 'Wan Motion submission missing response_url' };
+    console.log('[WanMotion] Got request_id:', submitResult.request_id);
 
     send(5, 'Uploading to Wan Motion…');
 
@@ -4486,26 +4516,32 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       const pct = Math.min(90, 15 + i * 1.5);
       send(pct, 'Transferring motion to your character…');
 
+      console.log(`[WanMotion] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
       if (!statusRes?.ok) { console.warn('[WanMotion] Status poll non-OK — continuing'); continue; }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
-      console.log('[WanMotion] Poll', i, 'status:', status.status);
+      console.log(`[WanMotion] Poll ${i+1} response status:`, status.status);
 
       if (status.status === 'COMPLETED') {
-        console.log('[WanMotion] Fetching result from response_url:', response_url);
+        console.log('[WanMotion] COMPLETED — fetching response_url:', response_url);
         const resultRes = await fetch(response_url).catch(() => null);
         if (!resultRes?.ok) return { error: `Wan Motion result fetch failed: ${resultRes?.status}` };
         const result = await resultRes.json().catch(() => ({}));
-        console.log('[WanMotion] Result keys:', Object.keys(result));
+        console.log('[WanMotion] Response JSON keys:', Object.keys(result));
         const outUrl = result.video?.url;
+        console.log('[WanMotion] Video URL:', outUrl);
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
 
+        console.log('[WanMotion] Firing deduct-credits (non-blocking)');
         callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'video_transfer' })
           .catch(err => console.warn('[Credits] WanMotion deduction failed:', err.message));
+        console.log('[WanMotion] Starting fetchToBase64 download...');
         send(92, 'Downloading motion clip…');
         const base64 = await fetchToBase64(outUrl);
+        console.log('[WanMotion] fetchToBase64 complete, base64 length:', base64.length);
         send(100, 'Done');
+        console.log('[WanMotion] Returning result to renderer');
         return { base64: `data:video/mp4;base64,${base64}` };
       }
       if (status.status === 'FAILED') return { error: 'Wan Motion generation failed' };
