@@ -4193,7 +4193,9 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       send(pct, 'Seedance is generating your motion clip…');
 
       console.log(`[Seedance] Poll ${i+1}/120 — status_url: ${status_url}`);
-      const statusRes = await fetch(status_url).catch(() => null);
+      const statusRes = await fetch(status_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      }).catch(() => null);
       if (!statusRes?.ok) {
         const errBody = await statusRes?.text().catch(() => '<unreadable>');
         console.warn(`[Seedance] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
@@ -4293,7 +4295,9 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
       send(pct, 'Seedance 2.0 is generating your motion clip…');
 
       console.log(`[Seedance2] Poll ${i+1}/120 — status_url: ${status_url}`);
-      const statusRes = await fetch(status_url).catch(() => null);
+      const statusRes = await fetch(status_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      }).catch(() => null);
       if (!statusRes?.ok) {
         const errBody = await statusRes?.text().catch(() => '<unreadable>');
         console.warn(`[Seedance2] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
@@ -4525,7 +4529,9 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       send(pct, 'Transferring motion to your character…');
 
       console.log(`[WanMotion] Poll ${i+1}/120 — status_url: ${status_url}`);
-      const statusRes = await fetch(status_url).catch(() => null);
+      const statusRes = await fetch(status_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      }).catch(() => null);
       if (!statusRes?.ok) {
         const errBody = await statusRes?.text().catch(() => '<unreadable>');
         console.warn(`[WanMotion] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
