@@ -4169,7 +4169,7 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
     send(5, 'Sending to Seedance…');
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4200,7 +4200,21 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
       }
       if (status.status === 'FAILED') return { error: 'Seedance generation failed' };
     }
-    return { error: 'Seedance timed out' };
+    // Final attempt — Fal may have completed after our polling window
+    try {
+      const finalRes = await fetch(response_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      });
+      if (finalRes.ok) {
+        const finalData = await finalRes.json();
+        const resultUrl = finalData.images?.[0]?.url || finalData.video?.url || finalData.image?.url;
+        if (resultUrl) {
+          const base64 = await fetchToBase64(resultUrl);
+          return { base64: `data:video/mp4;base64,${base64}` };
+        }
+      }
+    } catch { /* ignore */ }
+    return { error: 'Seedance timed out — please try again' };
   } catch (err) {
     return { error: err.message };
   } finally {
@@ -4241,7 +4255,7 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
 
     send(5, 'Sending to Seedance 2.0…');
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4271,7 +4285,21 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
       }
       if (status.status === 'FAILED') return { error: 'Seedance 2.0 generation failed' };
     }
-    return { error: 'Seedance 2.0 timed out' };
+    // Final attempt — Fal may have completed after our polling window
+    try {
+      const finalRes = await fetch(response_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      });
+      if (finalRes.ok) {
+        const finalData = await finalRes.json();
+        const resultUrl = finalData.images?.[0]?.url || finalData.video?.url || finalData.image?.url;
+        if (resultUrl) {
+          const base64 = await fetchToBase64(resultUrl);
+          return { base64: `data:video/mp4;base64,${base64}` };
+        }
+      }
+    } catch { /* ignore */ }
+    return { error: 'Seedance 2.0 timed out — please try again' };
   } catch (err) {
     return { error: err.message };
   } finally {
@@ -4332,7 +4360,7 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
     if (!veo_status_url)  return { error: `Veo submission missing status_url: ${JSON.stringify(submitData)}` };
     if (!veo_response_url) return { error: `Veo submission missing response_url: ${JSON.stringify(submitData)}` };
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 120; i++) {
       if (flag.cancelled) return { error: 'cancelled' };
       await new Promise(r => setTimeout(r, 5000));
       if (flag.cancelled) return { error: 'cancelled' };
@@ -4391,7 +4419,21 @@ ipcMain.handle('fal-veo', async (event, { imageData, prompt }) => {
       }
       if (status.status === 'FAILED') return { error: 'Veo generation failed' };
     }
-    return { error: 'Veo timed out' };
+    // Final attempt — Fal may have completed after our polling window
+    try {
+      const finalRes = await fetch(veo_response_url, {
+        headers: { 'Authorization': `Key ${key}` }
+      });
+      if (finalRes.ok) {
+        const finalData = await finalRes.json();
+        const resultUrl = finalData.images?.[0]?.url || finalData.video?.url || finalData.image?.url;
+        if (resultUrl) {
+          const base64 = await fetchToBase64(resultUrl);
+          return { base64: `data:video/mp4;base64,${base64}` };
+        }
+      }
+    } catch { /* ignore */ }
+    return { error: 'Veo timed out — please try again' };
   } catch (err) {
     return { error: err.message };
   } finally {
@@ -4462,7 +4504,21 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
       }
       if (status.status === 'FAILED') return { error: 'Wan Motion generation failed' };
     }
-    return { error: 'Wan Motion timed out' };
+    // Final attempt — Fal may have completed after our polling window
+    try {
+      const finalRes = await fetch(response_url, {
+        headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` }
+      });
+      if (finalRes.ok) {
+        const finalData = await finalRes.json();
+        const resultUrl = finalData.images?.[0]?.url || finalData.video?.url || finalData.image?.url;
+        if (resultUrl) {
+          const base64 = await fetchToBase64(resultUrl);
+          return { base64: `data:video/mp4;base64,${base64}` };
+        }
+      }
+    } catch { /* ignore */ }
+    return { error: 'Wan Motion timed out — please try again' };
   } catch (err) {
     return { error: err.message };
   } finally {
