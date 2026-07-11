@@ -4194,7 +4194,11 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
 
       console.log(`[Seedance] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
-      if (!statusRes?.ok) { console.warn('[Seedance] Status poll non-OK — continuing'); continue; }
+      if (!statusRes?.ok) {
+        const errBody = await statusRes?.text().catch(() => '<unreadable>');
+        console.warn(`[Seedance] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
       console.log(`[Seedance] Poll ${i+1} response status:`, status.status);
@@ -4290,7 +4294,11 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
 
       console.log(`[Seedance2] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
-      if (!statusRes?.ok) { console.warn('[Seedance2] Status poll non-OK — continuing'); continue; }
+      if (!statusRes?.ok) {
+        const errBody = await statusRes?.text().catch(() => '<unreadable>');
+        console.warn(`[Seedance2] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
       console.log(`[Seedance2] Poll ${i+1} response status:`, status.status);
@@ -4518,7 +4526,11 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
 
       console.log(`[WanMotion] Poll ${i+1}/120 — status_url: ${status_url}`);
       const statusRes = await fetch(status_url).catch(() => null);
-      if (!statusRes?.ok) { console.warn('[WanMotion] Status poll non-OK — continuing'); continue; }
+      if (!statusRes?.ok) {
+        const errBody = await statusRes?.text().catch(() => '<unreadable>');
+        console.warn(`[WanMotion] Status poll non-OK — HTTP ${statusRes?.status}: ${errBody.slice(0, 200)}`);
+        continue;
+      }
       let status;
       try { status = await statusRes.json(); } catch { continue; }
       console.log(`[WanMotion] Poll ${i+1} response status:`, status.status);
