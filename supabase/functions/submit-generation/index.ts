@@ -24,7 +24,7 @@ const FAL_ENDPOINTS: Record<string, string> = {
   seedance:      'https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
   seedance2:     'https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video',
   video_transfer:'https://queue.fal.run/fal-ai/wan-motion',
-  pose:          'https://queue.fal.run/fal-ai/sdxl-controlnet-union',
+  pose:          'https://queue.fal.run/fal-ai/sdxl-controlnet-union/image-to-image',
 };
 
 const SYNCHRONOUS_FEATURES = ['panel', 'inpaint', 'ipadapter'];
@@ -115,18 +115,20 @@ serve(async (req) => {
     // Build Fal payload — upload images from base64 to Fal storage where needed
     let falPayload = { ...payload };
 
-    // Upload main imageData for features that need it (video/pose)
+    // Upload main imageData for features that need img2img (including pose)
     if (payload.imageData) {
       const base64 = payload.imageData.replace(/^data:image\/[^;]+;base64,/, '');
       falPayload.image_url = await falStorageUpload(base64, 'image/png', 'panel.png');
       delete falPayload.imageData;
     }
 
-    // Upload pose skeleton image for ControlNet
+    // Upload pose skeleton image for ControlNet (sdxl-controlnet-union/image-to-image flat schema)
     if (payload.poseImageData) {
       const base64 = payload.poseImageData.replace(/^data:image\/[^;]+;base64,/, '');
-      falPayload.control_image_url = await falStorageUpload(base64, 'image/png', 'pose.png');
-      falPayload.control_type = 'openpose';
+      falPayload.openpose_image_url = await falStorageUpload(base64, 'image/png', 'pose.png');
+      falPayload.openpose_preprocess = true;
+      falPayload.controlnet_conditioning_scale = 1.0;
+      falPayload.strength = 0.95;
       delete falPayload.poseImageData;
     }
 

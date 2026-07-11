@@ -84,7 +84,7 @@ class LicenseService {
     if (now - this._cache.lastCreditedAt < BILLING_CYCLE) return;
     const allocation = CREDIT_POOLS[this.getTier()] ?? 0;
     this._cache = {
-      subscriptionCredits: this._cache.subscriptionCredits + allocation,
+      subscriptionCredits: allocation,
       topUpCredits:        this._cache.topUpCredits,
       lastCreditedAt:      now,
     };
