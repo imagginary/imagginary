@@ -127,8 +127,8 @@ serve(async (req) => {
       const base64 = payload.poseImageData.replace(/^data:image\/[^;]+;base64,/, '');
       falPayload.openpose_image_url = await falStorageUpload(base64, 'image/png', 'pose.png');
       falPayload.openpose_preprocess = true;
-      falPayload.controlnet_conditioning_scale = 1.0;
-      falPayload.strength = 0.95;
+      falPayload.controlnet_conditioning_scale = 0.5;
+      falPayload.strength = 0.6;
       delete falPayload.poseImageData;
     }
 
