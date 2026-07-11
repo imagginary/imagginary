@@ -342,6 +342,22 @@ export default function App() {
   const cursorBroadcastThrottle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef(progress);
   useEffect(() => { progressRef.current = progress; }, [progress]);
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleProgressClear = () => {
+    if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+    progressTimerRef.current = setTimeout(() => {
+      setProgress(null);
+      progressTimerRef.current = null;
+    }, 2000);
+  };
+
+  const cancelProgressClear = () => {
+    if (progressTimerRef.current) {
+      clearTimeout(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  };
 
   // projectRef — always holds the latest project so callbacks registered once (deep-link
   // join, SharedStudio request_state responder) never read a stale closure value.
@@ -619,6 +635,7 @@ export default function App() {
     if (!description.trim()) return;
     if (serviceStatus.ollama !== 'connected') return;
 
+    cancelProgressClear();
     setProgress({ panelId, status: 'parsing', progress: 0, message: 'Parsing shot description…' });
 
     try {
@@ -744,7 +761,7 @@ export default function App() {
       }
       telemetryService.track('panel_generated', { style: project.style.id, hasCharacters: characterIds.length > 0 });
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Complete' });
-      setTimeout(() => setProgress(null), 2000);
+      scheduleProgressClear();
     } catch (error) {
       // Detect model-not-found errors and surface the recovery banner
       if (
@@ -1169,6 +1186,7 @@ export default function App() {
     const panel = project.panels.find((p) => p.id === panelId);
     if (!panel?.generatedImageData) return;
 
+    cancelProgressClear();
     setProgress({ panelId, status: 'generating', progress: 0, message: 'Preparing inpaint…' });
 
     try {
@@ -1210,7 +1228,7 @@ export default function App() {
       });
 
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Edit applied' });
-      setTimeout(() => setProgress(null), 2000);
+      scheduleProgressClear();
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       const isProUser = licenseService.isPro() || licenseService.isStudio();
@@ -1226,6 +1244,7 @@ export default function App() {
     if (!panel?.generatedImageData) return;
 
     updatePanel(panelId, { motionDescription });
+    cancelProgressClear();
     setProgress({ panelId, status: 'animating', progress: 0, message: 'Refining motion prompt...' });
 
     try {
@@ -1278,7 +1297,7 @@ export default function App() {
       updatePanel(panelId, { motionClipData: base64Video, motionClipPath: clipPath });
       telemetryService.track('motion_generated');
       setProgress({ panelId, status: 'complete', progress: 100, message: 'Motion clip ready' });
-      setTimeout(() => setProgress(null), 2000);
+      scheduleProgressClear();
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       const isProUser = licenseService.isPro() || licenseService.isStudio();
@@ -1345,6 +1364,7 @@ export default function App() {
       return;
     }
 
+    cancelProgressClear();
     setIsPoseGenerating(true);
     setShowPoseEditor(false);
     setProgress({
@@ -1405,7 +1425,7 @@ export default function App() {
         progress: 100,
         message: 'Pose applied',
       });
-      setTimeout(() => setProgress(null), 2000);
+      scheduleProgressClear();
       setPoseRequestId(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
