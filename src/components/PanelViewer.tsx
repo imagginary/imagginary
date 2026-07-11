@@ -24,6 +24,7 @@ interface PanelViewerProps {
   onClearError?: () => void;
   onCancelAnimate?: () => void;
   onCancelInpaint?: () => void;
+  onCancelPose?: () => void;
   comfyuiConnected?: boolean;
   wanModelAvailable?: boolean | null;
   wanModelWarning?: string;
@@ -84,6 +85,7 @@ export default function PanelViewer({
   onClearError,
   onCancelAnimate,
   onCancelInpaint,
+  onCancelPose,
   comfyuiConnected,
   wanModelAvailable,
   wanModelWarning,
@@ -745,6 +747,15 @@ export default function PanelViewer({
                 {progress?.status === 'generating' && editMode && onCancelInpaint && (
                   <button
                     onClick={onCancelInpaint}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Cancel
+                  </button>
+                )}
+                {progress?.status === 'animating' && onCancelPose && (
+                  <button
+                    onClick={onCancelPose}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
                   >
                     <X className="w-3 h-3" />

@@ -296,6 +296,7 @@ export default function App() {
   // Phase 6B — Pose Engine
   const [showPoseEditor, setShowPoseEditor] = useState(false);
   const [isPoseGenerating, setIsPoseGenerating] = useState(false);
+  const [poseRequestId, setPoseRequestId] = useState<string | null>(null);
   // Phase 6C — Motion Library
   const [showMotionLibrary, setShowMotionLibrary] = useState(false);
   // Phase 6E — Video Transfer
@@ -1345,6 +1346,7 @@ export default function App() {
     }
 
     setIsPoseGenerating(true);
+    setShowPoseEditor(false);
     setProgress({
       panelId: activePanelId,
       status: 'animating',
@@ -1360,6 +1362,7 @@ export default function App() {
         framesPerSegment: params.framesPerSegment,
         onProgress: (pct, msg) =>
           setProgress({ panelId: activePanelId, status: 'animating', progress: pct, message: msg }),
+        onQueued: (requestId) => setPoseRequestId(requestId),
       });
 
       // Save posed image to disk
@@ -1403,12 +1406,13 @@ export default function App() {
         message: 'Pose applied',
       });
       setTimeout(() => setProgress(null), 2000);
-      setShowPoseEditor(false);
+      setPoseRequestId(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       if (msg === 'CONTROLNET_NOT_INSTALLED') {
         // PoseEditor handles this — re-throw so it can show download UI
         setIsPoseGenerating(false);
+        setPoseRequestId(null);
         throw error;
       }
       setProgress({
@@ -1418,9 +1422,17 @@ export default function App() {
         message: 'Pose generation failed',
         error: msg,
       });
+      setPoseRequestId(null);
     } finally {
       setIsPoseGenerating(false);
     }
+  }
+
+  function handleCancelPose() {
+    if (poseRequestId) poseEngineService.cancelPoseGeneration(poseRequestId);
+    setIsPoseGenerating(false);
+    setProgress(null);
+    setPoseRequestId(null);
   }
 
   async function handleApplyMotionClip({ clipId, videoData }: { clipId: string; videoData: string }) {
@@ -1844,6 +1856,7 @@ export default function App() {
             onClearError={() => setProgress(null)}
             onCancelAnimate={() => { window.electronAPI?.cancelFalVideo?.(); setProgress(null); }}
             onCancelInpaint={() => { window.electronAPI?.interruptComfyUI?.(); setProgress(null); }}
+            onCancelPose={isPoseGenerating ? handleCancelPose : undefined}
             comfyuiConnected={serviceStatus.comfyui === 'connected'}
             wanModelAvailable={wanModelAvailable}
             wanModelWarning={wanModelWarning}

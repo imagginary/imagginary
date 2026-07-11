@@ -32,6 +32,8 @@ export interface PoseGenerationParams {
   framesPerSegment?: number;
   /** Progress callback — 0-100. */
   onProgress?: (pct: number, msg: string) => void;
+  /** Called with the Fal request_id once the job is queued (cloud async path only). */
+  onQueued?: (requestId: string) => void;
 }
 
 export interface PoseGenerationResult {
@@ -256,6 +258,8 @@ export function buildPoseControlNetWorkflow(
 // ── Main Service ─────────────────────────────────────────────────────────────
 
 class PoseEngineService {
+  _posePollingInterval: ReturnType<typeof setInterval> | null = null;
+
   // No URL cache — re-fetch the proxy port on every call so a ComfyUI restart
   // on a different port is picked up immediately without a session restart.
   private async getComfyBaseUrl(): Promise<string> {
@@ -275,7 +279,7 @@ class PoseEngineService {
     const { imageData, description, poseTemplateIds, onProgress } = params;
 
     if (licenseService.isPro() || licenseService.isStudio()) {
-      return this.generatePoseAnimationCloud(imageData, poseTemplateIds, description, onProgress);
+      return this.generatePoseAnimationCloud(imageData, poseTemplateIds, description, onProgress, params.onQueued);
     }
 
     // Community — local ComfyUI path
@@ -344,6 +348,7 @@ class PoseEngineService {
     poseTemplateIds: string[],
     description: string,
     onProgress?: (pct: number, msg: string) => void,
+    onQueued?: (requestId: string) => void,
   ): Promise<PoseGenerationResult> {
     const progress = (pct: number, msg: string) => onProgress?.(pct, msg);
 
@@ -379,12 +384,55 @@ class PoseEngineService {
     });
 
     if (result?.error) throw new Error(result.error);
+
+    if (result?.queued) {
+      onQueued?.(result.request_id);
+      progress(40, 'Pose queued — waiting for result…');
+      return new Promise<PoseGenerationResult>((resolve, reject) => {
+        this._posePollingInterval = setInterval(async () => {
+          try {
+            const pollResult = await (window.electronAPI as any).pollPoseGeneration({
+              status_url: result.status_url,
+              response_url: result.response_url,
+            });
+            if (pollResult?.error) {
+              clearInterval(this._posePollingInterval!);
+              this._posePollingInterval = null;
+              reject(new Error(pollResult.error));
+            } else if (pollResult?.status === 'COMPLETED') {
+              clearInterval(this._posePollingInterval!);
+              this._posePollingInterval = null;
+              progress(100, 'Pose complete');
+              resolve({ imageData: `data:image/png;base64,${pollResult.base64}` });
+            } else if (pollResult?.status === 'FAILED') {
+              clearInterval(this._posePollingInterval!);
+              this._posePollingInterval = null;
+              reject(new Error('Pose generation failed on Fal.ai'));
+            }
+            // IN_QUEUE / IN_PROGRESS — keep polling
+          } catch (err) {
+            clearInterval(this._posePollingInterval!);
+            this._posePollingInterval = null;
+            reject(err);
+          }
+        }, 3000);
+      });
+    }
+
+    // Synchronous fallback (should not happen with async pose)
     if (!result?.base64 || result.base64.length < 1024) {
       throw new Error('Cloud pose generation returned invalid image data');
     }
-
     progress(100, 'Pose complete');
     return { imageData: `data:image/png;base64,${result.base64}` };
+  }
+
+  cancelPoseGeneration(requestId: string): void {
+    if (this._posePollingInterval !== null) {
+      clearInterval(this._posePollingInterval);
+      this._posePollingInterval = null;
+    }
+    (window.electronAPI as any).cancelPoseGeneration?.({ request_id: requestId });
   }
 
   /** Poll /history until SaveImage output is ready, return as base64 PNG data URL. */

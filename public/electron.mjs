@@ -4673,13 +4673,57 @@ ipcMain.handle('fal-controlnet-pose', async (_event, { imageData, poseImageData,
     });
 
     if (result.error) return { error: result.error };
-    console.log('[PoseEngine] Downloading result…');
-    const base64 = await fetchToBase64(result.result_url);
-    return { base64 };
+    return {
+      queued: true,
+      request_id: result.request_id,
+      status_url: result.status_url,
+      response_url: result.response_url,
+    };
   } catch (err) {
     console.error('[PoseEngine] Error:', err.message);
     return { error: err.message };
   }
+});
+
+ipcMain.handle('poll-pose-generation', async (_event, { status_url, response_url }) => {
+  try {
+    const statusRes = await fetch(status_url, {
+      headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` },
+    });
+    if (!statusRes.ok) {
+      const errText = await statusRes.text().catch(() => '<empty>');
+      return { error: `Status check failed: ${statusRes.status} — ${errText}` };
+    }
+    const statusData = await statusRes.json();
+    const status = statusData.status;
+
+    if (status !== 'COMPLETED') return { status };
+
+    const resultRes = await fetch(response_url, {
+      headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` },
+    });
+    if (!resultRes.ok) {
+      const errText = await resultRes.text().catch(() => '<empty>');
+      return { error: `Result fetch failed: ${resultRes.status} — ${errText}` };
+    }
+    const resultData = await resultRes.json();
+    const resultUrl = resultData.images?.[0]?.url || resultData.image?.url;
+    if (!resultUrl) return { error: 'No image URL in Fal response' };
+    const base64 = await fetchToBase64(resultUrl);
+    return { status: 'COMPLETED', base64 };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('cancel-pose-generation', async (_event, { request_id }) => {
+  try {
+    await fetch(`https://queue.fal.run/fal-ai/sdxl-controlnet-union/requests/${request_id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Key ${_cfg('FAL_API_KEY')}` },
+    });
+  } catch { /* best-effort */ }
+  return { success: true };
 });
 
 // ── ControlNet OpenPose model — check + download ─────────────────────────────

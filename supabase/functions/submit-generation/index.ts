@@ -24,28 +24,41 @@ const FAL_ENDPOINTS: Record<string, string> = {
   seedance:      'https://queue.fal.run/fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
   seedance2:     'https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video',
   video_transfer:'https://queue.fal.run/fal-ai/wan-motion',
-  pose:          'https://fal.run/fal-ai/controlnet-union-sdxl',
+  pose:          'https://queue.fal.run/fal-ai/sdxl-controlnet-union',
 };
 
-const SYNCHRONOUS_FEATURES = ['panel', 'inpaint', 'ipadapter', 'pose'];
+const SYNCHRONOUS_FEATURES = ['panel', 'inpaint', 'ipadapter'];
 
 async function falStorageUpload(base64Data: string, contentType: string, fileName: string): Promise<string> {
   const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-  const uploadRes = await fetch('https://storage.fal.ai/upload', {
+
+  // Step 1 — initiate upload to get presigned URL
+  const initiateRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3', {
     method: 'POST',
     headers: {
       'Authorization': `Key ${FAL_API_KEY}`,
-      'Content-Type': contentType,
-      'X-Fal-File-Name': fileName,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ content_type: contentType, file_name: fileName }),
+  });
+  if (!initiateRes.ok) {
+    const errText = await initiateRes.text().catch(() => '<empty>');
+    throw new Error(`Fal storage initiate failed: ${initiateRes.status} — ${errText}`);
+  }
+  const { file_url, upload_url } = await initiateRes.json();
+
+  // Step 2 — PUT raw binary to the presigned URL (no auth header)
+  const putRes = await fetch(upload_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
     body: imageBuffer,
   });
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text().catch(() => '<empty>');
-    throw new Error(`Fal storage upload failed: ${uploadRes.status} — ${errText}`);
+  if (!putRes.ok) {
+    const errText = await putRes.text().catch(() => '<empty>');
+    throw new Error(`Fal storage PUT failed: ${putRes.status} — ${errText}`);
   }
-  const uploadData = await uploadRes.json();
-  return uploadData.file_url || uploadData.url;
+
+  return file_url || upload_url;
 }
 
 serve(async (req) => {
