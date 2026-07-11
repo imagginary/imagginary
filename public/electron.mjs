@@ -3975,6 +3975,15 @@ async function fetchToBase64(url) {
       });
     });
 
+    req.setTimeout(60000, () => {
+      req.destroy(new Error('fetchToBase64 timeout after 60s'));
+    });
+
+    req.on('socket', (socket) => {
+      socket.setTimeout(60000);
+      socket.on('timeout', () => req.destroy(new Error('fetchToBase64 socket timeout')));
+    });
+
     req.on('error', (err) => {
       reject(new Error(`fetchToBase64 network error: ${err.message}`));
     });
@@ -4190,9 +4199,8 @@ ipcMain.handle('fal-seedance', async (event, { imageData, prompt }) => {
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Seedance response' };
 
-        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance' })
+        callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance' })
           .catch(err => console.warn('[Credits] Seedance deduction failed:', err.message));
-
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
         send(100, 'Done');
@@ -4275,9 +4283,8 @@ ipcMain.handle('fal-seedance-2', async (event, { imageData, prompt }) => {
         const videoUrl = result.video?.url;
         if (!videoUrl) return { error: 'No video URL in Seedance 2.0 response' };
 
-        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance2' })
+        callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'seedance2' })
           .catch(err => console.warn('[Credits] Seedance2 deduction failed:', err.message));
-
         send(92, 'Downloading your motion clip…');
         const base64 = await fetchToBase64(videoUrl);
         send(100, 'Done');
@@ -4494,9 +4501,8 @@ ipcMain.handle('fal-wan-motion', async (event, { imageData, videoUrl, prompt }) 
         const outUrl = result.video?.url;
         if (!outUrl) return { error: 'No video URL in Wan Motion response' };
 
-        await callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'video_transfer' })
+        callEdgeFunction('deduct-credits', { license_key: licenseKey, feature: 'video_transfer' })
           .catch(err => console.warn('[Credits] WanMotion deduction failed:', err.message));
-
         send(92, 'Downloading motion clip…');
         const base64 = await fetchToBase64(outUrl);
         send(100, 'Done');
